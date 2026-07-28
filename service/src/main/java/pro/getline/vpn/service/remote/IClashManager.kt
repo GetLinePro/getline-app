@@ -1,0 +1,33 @@
+package pro.getline.vpn.service.remote
+
+import pro.getline.vpn.core.Clash
+import pro.getline.vpn.core.model.*
+import com.github.kr328.kaidl.BinderInterface
+
+@BinderInterface
+interface IClashManager {
+    fun queryTunnelState(): TunnelState
+    fun queryTrafficTotal(): Long
+
+    /**
+     * Milliseconds the tunnel service has been up, or null when it is down.
+     * Derived from a monotonic clock in the service process, so it survives
+     * Activity recreation and UI-process death while the tunnel lives.
+     */
+    fun querySessionDurationMs(): Long?
+    fun queryProxyGroupNames(excludeNotSelectable: Boolean): List<String>
+    fun queryProxyGroup(name: String, proxySort: ProxySort): ProxyGroup
+    fun queryConfiguration(): UiConfiguration
+    fun queryProviders(): ProviderList
+
+    fun patchSelector(group: String, name: String): Boolean
+
+    suspend fun healthCheck(group: String)
+    suspend fun updateProvider(type: Provider.Type, name: String)
+
+    fun queryOverride(slot: Clash.OverrideSlot): ConfigurationOverride
+    fun patchOverride(slot: Clash.OverrideSlot, configuration: ConfigurationOverride)
+    fun clearOverride(slot: Clash.OverrideSlot)
+
+    fun setLogObserver(observer: ILogObserver?)
+}

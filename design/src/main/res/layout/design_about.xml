@@ -4,6 +4,9 @@
         <variable
             name="versionName"
             type="String" />
+        <variable
+            name="self"
+            type="pro.getline.vpn.design.MainDesign" />
     </data>
 
     <LinearLayout
@@ -13,10 +16,13 @@
         android:orientation="horizontal"
         android:padding="@dimen/dialog_padding">
 
-        <View
+        <ImageView
             android:layout_width="@dimen/about_icon_size"
             android:layout_height="@dimen/about_icon_size"
-            android:background="@drawable/ic_clash" />
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_getline_logo" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -28,14 +34,44 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/application_name"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Body1" />
+                android:textAppearance="?attr/textAppearanceBody1" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/item_text_margin"
                 android:text="@{versionName}"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
+                android:textAppearance="?attr/textAppearanceBody2" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/item_text_margin"
+                android:text="@string/about_based_on_clash_meta"
+                android:textAppearance="?attr/textAppearanceCaption" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/item_text_margin"
+                android:text="@string/about_license_gplv3"
+                android:textAppearance="?attr/textAppearanceCaption" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/item_text_margin"
+                android:text="@string/about_upstream_ack"
+                android:textAppearance="?attr/textAppearanceCaption" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/item_text_margin"
+                android:onClick="@{() -> self.openSources()}"
+                android:text="@string/sources"
+                android:textAppearance="?attr/textAppearanceBody2"
+                android:textColor="?attr/colorPrimary" />
         </LinearLayout>
     </LinearLayout>
 </layout>

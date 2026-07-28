@@ -7,9 +7,11 @@ on:
         description: 'Release Tag (v2.x.x)'
         required: true
 
+# Production signing job. Fails closed if release key secrets are missing.
+# Does not publish to Google Play (manual Play Console / internal testing only).
 jobs:
   BuildRelease:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -19,20 +21,20 @@ jobs:
       - name: Checkout submodules
         run: git submodule update --init --recursive --force
 
+      - name: Apply Mihomo product patches
+        run: ./scripts/apply-mihomo-patches.sh
+
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: "temurin"
-          java-version: 21
+          java-version: "21.0.10+7.0.LTS"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
-        with:
-          go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
-          go-version: '1.26'
+        uses: ./.github/actions/setup-pinned-go
 
       - name: Apply Patches
         run: |
@@ -83,29 +85,78 @@ jobs:
             git push --follow-tags
           fi
 
-      - name: Update CA
-        run: |
-          sudo apt-get update && sudo apt-get install ca-certificates
-          sudo update-ca-certificates
-          cp -f /etc/ssl/certs/ca-certificates.crt core/src/foss/golang/clash/component/ca/ca-certificates.crt
+      - name: Set reproducible build timestamp
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
 
-      - name: Signing properties
+      - name: Require production signing material
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
-          touch signing.properties
-          echo keystore.password="$SIGNING_STORE_PASSWORD" > signing.properties
-          echo key.alias="$SIGNING_KEY_ALIAS" >> signing.properties
-          echo key.password="$SIGNING_KEY_PASSWORD" >> signing.properties
-            
-          echo "cat signing.properties"
-          cat signing.properties
+          set -euo pipefail
+          missing=0
+          if [ ! -f release.keystore ]; then
+            echo "ERROR: release.keystore is missing (owner-controlled production key)"
+            missing=1
+          fi
+          if [ -z "${SIGNING_STORE_PASSWORD:-}" ]; then
+            echo "ERROR: secret SIGNING_STORE_PASSWORD is empty"
+            missing=1
+          fi
+          if [ -z "${SIGNING_KEY_ALIAS:-}" ]; then
+            echo "ERROR: secret SIGNING_KEY_ALIAS is empty"
+            missing=1
+          fi
+          if [ -z "${SIGNING_KEY_PASSWORD:-}" ]; then
+            echo "ERROR: secret SIGNING_KEY_PASSWORD is empty"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "Production release refuses to build without a complete release key."
+            echo "Refusing silent debug signing."
+            exit 1
+          fi
+          echo "Production signing material is present (values not logged)."
 
-      - name: Release Build
+      - name: Write signing.properties
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Never print signing.properties or secret values to the job log.
+          {
+            echo "keystore.password=${SIGNING_STORE_PASSWORD}"
+            echo "key.alias=${SIGNING_KEY_ALIAS}"
+            echo "key.password=${SIGNING_KEY_PASSWORD}"
+          } > signing.properties
+          chmod 600 signing.properties
+          echo "signing.properties written (contents not logged)."
+
+      - name: Release Build (signed AAB)
         if: success()
-        run: ./gradlew --no-daemon app:assembleMetaRelease
+        run: ./gradlew --no-daemon app:lintMetaRelease app:bundleMetaRelease
+
+      - name: Verify AAB is signed
+        if: success()
+        run: |
+          set -euo pipefail
+          AAB=$(ls app/build/outputs/bundle/metaRelease/getline-vpn-*.aab | head -n1)
+          echo "Verifying signature on: $AAB"
+          jarsigner -verify -verbose -certs "$AAB" | tee /tmp/jarsigner-verify.txt
+          # jarsigner -verify succeeds only when a signature is present.
+          if ! grep -q "jar verified" /tmp/jarsigner-verify.txt; then
+            echo "ERROR: production AAB signature verification failed"
+            exit 1
+          fi
+          # Guard against accidental debug/AndroidDebugKey signing.
+          if grep -qi "Android Debug\|CN=Android Debug\|AndroidDebugKey" /tmp/jarsigner-verify.txt; then
+            echo "ERROR: production AAB appears to be debug-signed"
+            exit 1
+          fi
+          echo "OK: production AAB is signed (non-debug)."
 
       - name: Tag Repo
         uses: richardsimko/update-tag@v1
@@ -119,7 +170,7 @@ jobs:
         if: ${{ success() }}
         with:
           tag_name: ${{ inputs.release-tag }}
-          files: app/build/outputs/apk/meta/release/*
+          files: app/build/outputs/bundle/metaRelease/getline-vpn-*.aab
           generate_release_notes: true
 
       - name: Release Changelog Builder

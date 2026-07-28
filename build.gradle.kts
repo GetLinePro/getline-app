@@ -2,7 +2,6 @@
 
 import com.android.build.gradle.AppExtension
 import com.android.build.gradle.BaseExtension
-import java.net.URL
 import java.util.*
 
 buildscript {
@@ -28,35 +27,27 @@ subprojects {
     }
 
     val isApp = name == "app"
+    val isBundleInvocation = gradle.startParameter.taskNames.any { taskName ->
+        taskName.substringAfterLast(':').startsWith("bundle", ignoreCase = true)
+    }
 
     apply(plugin = if (isApp) "com.android.application" else "com.android.library")
-
-    fun queryConfigProperty(key: String): Any? {
-        val localProperties = Properties()
-        val localPropertiesFile = rootProject.file("local.properties")
-        if (localPropertiesFile.exists()) {
-            localProperties.load(localPropertiesFile.inputStream())
-        } else {
-            return null
-        }
-        return localProperties.getProperty(key)
-    }
 
     extensions.configure<BaseExtension> {
         buildFeatures.buildConfig = true
         defaultConfig {
             if (isApp) {
-                val customApplicationId = queryConfigProperty("custom.application.id") as? String?
-                applicationId = customApplicationId.takeIf { it?.isNotBlank() == true } ?: "com.github.metacubex.clash"
+                applicationId = "pro.getline.vpn"
             }
 
             project.name.let { name ->
-                namespace = if (name == "app") "com.github.kr328.clash"
-                else "com.github.kr328.clash.$name"
+                namespace = if (name == "app") "pro.getline.vpn"
+                else "pro.getline.vpn.$name"
             }
 
-            minSdk = 21
-            targetSdk = 35
+            // androidx.browser 1.10+ (Auth Tab) requires minSdk 23.
+            minSdk = 23
+            targetSdk = 36
 
             versionName = "2.11.32"
             versionCode = 211032
@@ -77,12 +68,14 @@ subprojects {
             if (!isApp) {
                 consumerProguardFiles("consumer-rules.pro")
             } else {
-                setProperty("archivesBaseName", "cmfa-$versionName")
+                setProperty("archivesBaseName", "getline-vpn-$versionName")
             }
         }
 
         ndkVersion = "29.0.14206865"
+        buildToolsVersion = "36.0.0"
 
+        // Keep compileSdk aligned with targetSdk (Play requires target 36 after 2026-08-31).
         compileSdkVersion(defaultConfig.targetSdk!!)
 
         if (isApp) {
@@ -96,41 +89,29 @@ subprojects {
         productFlavors {
             flavorDimensions("feature")
 
-            val removeSuffix = (queryConfigProperty("remove.suffix") as? String)?.toBoolean() == true
-
             create("alpha") {
                 isDefault = true
                 dimension = flavorDimensionList[0]
-                if (!removeSuffix) {
-                    versionNameSuffix = ".Alpha"
-                }
-
+                versionNameSuffix = ".Alpha"
 
                 buildConfigField("boolean", "PREMIUM", "Boolean.parseBoolean(\"false\")")
 
                 resValue("string", "launch_name", "@string/launch_name_alpha")
                 resValue("string", "application_name", "@string/application_name_alpha")
 
-                if (isApp && !removeSuffix) {
+                if (isApp) {
                     applicationIdSuffix = ".alpha"
                 }
             }
 
             create("meta") {
-
                 dimension = flavorDimensionList[0]
-                if (!removeSuffix) {
-                    versionNameSuffix = ".Meta"
-                }
+                versionNameSuffix = ".Meta"
 
                 buildConfigField("boolean", "PREMIUM", "Boolean.parseBoolean(\"false\")")
 
                 resValue("string", "launch_name", "@string/launch_name_meta")
                 resValue("string", "application_name", "@string/application_name_meta")
-
-                if (isApp && !removeSuffix) {
-                    applicationIdSuffix = ".meta"
-                }
             }
         }
 
@@ -163,7 +144,9 @@ subprojects {
             named("release") {
                 isMinifyEnabled = isApp
                 isShrinkResources = isApp
-                signingConfig = signingConfigs.findByName("release") ?: signingConfigs["debug"]
+                // Never fall back to the debug key. Without signing.properties the
+                // release artifact is unsigned; production CI must fail if keys are missing.
+                signingConfig = signingConfigs.findByName("release")
                 proguardFiles(
                     getDefaultProguardFile("proguard-android-optimize.txt"),
                     "proguard-rules.pro"
@@ -171,6 +154,9 @@ subprojects {
             }
             named("debug") {
                 versionNameSuffix = ".debug"
+                if (isApp) {
+                    applicationIdSuffix = ".debug"
+                }
             }
         }
 
@@ -185,7 +171,8 @@ subprojects {
 
             splits {
                 abi {
-                    isEnable = true
+                    // AGP cannot produce legacy split APK resources and an AAB in one invocation.
+                    isEnable = !isBundleInvocation
                     isUniversalApk = true
                     reset()
                     include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
@@ -205,13 +192,7 @@ task("clean", type = Delete::class) {
 }
 
 tasks.wrapper {
-    distributionType = Wrapper.DistributionType.ALL
-
-    doLast {
-        val sha256 = URL("$distributionUrl.sha256").openStream()
-            .use { it.reader().readText().trim() }
-
-        file("gradle/wrapper/gradle-wrapper.properties")
-            .appendText("distributionSha256Sum=$sha256")
-    }
+    distributionType = Wrapper.DistributionType.BIN
+    distributionSha256Sum =
+        "20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78"
 }

@@ -81,6 +81,47 @@
     <dimen name="about_icon_size">50dp</dimen>
     <dimen name="about_text_margin">15dp</dimen>
 
+    <!-- GetLine onboarding -->
+    <dimen name="get_line_onboarding_logo_size">88dp</dimen>
+    <dimen name="get_line_onboarding_section_gap">20dp</dimen>
+    <dimen name="get_line_onboarding_cta_gap">12dp</dimen>
+    <dimen name="get_line_onboarding_button_min_height">52dp</dimen>
+    <dimen name="get_line_onboarding_title_margin_top">20dp</dimen>
+    <dimen name="get_line_onboarding_value_margin_top">10dp</dimen>
+    <dimen name="get_line_onboarding_actions_margin_top">36dp</dimen>
+    <dimen name="get_line_onboarding_advanced_margin_top">28dp</dimen>
+
+    <!-- GetLine home -->
+    <dimen name="get_line_home_section_gap">16dp</dimen>
+    <dimen name="get_line_home_title_margin_top">16dp</dimen>
+    <dimen name="get_line_home_status_margin_top">28dp</dimen>
+    <dimen name="get_line_home_actions_margin_top">28dp</dimen>
+    <dimen name="get_line_home_cta_gap">12dp</dimen>
+    <dimen name="get_line_home_card_margin_top">28dp</dimen>
+    <dimen name="get_line_home_advanced_margin_top">24dp</dimen>
+    <dimen name="get_line_home_primary_button_min_height">56dp</dimen>
+    <!-- Connect ring: the tap target for the whole VPN toggle. -->
+    <dimen name="get_line_connect_ring_size">220dp</dimen>
+    <dimen name="get_line_connect_ring_stroke">10dp</dimen>
+    <dimen name="get_line_connect_ring_margin_top">24dp</dimen>
+    <dimen name="get_line_home_secondary_button_min_height">48dp</dimen>
+
+    <!--
+      GetLine brand surface washes (bg_getline_surface).
+      Large radii keep the falloff off-screen so no circular edge is visible.
+    -->
+    <dimen name="get_line_surface_wash_radius_top">560dp</dimen>
+    <dimen name="get_line_surface_wash_radius_bottom">440dp</dimen>
+
+    <!-- GetLine product shell (bottom nav) -->
+    <dimen name="get_line_shell_bar_margin_horizontal">16dp</dimen>
+    <dimen name="get_line_shell_bar_margin_bottom">12dp</dimen>
+    <dimen name="get_line_shell_bar_corner">28dp</dimen>
+    <dimen name="get_line_shell_bar_height">72dp</dimen>
+    <dimen name="get_line_shell_tab_icon">22dp</dimen>
+    <!-- Content bottom inset reserve: bar + margins (system inset applied separately). -->
+    <dimen name="get_line_shell_content_bottom">108dp</dimen>
+
     <!-- Logcat Design -->
     <dimen name="logcat_padding_vertical">12dp</dimen>
     <dimen name="logcat_padding_horizontal">12dp</dimen>

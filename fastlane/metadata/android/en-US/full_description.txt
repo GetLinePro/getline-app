@@ -1,11 +1,16 @@
-A Graphical user interface of Clash.Meta for Android.
+GetLine VPN is the official Android client for the GetLine service.
 
-<h3>Features</h3>
+Connect with your GetLine subscription, choose a server, and manage VPN on a simple home screen. Advanced settings remain available for power users.
+
+<h3>Highlights</h3>
 <ul>
-<li>Local HTTP/HTTPS/SOCKS server</li>
-<li>VMess, Shadowsocks, Trojan, Snell protocol support for remote connections</li>
-<li>Built-in DNS server that aims to minimize DNS pollution attack impact, supports DoH/DoT upstream and fake IP</li>
-<li>Rules based off domains, GEOIP, IPCIDR or Process to forward packets to different nodes</li>
-<li>Remote groups allow users to implement powerful rules. Supports automatic fallback, load balancing or auto select node based off latency</li>
-<li>Remote providers, allowing users to get node lists remotely instead of hardcoding in config</li>
+<li>Import a GetLine subscription URL (or QR); open the web cabinet for account management</li>
+<li>One-tap connect and disconnect</li>
+<li>Subscription refresh and server selection</li>
+<li>Local VPN using the Mihomo core</li>
+<li>Open-source GPLv3 fork of Clash Meta for Android (CMFA)</li>
 </ul>
+
+<p>Support: https://t.me/GetLinePro<br/>
+Privacy: https://getline.pro/privacy.html<br/>
+Account: https://app.getline.pro/</p>

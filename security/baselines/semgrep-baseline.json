@@ -1,0 +1,74 @@
+{
+  "schema": "getline-semgrep-baseline/v1",
+  "generated_at": "2026-07-27T10:23:49Z",
+  "tool": "semgrep:1.128.1",
+  "configs": [
+    "p/kotlin",
+    "p/java",
+    "p/security-audit",
+    "p/secrets"
+  ],
+  "count": 6,
+  "findings": [
+    {
+      "key": "c.lang.security.insecure-use-string-copy-fn.insecure-use-string-copy-fn|coremain/cpp/main.c|522|522",
+      "fingerprint": "b4a9c50260508e45",
+      "check_id": "c.lang.security.insecure-use-string-copy-fn.insecure-use-string-copy-fn",
+      "path": "coremain/cpp/main.c",
+      "start_line": 522,
+      "end_line": 522,
+      "severity": "WARNING",
+      "message": "Finding triggers whenever there is a strcpy or strncpy used. This is an issue because strcpy does not affirm the size of the destination array and strncpy will not automatically NULL-terminate strings"
+    },
+    {
+      "key": "c.lang.security.insecure-use-string-copy-fn.insecure-use-string-copy-fn|coremain/cpp/main.c|526|526",
+      "fingerprint": "ebbaa01c38555316",
+      "check_id": "c.lang.security.insecure-use-string-copy-fn.insecure-use-string-copy-fn",
+      "path": "coremain/cpp/main.c",
+      "start_line": 526,
+      "end_line": 526,
+      "severity": "WARNING",
+      "message": "Finding triggers whenever there is a strcpy or strncpy used. This is an issue because strcpy does not affirm the size of the destination array and strncpy will not automatically NULL-terminate strings"
+    },
+    {
+      "key": "go.lang.security.audit.net.pprof.pprof-debug-exposure|coremain/golang/native/debug.go|16|16",
+      "fingerprint": "8487a1b1bda42346",
+      "check_id": "go.lang.security.audit.net.pprof.pprof-debug-exposure",
+      "path": "coremain/golang/native/debug.go",
+      "start_line": 16,
+      "end_line": 16,
+      "severity": "WARNING",
+      "message": "The profiling 'pprof' endpoint is automatically exposed on /debug/pprof. This could leak information about the server. Instead, use `import \"net/http/pprof\"`. See https://www.farsightsecurity.com/blog"
+    },
+    {
+      "key": "go.lang.security.audit.net.use-tls.use-tls|coremain/golang/native/debug.go|16|16",
+      "fingerprint": "f8797a9e37054996",
+      "check_id": "go.lang.security.audit.net.use-tls.use-tls",
+      "path": "coremain/golang/native/debug.go",
+      "start_line": 16,
+      "end_line": 16,
+      "severity": "WARNING",
+      "message": "Found an HTTP server without TLS. Use 'http.ListenAndServeTLS' instead. See https://golang.org/pkg/net/http/#ListenAndServeTLS for more information."
+    },
+    {
+      "key": "go.lang.security.audit.unsafe.use-of-unsafe-block|coremain/golang/native/app.go|21|21",
+      "fingerprint": "5968dff7a600b39e",
+      "check_id": "go.lang.security.audit.unsafe.use-of-unsafe-block",
+      "path": "coremain/golang/native/app.go",
+      "start_line": 21,
+      "end_line": 21,
+      "severity": "WARNING",
+      "message": "Using the unsafe package in Go gives you low-level memory management and many of the strengths of the C language, but also steps around the type safety of Go and can lead to buffer overflows and possi"
+    },
+    {
+      "key": "go.lang.security.audit.unsafe.use-of-unsafe-block|coremain/golang/native/platform/procfs.go|166|166",
+      "fingerprint": "7bc80cf04292e673",
+      "check_id": "go.lang.security.audit.unsafe.use-of-unsafe-block",
+      "path": "coremain/golang/native/platform/procfs.go",
+      "start_line": 166,
+      "end_line": 166,
+      "severity": "WARNING",
+      "message": "Using the unsafe package in Go gives you low-level memory management and many of the strengths of the C language, but also steps around the type safety of Go and can lead to buffer overflows and possi"
+    }
+  ]
+}

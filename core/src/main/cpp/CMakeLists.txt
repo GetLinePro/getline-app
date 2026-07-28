@@ -1,46 +1,25 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.22.1)
 
-# 获取git hash
-
-message(STATUS "CMAKE_CURRENT_SOURCE_DIR= ${CMAKE_CURRENT_SOURCE_DIR}")
 execute_process(
-  COMMAND git submodule foreach git log -1 --format=%H   
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} 
-  OUTPUT_VARIABLE COMMIT_HASH
+  COMMAND git rev-parse --short=7 HEAD
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../foss/golang/clash"
+  OUTPUT_VARIABLE MIHOMO_COMMIT
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE GIT_RESULT
 )
-string(REPLACE "\n" ";" COMMIT_HASH "${COMMIT_HASH}")
-list(GET COMMIT_HASH 1 COMMIT_HASH)
-string (REGEX REPLACE "[\n\t\r]" "" COMMIT_HASH ${COMMIT_HASH})
-string(SUBSTRING ${COMMIT_HASH} 0 7 COMMIT_HASH)
-message(STATUS "git hash= ${COMMIT_HASH}")
+if (NOT GIT_RESULT EQUAL 0 OR MIHOMO_COMMIT STREQUAL "")
+  message(FATAL_ERROR "Unable to determine the pinned Mihomo commit")
+endif ()
 
-# 获取分支名称
-execute_process(
-  COMMAND git submodule foreach git branch -r --contains ${COMMIT_HASH}
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} 
-  OUTPUT_VARIABLE CURRENT_BRANCH
-)
-string(REPLACE "\n" ";" CURRENT_BRANCH "${CURRENT_BRANCH}")
-list(GET CURRENT_BRANCH 1 CURRENT_BRANCH)
-string (REGEX REPLACE "origin/" "" CURRENT_BRANCH ${CURRENT_BRANCH})
-string (REGEX REPLACE "[\n\t\r]" "" CURRENT_BRANCH ${CURRENT_BRANCH})
-#string(SUBSTRING ${CURRENT_BRANCH} 0 8 CURRENT_BRANCH)
-message(STATUS "git current branch = ${CURRENT_BRANCH}")
-
-# 获取生成时间
-string(TIMESTAMP COMPILE_TIME "%y%m%d")
-string (REGEX REPLACE "[\n\t\r]" "" COMPILE_TIME ${COMPILE_TIME})
-string(REGEX REPLACE "\"" "" COMPILE_TIME ${COMPILE_TIME})
-
-# 生成版本信息
-set(GIT_VERSION "${CURRENT_BRANCH}_${COMMIT_HASH}_${COMPILE_TIME}")
+set(GIT_VERSION "mihomo_${MIHOMO_COMMIT}")
 message(STATUS "version info = ${GIT_VERSION}")
 
-# 去除空格
-string(REGEX REPLACE "[ ]+" "" GIT_VERSION "${GIT_VERSION}")
-
-# 保存变量到文件
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/version.h.in ${CMAKE_CURRENT_SOURCE_DIR}/version.h @ONLY)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/version.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/generated/getline_native_version.h"
+  @ONLY
+)
 
 project(clash-bridge C)
 
@@ -66,4 +45,18 @@ include_directories("${GO_SOURCE}")
 link_directories("${GO_OUTPUT_BASE}/${CMAKE_ANDROID_ARCH_ABI}")
 
 add_library(bridge SHARED main.c jni_helper.c bridge_helper.c)
+target_include_directories(
+  bridge BEFORE PRIVATE
+  "${CMAKE_CURRENT_BINARY_DIR}/generated"
+)
+get_filename_component(CORE_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+target_compile_options(
+  bridge PRIVATE
+  "-ffile-prefix-map=${CORE_SOURCE_ROOT}=."
+  "-fdebug-prefix-map=${CORE_SOURCE_ROOT}=."
+  "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=."
+  "-fdebug-prefix-map=${CMAKE_SOURCE_DIR}=."
+  "-ffile-prefix-map=${CMAKE_BINARY_DIR}=."
+  "-fdebug-prefix-map=${CMAKE_BINARY_DIR}=."
+)
 target_link_libraries(bridge log clash)

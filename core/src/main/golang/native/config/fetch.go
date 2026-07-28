@@ -39,6 +39,8 @@ type fetchHeader struct {
 }
 
 func openUrl(ctx context.Context, url string) (io.ReadCloser, fetchHeader, error) {
+	// Keep ClashMetaForAndroid token: subscription backends (e.g. Remnawave) select
+	// Mihomo-compatible payload by User-Agent. Brand only after backend recognizes GetLineVPN.
 	response, err := clashHttp.HttpRequest(ctx, url, http.MethodGet, http.Header{"User-Agent": {"ClashMetaForAndroid/" + app.VersionName()}}, nil)
 
 	if err != nil {
@@ -223,7 +225,7 @@ func FetchAndValid(
 			if pib, uok := provider["path-in-bundle"]; uok {
 				if pib, uok := pib.(string); uok && pib != "" {
 					// actually, we don't need to extract the file here; the core will do it.
-					// however, due to historical reasons, CMFA fetches provider content when loading profile,
+					// however, due to historical reasons, GetLineVPN fetches provider content when loading profile,
 					// so we maintain consistency with the old behavior.
 					if file, err := RB.Open(pib); err == nil {
 						defer file.Close()

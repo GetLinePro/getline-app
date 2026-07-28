@@ -27,8 +27,7 @@ gradle-app.setting
 /core/src/premium/golang/.idea/*
 !/core/src/premium/golang/.idea/codeStyles
 
-# Ignore builtin geofiles
-app/src/main/assets
+# Geodata is a pinned, checksummed release input. Do not ignore it.
 
 # KeyStore
 signing.properties
@@ -64,3 +63,6 @@ google-services.json
 
 # MacOS
 .DS_Store
+
+# Security scan working reports (baselines under security/baselines/ are committed)
+/security/reports/

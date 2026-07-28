@@ -7,7 +7,7 @@ on:
 
 jobs:
   update-dependencies:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -15,17 +15,17 @@ jobs:
       - name: Checkout and Update submodules
         run: git submodule update --init --recursive --remote --force
 
+      - name: Apply Mihomo product patches
+        run: ./scripts/apply-mihomo-patches.sh
+
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: "temurin"
-          java-version: 21
+          java-version: "21.0.10+7.0.LTS"
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
-        with:
-          go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
-          go-version: '1.26'
+        uses: ./.github/actions/setup-pinned-go
 
       - name: Apply Patches
         run: |

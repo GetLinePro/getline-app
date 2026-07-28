@@ -22,6 +22,12 @@
 
 -dontobfuscate
 
+# EncryptedSharedPreferences → Tink references optional annotation packages that
+# are not on the runtime classpath. Suppress missing-class errors in R8.
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
+-dontwarn javax.annotation.concurrent.**
+
 -assumenosideeffects class kotlin.jvm.internal.Intrinsics {
     public static void checkNotNull(...);
     public static void checkExpressionValueIsNotNull(...);

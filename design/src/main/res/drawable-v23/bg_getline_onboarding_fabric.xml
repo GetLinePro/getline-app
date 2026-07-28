@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 23+: sized LayerDrawable items for localized soft blobs. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/getline_brand_background" />
+        </shape>
+    </item>
+
+    <!-- Upper-left cyan wash -->
+    <item
+        android:width="280dp"
+        android:height="280dp"
+        android:gravity="top|start"
+        android:left="-80dp"
+        android:top="-60dp">
+        <shape android:shape="oval">
+            <gradient
+                android:centerColor="#4021DCFF"
+                android:endColor="#0021DCFF"
+                android:gradientRadius="140dp"
+                android:startColor="#6622B8CF"
+                android:type="radial" />
+        </shape>
+    </item>
+
+    <!-- Mid-right green wash -->
+    <item
+        android:width="320dp"
+        android:height="320dp"
+        android:gravity="center|end"
+        android:right="-100dp"
+        android:top="80dp">
+        <shape android:shape="oval">
+            <gradient
+                android:centerColor="#3300F996"
+                android:endColor="#0000F996"
+                android:gradientRadius="160dp"
+                android:startColor="#5522B8CF"
+                android:type="radial" />
+        </shape>
+    </item>
+
+    <!-- Bottom soft cyan -->
+    <item
+        android:width="360dp"
+        android:height="240dp"
+        android:bottom="-80dp"
+        android:gravity="bottom|center_horizontal">
+        <shape android:shape="oval">
+            <gradient
+                android:centerColor="#3321DCFF"
+                android:endColor="#00141517"
+                android:gradientRadius="180dp"
+                android:startColor="#4022B8CF"
+                android:type="radial" />
+        </shape>
+    </item>
+</layer-list>

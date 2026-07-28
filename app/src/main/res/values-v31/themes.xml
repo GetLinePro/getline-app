@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="BootstrapTheme" parent="AppThemeDark">
+        <item name="android:windowBackground">@drawable/bg_splash</item>
+        <item name="android:windowSplashScreenBackground">@color/getline_brand_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_getline_logo</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/getline_brand_background</item>
+    </style>
+</resources>

@@ -1,0 +1,119 @@
+package pro.getline.vpn.service
+
+import android.content.Context
+import android.os.SystemClock
+import pro.getline.vpn.common.log.Log
+import pro.getline.vpn.core.Clash
+import pro.getline.vpn.core.model.*
+import pro.getline.vpn.service.data.Selection
+import pro.getline.vpn.service.data.SelectionDao
+import pro.getline.vpn.service.remote.IClashManager
+import pro.getline.vpn.service.remote.ILogObserver
+import pro.getline.vpn.service.store.ServiceStore
+import pro.getline.vpn.service.util.sendOverrideChanged
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.ReceiveChannel
+
+class ClashManager(private val context: Context) : IClashManager,
+    CoroutineScope by CoroutineScope(Dispatchers.IO) {
+    private val store = ServiceStore(context)
+    private var logReceiver: ReceiveChannel<LogMessage>? = null
+
+    override fun queryTunnelState(): TunnelState {
+        return Clash.queryTunnelState()
+    }
+
+    override fun queryTrafficTotal(): Long {
+        return Clash.queryTrafficTotal()
+    }
+
+    override fun querySessionDurationMs(): Long? {
+        val startedAt = StatusProvider.serviceStartedAtElapsed ?: return null
+        // Monotonic on both ends; a negative result would mean the clock moved
+        // backwards, which it cannot, so clamp rather than show a negative time.
+        return (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
+    }
+
+    override fun queryProxyGroupNames(excludeNotSelectable: Boolean): List<String> {
+        return Clash.queryGroupNames(excludeNotSelectable)
+    }
+
+    override fun queryProxyGroup(name: String, proxySort: ProxySort): ProxyGroup {
+        return Clash.queryGroup(name, proxySort)
+    }
+
+    override fun queryConfiguration(): UiConfiguration {
+        return Clash.queryConfiguration()
+    }
+
+    override fun queryProviders(): ProviderList {
+        return ProviderList(Clash.queryProviders())
+    }
+
+    override fun queryOverride(slot: Clash.OverrideSlot): ConfigurationOverride {
+        return Clash.queryOverride(slot)
+    }
+
+    override fun patchSelector(group: String, name: String): Boolean {
+        return Clash.patchSelector(group, name).also {
+            val current = store.activeProfile ?: return@also
+
+            if (it) {
+                SelectionDao().setSelected(Selection(current, group, name))
+            } else {
+                SelectionDao().removeSelected(current, group)
+            }
+        }
+    }
+
+    override fun patchOverride(slot: Clash.OverrideSlot, configuration: ConfigurationOverride) {
+        Clash.patchOverride(slot, configuration)
+
+        context.sendOverrideChanged()
+    }
+
+    override fun clearOverride(slot: Clash.OverrideSlot) {
+        Clash.clearOverride(slot)
+    }
+
+    override suspend fun healthCheck(group: String) {
+        return Clash.healthCheck(group).await()
+    }
+
+    override suspend fun updateProvider(type: Provider.Type, name: String) {
+        return Clash.updateProvider(type, name).await()
+    }
+
+    override fun setLogObserver(observer: ILogObserver?) {
+        synchronized(this) {
+            logReceiver?.apply {
+                cancel()
+
+                Clash.forceGc()
+            }
+
+            if (observer != null) {
+                logReceiver = Clash.subscribeLogcat().also { c ->
+                    launch {
+                        try {
+                            while (isActive) {
+                                observer.newItem(c.receive())
+                            }
+                        } catch (e: CancellationException) {
+                            // intended behavior
+                            // ignore
+                        } catch (e: Exception) {
+                            Log.w("UI crashed", e)
+                        } finally {
+                            withContext(NonCancellable) {
+                                c.cancel()
+
+                                Clash.forceGc()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

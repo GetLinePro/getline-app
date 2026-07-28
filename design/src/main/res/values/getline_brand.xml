@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Temporary tokens mirrored from the public GetLinePro branding endpoint. -->
+    <color name="getline_brand_primary">#22B8CF</color>
+    <color name="getline_brand_gradient_start">#21DCFF</color>
+    <color name="getline_brand_gradient_end">#00F996</color>
+    <color name="getline_brand_background">#141517</color>
+    <!--
+      Surface must be LIGHTER than background — raised cards catch more light.
+      Was #0F0F0F (darker than bg), which read as holes punched into the screen.
+    -->
+    <color name="getline_brand_surface">#1A1C1F</color>
+    <!-- Text fields sit above surface, so one more step up. -->
+    <color name="getline_onboarding_field_fill">#22252A</color>
+    <!-- Dark ink on cyan primary (~7.7:1). White on #22B8CF is only ~2.4:1. -->
+    <color name="getline_brand_on_primary">#141517</color>
+    <!--
+      Floating shell bar. Near-opaque (~96%): at 80% the server list scrolled
+      underneath stayed legible through it and read as garbage.
+    -->
+    <color name="getline_shell_bar_background">#F51A1C1F</color>
+
+    <!--
+      Hairline separators / card outlines. Neutral white at low alpha, NOT brand
+      cyan: an accent applied to every card stops being an accent. Cyan strokes
+      are reserved for selected/active state only.
+    -->
+    <color name="getline_hairline">#33FFFFFF</color>
+    <color name="getline_hairline_subtle">#1FFFFFFF</color>
+
+    <!--
+      Error on dark product surfaces. #B00020 (light-theme error) is only 2.5:1
+      here — below the 4.5:1 minimum. This is 6.6:1 on background.
+    -->
+    <color name="getline_error">#FF6B6B</color>
+
+    <!--
+      Status chip fills: the semantic colour at low alpha, so the chip reads as
+      tinted surface rather than as a second accent competing with the ring.
+    -->
+    <color name="getline_pill_positive">#2622B8CF</color>
+    <color name="getline_pill_negative">#26FF6B6B</color>
+
+    <!--
+      Semantic text/accent tokens for dark GetLine product surfaces only.
+      Use via Widget.GetLine.Text.* / product layouts — not shared TextAppearance.GetLine.*
+      (those are registered on light app theme and must stay theme-neutral).
+    -->
+    <color name="getline_text_primary">#F2F5F7</color>
+    <color name="getline_text_secondary">#B8C0C8</color>
+    <color name="getline_text_disabled">#6B7380</color>
+    <color name="getline_accent">@color/getline_brand_primary</color>
+
+    <!-- Compat aliases for product dark surfaces. -->
+    <color name="getline_brand_text">@color/getline_text_primary</color>
+    <color name="getline_brand_text_secondary">@color/getline_text_secondary</color>
+
+    <integer name="getline_brand_card_opacity_percent">85</integer>
+    <dimen name="getline_brand_blur_radius">4dp</dimen>
+</resources>

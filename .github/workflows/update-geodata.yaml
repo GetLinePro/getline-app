@@ -1,0 +1,35 @@
+name: Update pinned geodata
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-geodata:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Update and verify pinned geodata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./scripts/update-geodata.sh
+
+      - name: Create geodata update pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: "build: update pinned geodata"
+          branch: update-geodata
+          delete-branch: true
+          title: "build: update pinned geodata"
+          body: |
+            Updates the vendored MetaCubeX geodata files and their pinned
+            release metadata. The update script verifies every SHA-256 before
+            changing the working tree.
+          add-paths: |
+            app/src/main/assets/
+            gradle/geodata.properties

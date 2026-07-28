@@ -1,5 +1,5 @@
-#ifndef VERSION_H_IN
-#define VERSION_H_IN
+#ifndef GETLINE_NATIVE_VERSION_H
+#define GETLINE_NATIVE_VERSION_H
  
 /**
  * 当前编译core版本号

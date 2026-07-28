@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GetLine Sign-in</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem;
+      color: #e8e8e8;
+      background: #1a1b1e;
+    }
+  </style>
+</head>
+<body>
+  <p>Starting Telegram sign-in…</p>
+  <script>
+    // Same-origin trampoline only. No credentials are stored here.
+    // Deploy at a path that is NOT "/" so Auth Tab completion (host + path "/")
+    // does not match the initial load. Example: /android-auth/telegram
+    //
+    // Requires static hosting that does not rewrite this path to the SPA.
+    (async () => {
+      try {
+        const returnTo = encodeURIComponent(window.location.origin + "/");
+        const response = await fetch(
+          "/api/auth/telegram-oidc/start?intent=login&return_to=" + returnTo,
+          {
+            headers: { Accept: "application/json" },
+            credentials: "same-origin",
+          }
+        );
+        if (!response.ok) {
+          throw new Error("start failed");
+        }
+        const payload = await response.json();
+        if (!payload || !payload.auth_url) {
+          throw new Error("auth_url missing");
+        }
+        window.location.replace(payload.auth_url);
+      } catch (e) {
+        document.body.textContent =
+          "Could not start Telegram sign-in. Close this tab and retry in the app.";
+      }
+    })();
+  </script>
+</body>
+</html>

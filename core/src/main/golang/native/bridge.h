@@ -5,7 +5,7 @@
 #include <malloc.h>
 #include <android/log.h>
 
-#define TAG "ClashMetaForAndroid"
+#define TAG "GetLineVPN"
 
 typedef const char *c_string;
 

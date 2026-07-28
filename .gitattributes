@@ -2,3 +2,7 @@
 
 *.bat text eol=crlf
 *.jar binary
+app/src/main/assets/*.7z binary
+app/src/main/assets/*.dat binary
+app/src/main/assets/*.metadb binary
+app/src/main/assets/*.mmdb binary

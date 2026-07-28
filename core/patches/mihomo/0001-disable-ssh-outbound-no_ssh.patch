@@ -1,0 +1,123 @@
+From: GetLine maintainers
+Subject: [PATCH] disable SSH outbound under no_ssh (GetLine security gate)
+
+Parent-tracked patch for the clash-foss (Mihomo) submodule.
+Applied after `git submodule update` by scripts/apply-mihomo-patches.sh
+(and core Gradle Golang build). Do not rely on a dirty submodule working tree.
+
+Upstream gitlink remains MetaCubeX/mihomo @ recorded SHA; this product
+change is intentionally not pushed to upstream.
+
+Applies with: git -C core/src/foss/golang/clash apply -p1 < this file
+(or via scripts/apply-mihomo-patches.sh)
+
+---
+diff --git a/adapter/outbound/ssh.go b/adapter/outbound/ssh.go
+index 601dfc84..99a4e4ea 100644
+--- a/adapter/outbound/ssh.go
++++ b/adapter/outbound/ssh.go
+@@ -1,3 +1,5 @@
++//go:build !no_ssh
++
+ package outbound
+ 
+ import (
+diff --git a/adapter/outbound/ssh_stub.go b/adapter/outbound/ssh_stub.go
+new file mode 100644
+index 00000000..e6ddcadb
+--- /dev/null
++++ b/adapter/outbound/ssh_stub.go
+@@ -0,0 +1,28 @@
++//go:build no_ssh
++
++package outbound
++
++import "fmt"
++
++// Ssh is a stub when the no_ssh build tag is set.
++// GetLine does not ship SSH outbound as a product path.
++type Ssh struct {
++	*Base
++}
++
++type SshOption struct {
++	BasicOption
++	Name                 string   `proxy:"name"`
++	Server               string   `proxy:"server"`
++	Port                 int      `proxy:"port"`
++	UserName             string   `proxy:"username"`
++	Password             string   `proxy:"password,omitempty"`
++	PrivateKey           string   `proxy:"private-key,omitempty"`
++	PrivateKeyPassphrase string   `proxy:"private-key-passphrase,omitempty"`
++	HostKey              []string `proxy:"host-key,omitempty"`
++	HostKeyAlgorithms    []string `proxy:"host-key-algorithms,omitempty"`
++}
++
++func NewSsh(option SshOption) (*Ssh, error) {
++	return nil, fmt.Errorf("ssh outbound is disabled (build tag no_ssh; not a supported GetLine product path)")
++}
+diff --git a/adapter/outbound/ssh_stub_test.go b/adapter/outbound/ssh_stub_test.go
+new file mode 100644
+index 00000000..3619d949
+--- /dev/null
++++ b/adapter/outbound/ssh_stub_test.go
+@@ -0,0 +1,23 @@
++//go:build no_ssh
++
++package outbound
++
++import (
++	"strings"
++	"testing"
++)
++
++func TestNewSshDisabled(t *testing.T) {
++	_, err := NewSsh(SshOption{
++		Name:     "ssh-disabled",
++		Server:   "127.0.0.1",
++		Port:     22,
++		UserName: "nobody",
++	})
++	if err == nil {
++		t.Fatal("expected NewSsh to fail under no_ssh build tag")
++	}
++	if !strings.Contains(err.Error(), "no_ssh") {
++		t.Fatalf("expected no_ssh in error, got: %v", err)
++	}
++}
+diff --git a/constant/features/no_ssh.go b/constant/features/no_ssh.go
+new file mode 100644
+index 00000000..9cbe3f3e
+--- /dev/null
++++ b/constant/features/no_ssh.go
+@@ -0,0 +1,5 @@
++//go:build no_ssh
++
++package features
++
++const NoSSH = true
+diff --git a/constant/features/no_ssh_stub.go b/constant/features/no_ssh_stub.go
+new file mode 100644
+index 00000000..eee1496b
+--- /dev/null
++++ b/constant/features/no_ssh_stub.go
+@@ -0,0 +1,5 @@
++//go:build !no_ssh
++
++package features
++
++const NoSSH = false
+diff --git a/constant/features/tags.go b/constant/features/tags.go
+index e53a9b83..6d0c075a 100644
+--- a/constant/features/tags.go
++++ b/constant/features/tags.go
+@@ -13,6 +13,9 @@ func Tags() (tags []string) {
+ 	if NoTailscale {
+ 		tags = append(tags, "no_tailscale")
+ 	}
++	if NoSSH {
++		tags = append(tags, "no_ssh")
++	}
+ 	if WithGVisor {
+ 		tags = append(tags, "with_gvisor")
+ 	}

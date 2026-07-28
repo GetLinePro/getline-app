@@ -14,11 +14,13 @@ val golangSource = file("src/main/golang/native")
 golang {
     sourceSets {
         create("alpha") {
-            tags.set(listOf("foss","with_gvisor","cmfa"))
+            // no_ssh: GetLine does not ship SSH outbound (security gate).
+            tags.set(listOf("foss", "with_gvisor", "cmfa", "no_ssh"))
             srcDir.set(file("src/foss/golang"))
         }
         create("meta") {
-            tags.set(listOf("foss","with_gvisor","cmfa"))
+            // no_ssh: GetLine does not ship SSH outbound (security gate).
+            tags.set(listOf("foss", "with_gvisor", "cmfa", "no_ssh"))
             srcDir.set(file("src/foss/golang"))
         }
         all {
@@ -44,6 +46,7 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 }
@@ -56,9 +59,26 @@ dependencies {
     implementation(libs.kotlin.serialization.json)
 }
 
+// Parent-tracked Mihomo product patches (e.g. no_ssh). Required after clean
+// submodule checkout; do not rely on a dirty clash working tree.
+// Always run: submodule update --force can leave untracked stub markers while
+// resetting tracked sources; a single-file outputs check would stay UP-TO-DATE
+// and skip recovery (duplicate SSH symbols at Go compile).
+val applyMihomoPatches = tasks.register<Exec>("applyMihomoPatches") {
+    group = "build"
+    description = "Apply core/patches/mihomo/*.patch onto clash-foss submodule"
+    workingDir = rootProject.projectDir
+    commandLine("bash", "scripts/apply-mihomo-patches.sh")
+    inputs.dir(layout.projectDirectory.dir("patches/mihomo"))
+    inputs.file(rootProject.file("scripts/apply-mihomo-patches.sh"))
+    outputs.upToDateWhen { false }
+}
+
 afterEvaluate {
     tasks.withType(GolangBuildTask::class.java).forEach {
+        it.dependsOn(applyMihomoPatches)
         it.inputs.dir(golangSource)
+        it.environment("GOFLAGS", "-buildvcs=false")
     }
 }
 

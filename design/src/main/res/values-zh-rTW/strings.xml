@@ -11,9 +11,8 @@
     <string name="bypass_private_network">略過私有網路</string>
     <string name="bypass_private_network_summary">略過私有網路位址</string>
     <string name="cancel">取消</string>
-    <string name="clash_logcat">Clash Logcat</string>
+    <string name="clash_logcat">VPN 日誌</string>
     <string name="create_profile">建立設定檔</string>
-    <string name="dark_mode">深色模式</string>
     <string name="default_">預設</string>
     <string name="delay">延遲</string>
     <string name="delete">刪除</string>
@@ -43,7 +42,7 @@
     <string name="import_from_qr">從二維碼導入</string>
     <string name="interface_">介面</string>
     <string name="invalid_url">無效 URL</string>
-    <string name="logcat">Logcat</string>
+    <string name="logcat">日誌</string>
     <string name="logs">日誌</string>
     <string name="mode">模式</string>
     <string name="name">名稱</string>
@@ -64,7 +63,7 @@
     <string name="settings">設定</string>
     <string name="show_traffic">顯示流量</string>
     <string name="show_traffic_summary">在通知中自動重新整理流量</string>
-    <string name="allow_clash_auto_restart">允許 Clash 自動重新啟動</string>
+    <string name="allow_clash_auto_restart">允許 VPN 自動重新啟動</string>
     <string name="auto_restart">自動重新啟動</string>
     <string name="stopped">已停止</string>
     <string name="help">協助</string>
@@ -72,7 +71,7 @@
     <string name="update">更新</string>
     <string name="url">URL</string>
     <string name="vpn_service_options">VpnService 選項</string>
-    <string name="options_unavailable">選項在 Clash 執行時不可用</string>
+    <string name="options_unavailable">VPN 執行時選項不可用</string>
     <string name="search">搜尋</string>
     <string name="system_apps">系統應用</string>
     <string name="update_time">更新時間</string>
@@ -93,7 +92,7 @@
     <string name="github_issues">Github Issues</string>
     <string name="tips_properties"><![CDATA[僅接受 <strong>Clash 設定檔</strong> (包含<strong>Proxy</strong> /<strong>規則</strong>)]]></string>
     <string name="loading">載入中</string>
-    <string name="tips_help"><![CDATA[Clash Meta for Android 是一個<strong>免費應用程式</strong>並且我們<strong>不</strong>為其提供任何服務, <strong>請務必不要回報非應用程式自身引起的問題</strong>]]></string>
+    <string name="tips_help"><![CDATA[GetLine VPN 說明與文件。訂閱與帳戶問題請使用支援管道或開啟 GetLine 帳戶。]]></string>
     <string name="donate">捐助</string>
     <string name="allow_all_apps">允許所有應用</string>
     <string name="allow_selected_apps">僅允許已選擇的應用</string>
@@ -106,9 +105,6 @@
     <string name="select_invert">反選</string>
     <string name="select_none">清除</string>
     <string name="app">應用</string>
-    <string name="follow_system_android_10">系統預設 (Android 10+)</string>
-    <string name="always_dark">深色</string>
-    <string name="always_light">淺色</string>
     <string name="service">服務</string>
     <string name="accept_http_content">僅接受 http(s) 和 content 類型</string>
     <string name="at_least_15_minutes">至少 15 分鐘</string>
@@ -186,7 +182,7 @@
     <string name="initializing">正在初始化</string>
     <string name="verifying">正在校驗</string>
     <string name="force_enable">強制啟用</string>
-    <string name="document">文件</string>
+    <string name="document">支援</string>
     <string name="clash_wiki">Clash Wiki</string>
     <string name="invalid_file_name">無效的檔案名稱</string>
     <string name="reset_override_settings">重置覆寫設定</string>
@@ -209,20 +205,20 @@
     <string name="application_crashed">應用程式崩潰</string>
     <string name="application_broken_tips">應用程式缺少必要的執行元件，這通常是由於下載了不完整的 Apk 而導致。</string>
     <string name="reinstall">重新安裝</string>
-    <string name="github_releases">Github Releases</string>
+    <string name="github_releases">GetLine 原始碼</string>
     <string name="unable_to_start_vpn">無法啟動 VPN 元件</string>
     <string name="version_updated">應用已更新</string>
     <string name="version_updated_tips">設定已被清除，舊版設定檔需要再次儲存。</string>
     <string name="active_unsaved_tips">設定檔需要在啟用之前儲存</string>
     <string name="mode_switch_tips">僅在本次工作階段中有效</string>
     <string name="import_">匯入</string>
-    <string name="sources">原始碼</string>
-    <string name="clash_meta_core">Clash Meta 核心</string>
+    <string name="sources">開放原始碼</string>
+    <string name="clash_meta_core">Mihomo 核心（上游）</string>
     <string name="name_server_policy">Name Server 政策</string>
     <string name="block_loopback">攔截本地回送</string>
     <string name="block_loopback_summary">攔截本地回送連結</string>
-    <string name="clash_meta_for_android">Clash Meta for Android</string>
-    <string name="clash_meta_wiki">Clash Meta Wiki</string>
+    <string name="clash_meta_for_android">Clash Meta for Android（上游）</string>
+    <string name="clash_meta_wiki">Mihomo 文件（上游）</string>
     <string name="meta_features">Meta Features</string>
     <string name="unified_delay">Unified Delay</string>
     <string name="geodata_mode">Geodata Mode</string>
@@ -254,11 +250,19 @@
     <string name="toast_profile_updated_complete">Update profile %s completed</string>
     <string name="toast_profile_updated_failed">Update profile %1$s failed: %2$s</string>
     <string name="external_control_activity">External Control</string>
-    <string name="external_control_started">Clash.Meta service started</string>
-    <string name="external_control_stopped">Clash.Meta service stopped</string>
+    <string name="external_control_started">VPN 服務已啟動</string>
+    <string name="external_control_stopped">VPN 服務已停止</string>
     <string name="force_dns_mapping">Force DNS Mapping</string>
     <string name="parse_pure_ip">Parse Pure IP</string>
     <string name="override_destination">Override Destination</string>
     <string name="import_from_qr_no_permission">相機權限受限，請前往設定開啟。</string>
     <string name="import_from_qr_exception">發生系統未知異常，操作失敗。</string>
+
+    <string name="about_based_on_clash_meta">基於 CMFA 與 Mihomo</string>
+    <string name="about_license_gplv3">以 GNU GPLv3 授權</string>
+    <string name="sources_open_failed">找不到瀏覽器。原始碼網址已複製到剪貼簿。</string>
+    <string name="support">支援</string>
+    <string name="privacy_policy">隱私權政策</string>
+    <string name="getline_account">GetLine 帳戶</string>
+    <string name="about_upstream_ack">上游：MetaCubeX Clash Meta for Android 與 Mihomo</string>
 </resources>

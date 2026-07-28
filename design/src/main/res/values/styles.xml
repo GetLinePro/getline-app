@@ -7,4 +7,204 @@
         <item name="colorControlNormal">@color/color_error</item>
         <item name="android:textColor">@color/color_error</item>
     </style>
+
+    <!--
+      Shared GetLine type scale (registered on light + dark app themes).
+      Font only — do NOT pin product dark surface colors here.
+      Shared CMFA surfaces (main cards, menus) inherit theme textColorPrimary /
+      textColorSecondary so light mode stays readable.
+      Branded dark product screens use Widget.GetLine.Text.* instead.
+    -->
+    <style name="TextAppearance.GetLine.Headline6" parent="TextAppearance.MaterialComponents.Headline6">
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+    </style>
+
+    <style name="TextAppearance.GetLine.Subtitle1" parent="TextAppearance.MaterialComponents.Subtitle1">
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+    </style>
+
+    <style name="TextAppearance.GetLine.Body1" parent="TextAppearance.MaterialComponents.Body1">
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+    </style>
+
+    <style name="TextAppearance.GetLine.Body2" parent="TextAppearance.MaterialComponents.Body2">
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+    </style>
+
+    <style name="TextAppearance.GetLine.Caption" parent="TextAppearance.MaterialComponents.Caption">
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+    </style>
+
+    <style name="TextAppearance.GetLine.Button" parent="TextAppearance.MaterialComponents.Button">
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+    </style>
+
+    <!-- Product dark-surface type (onboarding title legacy name, home status size). -->
+    <style name="TextAppearance.GetLine.Title" parent="TextAppearance.MaterialComponents.Headline4">
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.02</item>
+    </style>
+
+    <style name="TextAppearance.GetLine.OnboardingTitle" parent="TextAppearance.GetLine.Title" />
+
+    <style name="TextAppearance.GetLine.BodySecondary" parent="TextAppearance.GetLine.Body1">
+        <item name="android:lineSpacingMultiplier">1.2</item>
+    </style>
+
+    <style name="TextAppearance.GetLine.OnboardingValue" parent="TextAppearance.GetLine.BodySecondary" />
+
+    <style name="TextAppearance.GetLine.HomeStatus" parent="TextAppearance.MaterialComponents.Headline5">
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <!--
+      Product dark-surface text widgets (home / onboarding / state only).
+      Pin light semantic colors here — not in shared TextAppearance.GetLine.*.
+    -->
+    <style name="Widget.GetLine" parent="@android:style/Widget" />
+
+    <style name="Widget.GetLine.Text" parent="Widget.GetLine">
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+        <item name="android:textColor">@color/getline_text_primary</item>
+    </style>
+
+    <style name="Widget.GetLine.Text.Title" parent="Widget.GetLine.Text">
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Title</item>
+        <item name="android:textColor">@color/getline_text_primary</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">28sp</item>
+    </style>
+
+    <style name="Widget.GetLine.Text.Headline" parent="Widget.GetLine.Text">
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Headline6</item>
+        <item name="android:textColor">@color/getline_text_primary</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.GetLine.Text.Primary" parent="Widget.GetLine.Text">
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Body1</item>
+        <item name="android:textColor">@color/getline_text_primary</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="Widget.GetLine.Text.Secondary" parent="Widget.GetLine.Text">
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.BodySecondary</item>
+        <item name="android:textColor">@color/getline_text_secondary</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:lineSpacingMultiplier">1.2</item>
+    </style>
+
+    <style name="Widget.GetLine.Text.Caption" parent="Widget.GetLine.Text">
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Caption</item>
+        <item name="android:textColor">@color/getline_text_secondary</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <!-- A single headline figure (days left). Louder than any label near it. -->
+    <style name="Widget.GetLine.Text.Metric" parent="Widget.GetLine.Text">
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Headline6</item>
+        <item name="android:textColor">@color/getline_text_primary</item>
+        <item name="android:textSize">32sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.GetLine.Text.Subtitle" parent="Widget.GetLine.Text">
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Subtitle1</item>
+        <item name="android:textColor">@color/getline_text_primary</item>
+        <item name="android:textSize">17sp</item>
+    </style>
+
+    <style name="Widget.GetLine.Text.Location" parent="Widget.GetLine.Text">
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Subtitle1</item>
+        <item name="android:textColor">@color/getline_text_primary</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.GetLine.Text.Status" parent="Widget.GetLine.Text">
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.HomeStatus</item>
+        <item name="android:textColor">@color/getline_text_secondary</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- Onboarding / product dark-surface buttons (not shared main UI). -->
+    <style name="Widget.GetLine.Onboarding.PrimaryButton" parent="Widget.MaterialComponents.Button">
+        <item name="android:minHeight">@dimen/get_line_onboarding_button_min_height</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Button</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="backgroundTint">@color/getline_brand_primary</item>
+        <item name="android:textColor">@color/getline_brand_on_primary</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="elevation">0dp</item>
+    </style>
+
+    <!--
+      Secondary is deliberately NOT cyan-outlined: only the filled primary button
+      carries the accent, so one action per screen reads as the main one.
+    -->
+    <style name="Widget.GetLine.Onboarding.SecondaryButton" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="android:minHeight">@dimen/get_line_onboarding_button_min_height</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Button</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="strokeColor">@color/getline_hairline</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="android:textColor">@color/getline_text_primary</item>
+        <item name="cornerRadius">12dp</item>
+        <item name="rippleColor">@color/getline_brand_primary</item>
+    </style>
+
+    <style name="Widget.GetLine.Onboarding.AdvancedButton" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="android:minHeight">40dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Caption</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/getline_text_secondary</item>
+        <item name="rippleColor">@color/getline_brand_primary</item>
+    </style>
+
+    <!--
+      Calm text-only logout: not a filled destructive pill.
+      Uses the dark-surface error token — color_error (#B00020) is only 2.5:1 here.
+    -->
+    <style name="Widget.GetLine.LogoutTextButton" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Button</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/getline_error</item>
+        <item name="rippleColor">@color/getline_error</item>
+    </style>
+
+    <style name="Widget.GetLine.Onboarding.TextInput" parent="Widget.MaterialComponents.TextInputLayout.FilledBox">
+        <item name="boxBackgroundColor">@color/getline_onboarding_field_fill</item>
+        <item name="boxStrokeColor">@color/getline_brand_primary</item>
+        <item name="boxStrokeWidth">0dp</item>
+        <item name="boxStrokeWidthFocused">2dp</item>
+        <item name="hintTextColor">@color/getline_brand_primary</item>
+        <item name="android:textColorHint">@color/getline_text_secondary</item>
+        <item name="boxCornerRadiusTopStart">12dp</item>
+        <item name="boxCornerRadiusTopEnd">12dp</item>
+        <item name="boxCornerRadiusBottomStart">12dp</item>
+        <item name="boxCornerRadiusBottomEnd">12dp</item>
+    </style>
 </resources>

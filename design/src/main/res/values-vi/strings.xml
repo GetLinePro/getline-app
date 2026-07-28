@@ -11,13 +11,9 @@
     <string name="tun_stack_mixed">Mixed</string>
     <string name="tun_stack_mode">Chế độ xếp chồng dữ liệu</string>
     <string name="tun_stack_system">Hệ thống</string>
-    <string name="application_name_alpha">Clash Meta</string>
-    <string name="application_name_meta">Clash Meta</string>
-    <string name="clash_meta_core">Clash Meta Core</string>
-    <string name="clash_meta_for_android">Clash Meta</string>
-    <string name="clash_meta_wiki">Clash Meta Wiki</string>
-    <string name="launch_name_alpha">Clash Meta</string>
-    <string name="launch_name_meta">Clash Meta</string>
+    <string name="clash_meta_core">Nhân Mihomo (upstream)</string>
+    <string name="clash_meta_for_android">Clash Meta for Android (upstream)</string>
+    <string name="clash_meta_wiki">Wiki Mihomo (upstream)</string>
     <string name="_new">Mới</string>
     <string name="about">Thông tin</string>
     <string name="accept_http_content">Chỉ chấp nhận http(s)</string>
@@ -39,11 +35,9 @@
     <string name="allow_all_apps">Cho phép tất cả các ứng dụng</string>
     <string name="allow_bypass">Cho phép bỏ qua</string>
     <string name="allow_bypass_summary">Cho phép tất cả các ứng dụng bỏ qua kết nối VPN này</string>
-    <string name="allow_clash_auto_restart">Cho phép Clash tự khởi động lại</string>
+    <string name="allow_clash_auto_restart">Cho phép VPN tự khởi động lại</string>
     <string name="allow_lan">Cho phép mạng LAN</string>
     <string name="allow_selected_apps">Cho phép các ứng dụng đã chọn</string>
-    <string name="always_dark">Luôn tối</string>
-    <string name="always_light">Luôn sáng</string>
     <string name="app">Ứng dụng</string>
     <string name="append_system_dns">Nối hệ thống DNS</string>
     <string name="application_broken">Ứng dụng bị lỗi</string>
@@ -63,12 +57,11 @@
     <string name="bypass_private_network">Bỏ qua mạng riêng</string>
     <string name="bypass_private_network_summary">Bỏ qua các địa chỉ mạng riêng</string>
     <string name="cancel">Huỷ bỏ</string>
-    <string name="clash_logcat">Nhật ký Clash</string>
+    <string name="clash_logcat">Nhật ký VPN</string>
     <string name="close">Đóng</string>
     <string name="compatible">Tương thích</string>
     <string name="copied">Đã sao chép</string>
     <string name="create_profile">Tạo cấu hình</string>
-    <string name="dark_mode">Chế độ tối</string>
     <string name="debug">Gỡ lỗi</string>
     <string name="default_">Mặc định</string>
     <string name="default_name_server">Máy chủ định danh mặc định</string>
@@ -84,7 +77,7 @@
     <string name="dns">DNS</string>
     <string name="dns_hijacking">Định tuyến qua DNS</string>
     <string name="dns_hijacking_summary">Xử lý tất cả gói DNS</string>
-    <string name="document">Tài liệu</string>
+    <string name="document">Hỗ trợ</string>
     <string name="domain_fallback">Dự phòng miền</string>
     <string name="donate">Quyên góp</string>
     <string name="dont_modify">Chưa sửa đổi</string>
@@ -109,7 +102,6 @@
     <string name="file_name">Tên tệp</string>
     <string name="files">Tệp</string>
     <string name="filter">Bộ lọc</string>
-    <string name="follow_system_android_10">Theo hệ thống (Android 10+)</string>
     <string name="force_enable">Buộc bật</string>
     <string name="format_days_ago">%d ngày trước</string>
     <string name="format_elements">%d elements</string>
@@ -131,7 +123,7 @@
     <string name="geoip_fallback">Dự phòng GeoIP</string>
     <string name="geoip_fallback_code">Mã dự phòng GeoIP</string>
     <string name="github_issues">Sự cố trên Github</string>
-    <string name="github_releases">Bản phát hành trên Github</string>
+    <string name="github_releases">Mã nguồn GetLine</string>
     <string name="global_mode">Chế độ toàn cầu</string>
     <string name="help">Trợ giúp</string>
     <string name="history">Lịch sử</string>
@@ -174,7 +166,7 @@
     <string name="not_selectable">Không thể chọn</string>
     <string name="not_selected">Trống. Nhấn vào để thêm</string>
     <string name="ok">OK</string>
-    <string name="options_unavailable">Tùy chọn không khả dụng cho đến khi Clash ngắt kết nối</string>
+    <string name="options_unavailable">Tùy chọn không khả dụng cho đến khi VPN ngắt kết nối</string>
     <string name="override">Cài đặt thêm</string>
     <string name="package_name">Tên gói</string>
     <string name="profile">Cấu hình</string>
@@ -221,14 +213,14 @@
     <string name="single">Đơn</string>
     <string name="socks_port">Cổng Socks</string>
     <string name="sort">Sắp xếp theo</string>
-    <string name="sources">Nguồn</string>
+    <string name="sources">Mã nguồn mở</string>
     <string name="stopped">Đã ngắt kết nối</string>
     <string name="strategy">Strategy</string>
     <string name="system_apps">Ứng dụng hệ thống</string>
     <string name="system_proxy">Proxy hệ thống</string>
     <string name="system_proxy_summary">Đính kèm proxy,http vào hệ thống Vpn</string>
     <string name="tap_to_start">Chạm để kết nối</string>
-    <string name="tips_help">Clash Meta là một phần mềm miễn phí và chúng tôi KHÔNG cung cấp bất kỳ dịch vụ trả phí nào cho nó</string>
+    <string name="tips_help">Trợ giúp và tài liệu GetLine VPN. Với vấn đề đăng ký và tài khoản, hãy dùng Hỗ trợ hoặc mở tài khoản GetLine.</string>
     <string name="tips_properties">Chỉ chấp nhận cấu hình Clash bao gồm Proxy và Quy tắc</string>
     <string name="tproxy_port">Cổng TProxy</string>
     <string name="unable_to_start_vpn">Không thể khởi động thành phần VPN</string>
@@ -250,4 +242,12 @@
     <string name="import_from_qr">Nhập từ Mã QR</string>
     <string name="import_from_qr_no_permission">Quyền truy cập camera bị hạn chế. Vui lòng bật trong Cài đặt.</string>
     <string name="import_from_qr_exception">Đã xảy ra ngoại lệ hệ thống không xử lý được.</string>
+
+    <string name="about_based_on_clash_meta">Dựa trên CMFA và Mihomo</string>
+    <string name="about_license_gplv3">Giấy phép GNU GPLv3</string>
+    <string name="sources_open_failed">Không tìm thấy trình duyệt. URL nguồn đã được sao chép.</string>
+    <string name="support">Hỗ trợ</string>
+    <string name="privacy_policy">Chính sách quyền riêng tư</string>
+    <string name="getline_account">Tài khoản GetLine</string>
+    <string name="about_upstream_ack">Upstream: MetaCubeX Clash Meta for Android và Mihomo</string>
 </resources>

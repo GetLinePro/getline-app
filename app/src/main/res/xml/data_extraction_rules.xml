@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!-- Cloud backup (Android 12+). Keep parity with full_backup_content.xml. -->
+    <cloud-backup>
+        <include
+            domain="sharedpref"
+            path="." />
+        <exclude
+            domain="sharedpref"
+            path="getline_native_session.xml" />
+        <exclude
+            domain="sharedpref"
+            path="getline_native_session_fallback.xml" />
+        <include
+            domain="database"
+            path="." />
+        <include
+            domain="file"
+            path="imported" />
+        <include
+            domain="file"
+            path="pending" />
+        <include
+            domain="file"
+            path="clash/override.json" />
+    </cloud-backup>
+
+    <!-- Device-to-device transfer ignores legacy fullBackupContent include/exclude. -->
+    <device-transfer>
+        <include
+            domain="sharedpref"
+            path="." />
+        <exclude
+            domain="sharedpref"
+            path="getline_native_session.xml" />
+        <exclude
+            domain="sharedpref"
+            path="getline_native_session_fallback.xml" />
+        <include
+            domain="database"
+            path="." />
+        <include
+            domain="file"
+            path="imported" />
+        <include
+            domain="file"
+            path="pending" />
+        <include
+            domain="file"
+            path="clash/override.json" />
+    </device-transfer>
+</data-extraction-rules>

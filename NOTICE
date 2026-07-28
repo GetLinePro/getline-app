@@ -1,3 +1,17 @@
+GetLine VPN
+==========================================================================
+
+GetLine VPN is a modified fork of Clash Meta for Android (CMFA).
+
+  This project:  https://github.com/momai/getline-app
+  Upstream CMFA: https://github.com/MetaCubeX/ClashMetaForAndroid
+  Upstream core: https://github.com/MetaCubeX/mihomo
+
+Licensed under the GNU General Public License, version 3 (see LICENSE).
+The files below retain the original third-party license notices for
+embedded and dependent components. Do not remove this NOTICE or the
+upstream acknowledgements when redistributing.
+
 3th-party software licenses
 
  * Clash

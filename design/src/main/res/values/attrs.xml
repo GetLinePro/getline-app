@@ -18,6 +18,7 @@
         <attr name="text" />
         <attr name="subtext" />
         <attr name="icon" />
+        <attr name="contentColor" format="color" />
     </declare-styleable>
 
     <declare-styleable name="LargeActionLabel">

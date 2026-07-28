@@ -14,7 +14,7 @@
         <service
             android:name=".ClashService"
             android:exported="false"
-            android:label="@string/clash_meta_for_android"
+            android:label="@string/getline_service_name"
             android:process=":background"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
@@ -23,7 +23,7 @@
         <service
             android:name=".TunService"
             android:exported="false"
-            android:label="@string/clash_meta_for_android"
+            android:label="@string/getline_service_name"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:process=":background"
             android:foregroundServiceType="specialUse">
@@ -81,7 +81,7 @@
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
             <intent-filter>
-                <action android:name="{applicationId}.intent.action.PROFILE_REQUEST_UPDATE" />
+                <action android:name="${applicationId}.intent.action.PROFILE_REQUEST_UPDATE" />
                 <data android:scheme="uuid" />
             </intent-filter>
         </receiver>

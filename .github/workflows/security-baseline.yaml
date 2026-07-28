@@ -1,0 +1,62 @@
+name: Security baseline
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sca-osv:
+    name: SCA (OSV-Scanner)
+    runs-on: ubuntu-24.04
+    # Non-blocking: surface findings without failing the PR check suite.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run OSV-Scanner (baseline-aware, non-blocking)
+        run: ./scripts/security/run-sca.sh
+
+      - name: Upload SCA raw + aggregated reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-sca-osv
+          path: |
+            security/reports/osv-raw.json
+            security/reports/osv-android-core-raw.json
+            security/reports/osv-summary.json
+            security/reports/osv-aggregated.json
+            security/reports/osv-aggregated.md
+            security/reports/osv-android-core.json
+            security/reports/osv-android-core.md
+            security/reports/osv-core-scan-aggregated.json
+            security/reports/osv-core-scan-aggregated.md
+            security/reports/osv-core-scan-android-core.json
+            security/reports/osv-core-scan-android-core.md
+          if-no-files-found: warn
+
+  sast-semgrep:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run Semgrep (baseline-aware, non-blocking)
+        run: ./scripts/security/run-sast.sh
+
+      - name: Upload SAST raw + summary reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-sast-semgrep
+          path: |
+            security/reports/semgrep-raw.json
+            security/reports/semgrep-summary.json
+          if-no-files-found: warn

@@ -1,11 +1,16 @@
-Clash.Meta 的 Android 图形界面。
+GetLine VPN 是 GetLine 服务的官方 Android 客户端。
 
-<h3>功能</h3>
+使用您的 GetLine 订阅连接，选择服务器，并在简洁的主页上管理 VPN。高级设置仍面向进阶用户开放。
+
+<h3>功能亮点</h3>
 <ul>
-<li>本地 HTTP/HTTPS/SOCKS 服务器</li>
-<li>支持 VMess, Shadowsocks, Trojan, Snell 协议远程连接</li>
-<li>内置 DNS 服务器，旨在最小化 DNS 污染攻击影响，支持 DoH/DoT 上游和 fake IP</li>
-<li>基于规则根据域名，GEOIP, IPCIDR 或进程转发数据包到不同节点</li>
-<li>远程分组允许用户实现强大的规则。支持自动回退，负载均衡或基于延迟自动选择节点</li>
-<li>远程提供者，允许用户远程获取节点列表而不是在配置中硬编码</li>
+<li>导入 GetLine 订阅链接（或二维码）；可通过网页柜管理账户</li>
+<li>一键连接与断开</li>
+<li>订阅更新与服务器选择</li>
+<li>基于 Mihomo 内核的本地 VPN</li>
+<li>基于 Clash Meta for Android（CMFA）的 GPLv3 开源分支</li>
 </ul>
+
+<p>支持：https://t.me/GetLinePro<br/>
+隐私：https://getline.pro/privacy.html<br/>
+账户：https://app.getline.pro/</p>

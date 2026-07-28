@@ -45,7 +45,7 @@
     <string name="application_crashed">Приложение упало</string>
     <string name="application_broken_tips">Приложению не хватает необходимых для запуска компонентов, что обычно вызвано загрузкой неполного apk.</string>
     <string name="reinstall">Переустановить</string>
-    <string name="github_releases">Релизы на GitHub</string>
+    <string name="github_releases">Исходники GetLine</string>
 
     <string name="profile">Профиль</string>
     <string name="name">Название</string>
@@ -103,9 +103,9 @@
     <string name="cancel">Отмена</string>
     <string name="reset">Сброс</string>
 
-    <string name="clash_logcat">Clash Logcat</string>
+    <string name="clash_logcat">Логи VPN</string>
     <string name="history">История</string>
-    <string name="logcat">Logcat</string>
+    <string name="logcat">Логи</string>
 
     <string name="delete_all_logs">Удалить все логи</string>
     <string name="delete_all_logs_warn">Вся история будет ПОТЕРЯНА</string>
@@ -117,7 +117,7 @@
     <string name="override">Переопределение</string>
 
     <string name="auto_restart">Автоматический перезапуск</string>
-    <string name="allow_clash_auto_restart">Разрешить Clash автоматически перезапускаться</string>
+    <string name="allow_clash_auto_restart">Разрешить автоматический перезапуск VPN</string>
 
     <string name="route_system_traffic">Маршрутизировать системный трафик</string>
     <string name="routing_via_vpn_service">Автоматически маршрутизировать весь системный трафик через VPN</string>
@@ -137,7 +137,7 @@
     <string name="access_control_packages">Приложения с контролируемым доступом</string>
     <string name="access_control_packages_summary">Настройте доступ для приложения</string>
 
-    <string name="options_unavailable">Настройки недоступны, пока Clash не будет остановлен</string>
+    <string name="options_unavailable">Настройки недоступны, пока VPN не будет остановлен</string>
 
     <string name="general">Основные</string>
     <string name="dns">DNS</string>
@@ -204,36 +204,35 @@
     <string name="import_from_clipboard">Импорт из буфера обмена</string>
     <string name="export_to_clipboard">Экспорт в буфер обмена</string>
 
-    <string name="clash_meta_for_android">Clash Meta для Android</string>
+    <string name="clash_meta_for_android">Clash Meta for Android (upstream)</string>
 
-    <string name="document">Документ</string>
+    <string name="document">Поддержка</string>
     <string name="feedback">Обратная связь</string>
-    <string name="sources">Исходный код</string>
+    <string name="sources">Открытый исходный код</string>
     <string name="donate">Сделать пожертвование</string>
+    <string name="support">Поддержка</string>
+    <string name="privacy_policy">Политика конфиденциальности</string>
+    <string name="getline_account">Кабинет GetLine</string>
     <string name="clash_wiki">Clash Wiki</string>
     <string name="github_issues">Сообщения об ошибках на GitHub</string>
     <string name="google_play">Google Play</string>
-    <string name="clash_meta_core">Ядро Clash Meta</string>
+    <string name="clash_meta_core">Ядро Mihomo (upstream)</string>
     <string name="clash_wiki_url" translatable="false">https://github.com/Dreamacro/clash/wiki</string>
     <string name="meta_github_url" translatable="false">https://github.com/MetaCubeX/ClashMetaForAndroid</string>
-    <string name="clash_meta_core_url" translatable="false">https://github.com/MetaCubeX/Clash.Meta</string>
+    <string name="clash_meta_core_url" translatable="false">https://github.com/MetaCubeX/mihomo</string>
 
     <string name="tips_properties"><![CDATA[Принимается только <strong>конфиг Clash</strong> (включая <strong>Прокси</strong>/<strong>Правила</strong>)]]></string>
-    <string name="tips_help"><![CDATA[Clash Meta для Android — <strong>бесплатен</strong> и мы <strong>НЕ</strong> предоставляем по нему поддержку]]></string>
+    <string name="tips_help"><![CDATA[Справка и документация GetLine VPN. По вопросам подписки и аккаунта откройте Поддержку или кабинет GetLine.]]></string>
 
-    <string name="google_play_url" translatable="false">https://play.google.com/store/apps/details?id=com.github.kr328.clash</string>
+    <string name="google_play_url" translatable="false">https://play.google.com/store/apps/details?id=pro.getline.vpn</string>
 
     <string name="app">Приложение</string>
     <string name="service">Сервис</string>
 
-    <string name="dark_mode">Тёмный режим</string>
 
     <string name="show_traffic">Показывать трафик</string>
     <string name="show_traffic_summary">Автоматически обновлять счётчик трафика в уведомлении</string>
 
-    <string name="follow_system_android_10">Как в системе (Android 10+)</string>
-    <string name="always_dark">Всегда тёмная</string>
-    <string name="always_light">Всегда светлая</string>
 
     <string name="allow_all_apps">Разрешить все приложения</string>
     <string name="allow_selected_apps">Разрешить выбранные приложения</string>
@@ -283,8 +282,8 @@
 
     <string name="mode_switch_tips">Действует только для текущей сессии</string>
 
-    <string name="clash_meta_wiki">Clash Meta Wiki</string>
-    <string name="clash_meta_wiki_url" translatable="false">https://docs.metacubex.one/</string>
+    <string name="clash_meta_wiki">Wiki Mihomo (upstream)</string>
+    <string name="clash_meta_wiki_url" translatable="false">https://wiki.metacubex.one</string>
 
     <string name="meta_features">Функции Meta</string>
     <string name="unified_delay">Унифицированная задержка</string>
@@ -321,11 +320,157 @@
     <string name="toast_profile_updated_complete">Update profile %s completed</string>
     <string name="toast_profile_updated_failed">Update profile %1$s failed: %2$s</string>
     <string name="external_control_activity">External Control</string>
-    <string name="external_control_started">Clash.Meta service started</string>
-    <string name="external_control_stopped">Clash.Meta service stopped</string>
+    <string name="external_control_started">VPN-сервис запущен</string>
+    <string name="external_control_stopped">VPN-сервис остановлен</string>
     <string name="force_dns_mapping">Force DNS Mapping</string>
     <string name="parse_pure_ip">Parse Pure IP</string>
     <string name="override_destination">Override Destination</string>
     <string name="import_from_qr_no_permission">Доступ к камере ограничен. Разрешите его в настройках.</string>
     <string name="import_from_qr_exception">Произошла не обрабатываемая системная ошибка.</string>
+
+    <string name="get_line_onboarding_value_prop">Простой и безопасный доступ с вашей подпиской GetLine</string>
+    <string name="get_line_login">Войти через Telegram</string>
+    <string name="get_line_login_google">Войти через Google</string>
+    <string name="get_line_login_email">Войти через Email</string>
+    <string name="get_line_email_hint">Email</string>
+    <string name="get_line_email_send_code">Отправить код</string>
+    <string name="get_line_email_resend">Отправить код ещё раз</string>
+    <string name="get_line_email_resend_in">Повтор через %1$d с</string>
+    <string name="get_line_otp_hint">Код подтверждения</string>
+    <string name="get_line_otp_verify">Подтвердить</string>
+    <string name="get_line_email_back">Назад</string>
+    <string name="get_line_subscription_profile_name">GetLine</string>
+    <string name="get_line_add_existing_subscription">У меня есть ссылка</string>
+    <string name="get_line_open_advanced">Расширенный интерфейс</string>
+    <string name="get_line_import_not_completed">Импорт подписки не был завершён</string>
+    <string name="get_line_home_status_disconnected">Отключён</string>
+    <string name="get_line_home_status_connecting">Подключается…</string>
+    <string name="get_line_home_status_connected">Подключён</string>
+    <string name="get_line_home_connect">Подключить</string>
+    <string name="get_line_home_connecting">Подключается…</string>
+    <string name="get_line_home_disconnect">Отключить</string>
+    <string name="get_line_home_change_server">Смена сервера</string>
+    <string name="get_line_shell_home">Главная</string>
+    <string name="get_line_shell_servers">Серверы</string>
+    <string name="get_line_shell_subscription">Подписка</string>
+    <string name="get_line_shell_location_label">Локация</string>
+    <string name="get_line_shell_location_unknown">Не выбрана</string>
+    <string name="get_line_shell_servers_title">Серверы</string>
+    <string name="get_line_shell_servers_explanation">Выберите локацию для VPN. Переключение вкладок не отключает соединение.</string>
+    <string name="get_line_shell_select_server">Выбрать сервер</string>
+    <string name="get_line_shell_current_server_label">Текущий сервер</string>
+    <string name="get_line_shell_available_servers_label">Доступные серверы</string>
+    <string name="get_line_server_delay_format">%1$d мс</string>
+    <string name="get_line_server_delay_unknown">—</string>
+    <string name="get_line_home_connect_hint">Нажмите для подключения</string>
+    <string name="get_line_home_forwarded_format">%1$s передано</string>
+    <string name="get_line_home_ring_action_connect">Подключить VPN</string>
+    <string name="get_line_home_ring_action_disconnect">Отключить VPN</string>
+    <string name="get_line_server_active_via_group">используется автоматическим выбором</string>
+    <string name="get_line_server_delay_unknown_talkback">задержка не измерена</string>
+    <string name="get_line_server_now_format">сейчас: %1$s</string>
+    <string name="get_line_server_expand">Показать варианты</string>
+    <string name="get_line_server_collapse">Скрыть варианты</string>
+    <plurals name="get_line_server_variants_count">
+        <item quantity="one">%1$d вариант</item>
+        <item quantity="few">%1$d варианта</item>
+        <item quantity="many">%1$d вариантов</item>
+        <item quantity="other">%1$d варианта</item>
+    </plurals>
+    <string name="get_line_servers_vpn_stopped_title">VPN не подключён</string>
+    <string name="get_line_servers_vpn_stopped_explanation">Подключитесь на главном экране, чтобы загрузить список серверов. Переключение вкладок не отключает соединение.</string>
+    <string name="get_line_servers_empty_title">Нет доступных серверов</string>
+    <string name="get_line_servers_empty_explanation">В активном профиле нет серверов в основной группе.</string>
+    <string name="get_line_servers_load_failed_title">Не удалось загрузить серверы</string>
+    <string name="get_line_servers_load_failed_explanation">Проверьте подключение и повторите попытку. Текущее VPN-соединение не изменено.</string>
+    <string name="get_line_shell_subscription_title">Подписка</string>
+    <string name="get_line_home_no_profile">Нет активного профиля</string>
+    <string name="get_line_home_expire_format">%1$s</string>
+    <string name="get_line_home_expire_until_format">До %1$s</string>
+    <string name="get_line_home_expire_unknown">Не указан в подписке</string>
+    <plurals name="get_line_home_days_left_unit">
+        <item quantity="one">день остался</item>
+        <item quantity="few">дня осталось</item>
+        <item quantity="many">дней осталось</item>
+        <item quantity="other">дня осталось</item>
+    </plurals>
+    <string name="get_line_home_traffic_label">Трафик</string>
+    <string name="get_line_home_traffic_format">%1$s / %2$s</string>
+    <string name="get_line_home_traffic_used_format">Использовано %1$s</string>
+    <string name="get_line_home_traffic_unknown">Не указан в подписке</string>
+    <string name="get_line_home_traffic_unlimited">Безлимитный трафик</string>
+    <string name="get_line_home_status_active">Активен</string>
+    <string name="get_line_home_status_inactive">Неактивна</string>
+    <string name="get_line_home_devices_label">Устройства</string>
+    <string name="get_line_home_devices_limit_format">До %1$d устройств</string>
+    <string name="get_line_home_plan_unknown">Подписка</string>
+    <string name="get_line_home_refresh_subscription">Обновить подписку</string>
+    <string name="get_line_subscription_refreshing">Обновление подписки</string>
+    <string name="get_line_subscription_load_failed_title">Не удалось загрузить подписку</string>
+    <string name="get_line_subscription_load_failed_explanation">Проверьте подключение и повторите попытку.</string>
+    <string name="get_line_subscription_empty_title">Подписка не найдена</string>
+    <string name="get_line_subscription_empty_explanation">Обновите данные или обратитесь в поддержку.</string>
+    <string name="get_line_subscription_signed_out_title">Управление подпиской недоступно</string>
+    <string name="get_line_subscription_signed_out_explanation">Войдите в GetLine, чтобы просматривать данные подписки и управлять ей.</string>
+    <string name="get_line_subscription_transient_error">Не удалось обновить. Показаны последние данные.</string>
+    <string name="get_line_account_portal_title">Личный кабинет</string>
+    <string name="get_line_account_portal_explanation">Тарифы, оплата и управление устройствами</string>
+    <string name="get_line_account_portal_open">Открыть личный кабинет</string>
+    <string name="get_line_account_portal_opening">Открытие…</string>
+    <string name="get_line_account_portal_open_failed_title">Не удалось открыть личный кабинет</string>
+    <string name="get_line_account_portal_no_browser">На устройстве не найден подходящий браузер.</string>
+    <string name="get_line_action_sign_in">Войти</string>
+    <string name="get_line_action_logout">Выйти из аккаунта</string>
+    <string name="get_line_logout_confirm_title">Выйти из аккаунта?</string>
+    <string name="get_line_logout_confirm_message">VPN будет отключён, а конфигурация GetLine удалена с устройства.</string>
+    <string name="get_line_fetch_loading_config">Получаем конфигурацию</string>
+    <string name="get_line_fetch_checking">Проверяем настройки</string>
+    <string name="get_line_fetch_updating">Обновляем подключение</string>
+    <string name="get_line_fetch_starting_vpn">Запускаем VPN</string>
+    <string name="get_line_fetch_ready">Подключение готово</string>
+    <string name="get_line_service_timeout_fallback">Фоновый сервис недоступен. Повторите попытку.</string>
+    <string name="get_line_state_loading_title">Подождите</string>
+    <string name="get_line_state_loading_explanation">Операция уже выполняется. Запустить её повторно сейчас нельзя.</string>
+    <string name="get_line_state_preparing_vpn_title">Подготавливаем VPN…</string>
+    <string name="get_line_state_preparing_vpn_explanation">Восстанавливаем настройки подключения. Обычно это занимает немного времени.</string>
+    <string name="get_line_state_offline_title">Нет подключения к интернету</string>
+    <string name="get_line_state_offline_explanation">Проверьте подключение и повторите попытку. Уже запущенный VPN продолжит работать.</string>
+    <string name="get_line_state_backend_unavailable_title">VPN-сервис временно недоступен</string>
+    <string name="get_line_state_backend_unavailable_explanation">Не удалось загрузить данные профиля. Проверьте подключение и повторите попытку.</string>
+    <string name="get_line_state_no_profile_title">Профиль VPN ещё не добавлен</string>
+    <string name="get_line_state_no_profile_explanation">Войдите в GetLine или добавьте ссылку на подписку, чтобы продолжить.</string>
+    <string name="get_line_state_connection_repair_failed_title">Не удалось подготовить VPN</string>
+    <string name="get_line_state_connection_repair_failed_explanation">Не удалось восстановить конфигурацию VPN. Повторите попытку или войдите снова, если проблема останется.</string>
+    <string name="get_line_state_connection_restore_failed_title">Не удалось восстановить подключение</string>
+    <string name="get_line_state_connection_restore_failed_explanation">Проверьте интернет и повторите попытку.</string>
+    <string name="get_line_state_import_failed_title">Не удалось импортировать подписку</string>
+    <string name="get_line_state_import_failed_explanation">Проверьте ссылку на подписку и повторите импорт.</string>
+    <string name="get_line_state_auth_failed_title">Не удалось войти</string>
+    <string name="get_line_state_auth_failed_explanation">Вход не завершён. Повторите попытку или добавьте ссылку на подписку.</string>
+    <string name="get_line_state_auth_email_entry_title">Вход по email</string>
+    <string name="get_line_state_auth_email_entry_explanation">Введите email аккаунта GetLine. Мы отправим одноразовый код для входа.</string>
+    <string name="get_line_state_auth_email_otp_sent_title">Введите код из письма</string>
+    <string name="get_line_state_auth_email_otp_sent_explanation">Мы отправили код подтверждения. Введите его ниже и нажмите «Подтвердить», чтобы завершить вход.</string>
+    <string name="get_line_state_auth_invalid_otp_title">Неверный код</string>
+    <string name="get_line_state_auth_invalid_otp_explanation">Проверьте код и попробуйте снова. При необходимости запросите новый.</string>
+    <string name="get_line_state_auth_otp_expired_title">Срок кода истёк</string>
+    <string name="get_line_state_auth_otp_expired_explanation">Запросите новый код и введите его здесь.</string>
+    <string name="get_line_state_auth_email_domain_title">Домен email не разрешён</string>
+    <string name="get_line_state_auth_email_domain_explanation">Используйте разрешённый рабочий или личный домен и попробуйте снова.</string>
+    <string name="get_line_state_auth_no_account_title">Нет аккаунта для этого email</string>
+    <string name="get_line_state_auth_no_account_explanation">Этот email не зарегистрирован для входа в GetLine. Войдите через Telegram или Google, если аккаунт уже есть, либо обратитесь в поддержку.</string>
+    <string name="get_line_state_auth_rate_limited_title">Подождите</string>
+    <string name="get_line_state_auth_rate_limited_explanation">Слишком много попыток. Подождите около минуты перед повторной отправкой кода.</string>
+    <string name="get_line_state_expired_title">Подписка истекла</string>
+    <string name="get_line_state_expired_explanation">Продлите подписку в кабинете GetLine и повторите подключение.</string>
+    <string name="get_line_action_retry">Повторить</string>
+    <string name="get_line_action_choose_profile">Выбрать профиль</string>
+    <string name="get_line_action_open_account">Открыть кабинет GetLine</string>
+    <string name="get_line_vpn_stopped">VPN остановлен. Повторите подключение.</string>
+    <string name="get_line_vpn_start_timeout">VPN не запустился. Повторите попытку.</string>
+
+    <string name="about_based_on_clash_meta">Основано на CMFA и Mihomo</string>
+    <string name="about_license_gplv3">Лицензия GNU GPLv3</string>
+    <string name="about_upstream_ack">Upstream: MetaCubeX Clash Meta for Android и Mihomo</string>
+    <string name="sources_open_failed">Браузер не найден. URL исходников скопирован в буфер.</string>
 </resources>

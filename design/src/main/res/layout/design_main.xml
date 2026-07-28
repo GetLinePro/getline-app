@@ -4,7 +4,7 @@
     <data>
         <variable
             name="self"
-            type="com.github.kr328.clash.design.MainDesign" />
+            type="pro.getline.vpn.design.MainDesign" />
         <variable
             name="clashRunning"
             type="boolean" />
@@ -24,16 +24,23 @@
             name="colorClashStopped"
             type="int" />
         <variable
+            name="colorStatusRunningContent"
+            type="int" />
+        <variable
+            name="colorStatusStoppedContent"
+            type="int" />
+        <variable
             name="hasProviders"
             type="boolean" />
 
         <import type="android.view.View" />
-        <import type="com.github.kr328.clash.design.MainDesign.Request" />
+        <import type="pro.getline.vpn.design.MainDesign.Request" />
     </data>
 
     <androidx.coordinatorlayout.widget.CoordinatorLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="?android:attr/colorBackground"
         android:paddingStart="@{self.surface.insets.start}"
         android:paddingEnd="@{self.surface.insets.end}">
 
@@ -63,32 +70,36 @@
                         android:layout_width="@dimen/large_item_header_layout_size"
                         android:layout_height="@dimen/large_item_header_layout_size">
 
-                        <View
+                        <ImageView
                             android:layout_width="@dimen/main_logo_size"
                             android:layout_height="@dimen/main_logo_size"
                             android:layout_gravity="center"
-                            android:background="@drawable/ic_clash" />
+                            android:contentDescription="@null"
+                            android:importantForAccessibility="no"
+                            android:scaleType="fitCenter"
+                            android:src="@drawable/ic_getline_logo" />
                     </FrameLayout>
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/application_name"
-                        android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6" />
+                        android:textAppearance="?attr/textAppearanceHeadline6" />
                 </LinearLayout>
 
-                <com.github.kr328.clash.design.view.LargeActionCard
+                <pro.getline.vpn.design.view.LargeActionCard
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginVertical="@dimen/main_card_margin_vertical"
                     android:onClick="@{() -> self.request(Request.ToggleStatus)}"
                     android:theme="@style/AppThemeDark"
                     app:cardBackgroundColor="@{clashRunning ? colorClashStarted : colorClashStopped}"
+                    app:contentColor="@{clashRunning ? colorStatusRunningContent : colorStatusStoppedContent}"
                     app:icon="@{clashRunning ? @drawable/ic_outline_check_circle : @drawable/ic_outline_not_interested}"
                     app:subtext="@{clashRunning ? @string/format_traffic_forwarded(forwarded) : @string/tap_to_start}"
                     app:text="@{clashRunning ? @string/running : @string/stopped}" />
 
-                <com.github.kr328.clash.design.view.LargeActionCard
+                <pro.getline.vpn.design.view.LargeActionCard
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginVertical="@dimen/main_card_margin_vertical"
@@ -98,7 +109,7 @@
                     app:subtext="@{mode}"
                     app:text="@string/proxy" />
 
-                <com.github.kr328.clash.design.view.LargeActionCard
+                <pro.getline.vpn.design.view.LargeActionCard
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginVertical="@dimen/main_card_margin_vertical"
@@ -107,7 +118,7 @@
                     app:subtext="@{profileName != null ? @string/format_profile_activated(profileName) : @string/not_selected}"
                     app:text="@string/profile" />
 
-                <com.github.kr328.clash.design.view.LargeActionLabel
+                <pro.getline.vpn.design.view.LargeActionLabel
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:layout_marginVertical="@dimen/main_label_margin_vertical"
@@ -116,7 +127,7 @@
                     app:icon="@drawable/ic_baseline_swap_vertical_circle"
                     app:text="@string/providers" />
 
-                <com.github.kr328.clash.design.view.LargeActionLabel
+                <pro.getline.vpn.design.view.LargeActionLabel
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginVertical="@dimen/main_label_margin_vertical"
@@ -124,7 +135,7 @@
                     app:icon="@drawable/ic_baseline_assignment"
                     app:text="@string/logs" />
 
-                <com.github.kr328.clash.design.view.LargeActionLabel
+                <pro.getline.vpn.design.view.LargeActionLabel
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginVertical="@dimen/main_label_margin_vertical"
@@ -132,7 +143,7 @@
                     app:icon="@drawable/ic_baseline_settings"
                     app:text="@string/settings" />
 
-                <com.github.kr328.clash.design.view.LargeActionLabel
+                <pro.getline.vpn.design.view.LargeActionLabel
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginVertical="@dimen/main_label_margin_vertical"
@@ -140,7 +151,7 @@
                     app:icon="@drawable/ic_baseline_help_center"
                     app:text="@string/help" />
 
-                <com.github.kr328.clash.design.view.LargeActionLabel
+                <pro.getline.vpn.design.view.LargeActionLabel
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginVertical="@dimen/main_label_margin_vertical"

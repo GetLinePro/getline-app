@@ -1,1 +1,1 @@
-A rule-based tunnel
+Official GetLine VPN client for Android

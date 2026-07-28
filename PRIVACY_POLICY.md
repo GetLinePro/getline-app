@@ -1,50 +1,73 @@
-## Privacy Policy
+## Privacy Policy — GetLine VPN (Android)
 
-The Clash for Android is built as an Open Source software. This app is provided by personal at no cost and is intended for use as is.
+**Last updated:** 2026-07-27
 
-This page is used to inform visitors regarding our policies with the collection, use, and disclosure of Personal Information if anyone decided to use our app.
+This document describes how the **GetLine VPN** Android app handles information. It applies to the mobile client (`pro.getline.vpn`). The broader GetLine online service is also covered by the service policy at [https://getline.pro/privacy.html](https://getline.pro/privacy.html).
 
-If you choose to use our app, then you agree to the collection and use of information in relation to this policy. The Personal Information that we collect is used for providing and improving the app. We will not use or share your information with anyone except as described in this Privacy Policy.
+Contact: [support@getline.pro](mailto:support@getline.pro) · Telegram [@GetLinePro](https://t.me/GetLinePro)
 
-The terms used in this Privacy Policy have the same meanings as in our Terms and Conditions, which is accessible at Clash for Android unless otherwise defined in this Privacy Policy.
+### What this app is
 
-**Information Collection and Use**
+GetLine VPN is a local Android VPN client. It:
 
-For a better experience, while using our app, we may require you to provide us with certain personally identifiable information. The information that we request will be retained by us and used as described in this privacy policy.
+- imports and stores VPN profile / subscription data on the device;
+- starts a system VPN session (Android `VpnService`) and routes traffic according to the active profile;
+- can open the GetLine web cabinet (`https://app.getline.pro/`) in a browser or Custom Tab so you can manage your account on the website.
 
-The app does use third party services that may collect information used to identify you.
+Opening the cabinet does **not** by itself import a subscription into the app. You still need to add a subscription URL (or QR / import path that yields one) for VPN profiles.
 
-Link to privacy policy of third party service providers used by the app
+The app is based on open-source CMFA and Mihomo components (GPLv3). Using those components does not mean third-party project authors operate GetLine.
 
-*   [Google Play Services](https://www.google.com/policies/privacy/)
-*   [AppCenter](https://docs.microsoft.com/en-us/appcenter/gdpr/)
+### Information the app processes
 
-**Log Data**
+**On the device (local storage)**
 
-We want to inform you that whenever you use our app, in a case of an error in the app we collect data and information (through third party products) on your phone called Log Data. This Log Data may include information such as your device Internet Protocol (“IP”) address, device name, operating system version, the configuration of the app when utilizing our App, the time and date of your use of the app, and other statistics.
+- Imported subscription URLs and downloaded configuration profiles
+- App preferences (theme, routing overrides, selected profile, etc.)
+- Local diagnostic logs, which include:
+  - **Automatic crash capture:** after a process crash, the crash screen reads filtered Android logcat output (`SystemLogcat.dumpCrash`) and shows it for optional copy/share. That dump is created without a separate user “start logging” action; it remains on the device unless you export or share it.
+  - **Manual VPN / service logs:** the in-app log recorder starts only when you open/start it, and history can be deleted or exported from the app.
 
-**Cookies**
+These items stay on the device unless you export them, share them, or trigger a network action that sends them (for example refreshing a subscription).
 
-Cookies are files with a small amount of data that are commonly used as anonymous unique identifiers. These are sent to your browser from the websites that you visit and are stored on your device's internal memory.
+**Over the network**
 
-This app does not use these “cookies” explicitly. However, the app may use third party code and libraries that use “cookies” to collect information and improve their services. You have the option to either accept or refuse these cookies and know when a cookie is being sent to your device. If you choose to refuse our cookies, you may not be able to use some portions of this app.
+1. **Subscription / profile refresh**  
+   When you add or update a subscription, the app requests the subscription URL you provided (typically a GetLine provider endpoint). The request may include a standard client identifier for compatibility. The response can include proxy nodes and optional subscription metadata (for example traffic counters or expiry from the `subscription-userinfo` header).
 
-**Security**
+2. **VPN traffic**  
+   While connected, application network traffic is carried through the VPN tunnel to the nodes and routes defined by your profile. Operators of those nodes (and any destination sites) may see connection metadata and content according to the protocols in use. GetLine service-side handling of accounts and payments is described in the service privacy policy.
 
-We value your trust in providing us your Personal Information, thus we are striving to use commercially acceptable means of protecting it. But remember that no method of transmission over the internet, or method of electronic storage is 100% secure and reliable, and we cannot guarantee its absolute security.
+3. **Account / support links**  
+   Opening Support, Privacy, or Account from the app loads third-party destinations you choose (Telegram support, GetLine web pages). Those services process data under their own policies.
 
-**Links to Other Sites**
+4. **QR import (optional)**  
+   Scanning a profile QR code uses the **quickie** library with **Google ML Kit** barcode scanning. That stack also registers Google ML Kit initialization and **Data Transport / CCT** components in the release manifest. Google’s libraries may process barcode-related usage or diagnostic telemetry according to Google’s policies for ML Kit and related Google Play services infrastructure. This path is only used if you use QR import; it is not required for URL paste import or core VPN operation.
 
-This app may contain links to other sites. If you click on a third-party link, you will be directed to that site. Note that these external sites are not operated by us. Therefore, we strongly advise you to review the Privacy Policy of these websites. We have no control over and assume no responsibility for the content, privacy policies, or practices of any third-party sites or services.
+### What this app does **not** do (in this fork)
 
-**Children’s Privacy**
+- It does **not** embed a first-party App Center, Firebase Analytics, or Firebase Crashlytics product-analytics/crash-reporting integration for GetLine.
+- It does **not** require Google Play Services for core VPN connect/disconnect when you import a subscription URL without QR scanning.
+- It does **not** upload crash dumps or VPN log history to GetLine servers automatically. Local logs leave the device only if you export or share them.
 
-These Services do not address anyone under the age of 13\. We do not knowingly collect personally identifiable information from children under 13\. In the case we discover that a child under 13 has provided us with personal information, we immediately delete this from our servers. If you are a parent or guardian and you are aware that your child has provided us with personal information, please contact us so that we will be able to do necessary actions.
+ML Kit / Data Transport components bundled for QR scanning (see above) are separate from a GetLine-operated analytics backend.
 
-**Changes to This Privacy Policy**
+If you install the app from Google Play or another store, that store may process install and update data under its own privacy policy.
 
-We may update our Privacy Policy from time to time. Thus, you are advised to review this page periodically for any changes. We will notify you of any changes by posting the new Privacy Policy on this page. These changes are effective immediately after they are posted on this page.
+### Permissions (high level)
 
-**Contact Us**
+Typical permissions are used for VPN service, network access, notifications (status), optional camera for QR import, and related Android features. Exact permissions are listed in the app manifest.
 
-If you have any questions or suggestions about our Privacy Policy, do not hesitate to contact us.
+### Children
+
+The app is not directed at children under 13. Do not use the service if you are not allowed to under applicable law.
+
+### Changes
+
+We may update this policy when app behavior changes. The current version is published with the source repository and may also be linked from GetLine sites.
+
+### Contact
+
+Questions about this Android app policy: **support@getline.pro** or [https://t.me/GetLinePro](https://t.me/GetLinePro).
+
+For the online service (accounts, payments, website): see [https://getline.pro/privacy.html](https://getline.pro/privacy.html).

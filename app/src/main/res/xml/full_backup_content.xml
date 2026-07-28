@@ -3,6 +3,12 @@
     <include
         domain="sharedpref"
         path="." />
+    <exclude
+        domain="sharedpref"
+        path="getline_native_session.xml" />
+    <exclude
+        domain="sharedpref"
+        path="getline_native_session_fallback.xml" />
     <include
         domain="database"
         path="." />

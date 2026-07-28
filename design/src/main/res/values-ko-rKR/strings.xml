@@ -37,7 +37,7 @@
     <string name="application_crashed">앱 중지</string>
     <string name="application_broken_tips">불완전한 APK 다운로드로 인해 앱을 실행하는데 필요한 구성 요소가 누락되었습니다.</string>
     <string name="reinstall">재설치</string>
-    <string name="github_releases">Github Releases</string>
+    <string name="github_releases">GetLine 소스</string>
     <string name="profile">구성</string>
     <string name="name">이름</string>
     <string name="profile_name">구성 이름</string>
@@ -85,7 +85,7 @@
     <string name="ok">확인</string>
     <string name="cancel">취소</string>
     <string name="reset">재설정</string>
-    <string name="clash_logcat">Clash 로그 수집 도구</string>
+    <string name="clash_logcat">VPN 로그</string>
     <string name="history">히스토리</string>
     <string name="logcat">로그</string>
     <string name="delete_all_logs">전체 로그 삭제</string>
@@ -96,7 +96,7 @@
     <string name="interface_">테마</string>
     <string name="override">재정의</string>
     <string name="auto_restart">자동 재시작</string>
-    <string name="allow_clash_auto_restart">Clash 앱이 자동으로 재시작하도록 합니다.</string>
+    <string name="allow_clash_auto_restart">VPN 자동 재시작 허용</string>
     <string name="route_system_traffic">시스템 트래픽 우회</string>
     <string name="routing_via_vpn_service">모든 시스템 트래픽이 자동으로 VPN 우회 서비스를 이용합니다.</string>
     <string name="vpn_service_options">VPN 서비스 옵션</string>
@@ -113,7 +113,7 @@
     <string name="access_control_mode">연결 허용 모드</string>
     <string name="access_control_packages">연결 허용 목록</string>
     <string name="access_control_packages_summary">앱별 연결 허용 관리</string>
-    <string name="options_unavailable">Clash 연결인 상태에서는 변경할 수 없습니다.</string>
+    <string name="options_unavailable">VPN 연결 중에는 변경할 수 없습니다</string>
     <string name="general">일반</string>
     <string name="dns">DNS</string>
     <string name="prefer_h3">h3 선호</string>
@@ -171,25 +171,21 @@
     <string name="select_none">모두 해제</string>
     <string name="import_from_clipboard">클립보드에서 가져오기</string>
     <string name="export_to_clipboard">클립보드로 내보내기</string>
-    <string name="clash_meta_for_android">Clash Meta for Android</string>
-    <string name="document">문서</string>
+    <string name="clash_meta_for_android">Clash Meta for Android (업스트림)</string>
+    <string name="document">지원</string>
     <string name="feedback">피드백</string>
-    <string name="sources">소스</string>
+    <string name="sources">오픈 소스</string>
     <string name="donate">기부</string>
     <string name="clash_wiki">Clash Wiki</string>
     <string name="github_issues">Github Issues</string>
     <string name="google_play">Google Play</string>
-    <string name="clash_meta_core">Clash Meta 코어</string>
+    <string name="clash_meta_core">Mihomo 코어 (업스트림)</string>
     <string name="tips_properties"><![CDATA[<strong>Clash 구성 파일</strong>(<strong>프록시</strong>/<strong>규칙</strong> 포함)만 추가할 수 있습니다.]]></string>
-    <string name="tips_help"><![CDATA[Clash Meta for Android는 <strong>프리웨어</strong>이며, <strong>우회 서비스 제공자가 아닙니다.</strong> 따라서, <strong>앱 자체 이외의 문제에 대한 피드백은 받지 않습니다.</strong>]]></string>
+    <string name="tips_help"><![CDATA[GetLine VPN 도움말 및 문서입니다. 구독 및 계정 문제는 지원 채널 또는 GetLine 계정을 이용하세요.]]></string>
     <string name="app">앱</string>
     <string name="service">서비스</string>
-    <string name="dark_mode">다크 모드</string>
     <string name="show_traffic">트래픽 차트</string>
     <string name="show_traffic_summary">알림표시줄에서 자동으로 트래픽 차트 업데이트</string>
-    <string name="follow_system_android_10">시스템 설정 (Android 10+)과 일치</string>
-    <string name="always_dark">다크</string>
-    <string name="always_light">라이트</string>
     <string name="allow_all_apps">모든 앱 허용</string>
     <string name="allow_selected_apps">선택한 앱만 허용</string>
     <string name="deny_selected_apps">선택한 앱 제외</string>
@@ -226,7 +222,7 @@
     <string name="version_updated">앱 버전이 업데이트되었습니다.</string>
     <string name="version_updated_tips">구성이 삭제되었으므로 이전 구성 파일을 다시 저장해야 합니다.</string>
     <string name="mode_switch_tips">현재 세션에서만 유요합니다.</string>
-    <string name="clash_meta_wiki">Clash Meta Wiki</string>
+    <string name="clash_meta_wiki">Mihomo Wiki (업스트림)</string>
     <string name="meta_features">Meta 기능</string>
     <string name="unified_delay">Unified Delay</string>
     <string name="geodata_mode">Geodata 모드</string>
@@ -257,11 +253,19 @@
     <string name="toast_profile_updated_complete">Update profile %s completed</string>
     <string name="toast_profile_updated_failed">Update profile %1$s failed: %2$s</string>
     <string name="external_control_activity">External Control</string>
-    <string name="external_control_started">Clash.Meta service started</string>
-    <string name="external_control_stopped">Clash.Meta service stopped</string>
+    <string name="external_control_started">VPN 서비스가 시작되었습니다</string>
+    <string name="external_control_stopped">VPN 서비스가 중지되었습니다</string>
     <string name="force_dns_mapping">Force DNS Mapping</string>
     <string name="parse_pure_ip">Parse Pure IP</string>
     <string name="override_destination">Override Destination</string>
     <string name="import_from_qr_no_permission">카메라 접근이 제한되었습니다. 설정에서 허용해 주세요.</string>
     <string name="import_from_qr_exception">처리되지 않은 시스템 예외가 발생했습니다.</string>
+
+    <string name="about_based_on_clash_meta">CMFA 및 Mihomo 기반</string>
+    <string name="about_license_gplv3">GNU GPLv3 라이선스</string>
+    <string name="sources_open_failed">브라우저를 찾을 수 없습니다. 소스 URL이 클립보드에 복사되었습니다.</string>
+    <string name="support">지원</string>
+    <string name="privacy_policy">개인정보 처리방침</string>
+    <string name="getline_account">GetLine 계정</string>
+    <string name="about_upstream_ack">업스트림: MetaCubeX Clash Meta for Android 및 Mihomo</string>
 </resources>

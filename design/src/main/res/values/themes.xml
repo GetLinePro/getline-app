@@ -14,7 +14,7 @@
         <item name="paddingLeftSystemWindowInsets">false</item>
 
         <item name="colorPrimary">@color/color_clash_light</item>
-        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnPrimary">@color/getline_brand_on_primary</item>
         <item name="colorControlNormal">@android:color/black</item>
         <item name="colorClashStopped">@color/color_light_clash_stopped</item>
         <item name="colorControlDisabled">@color/color_light_control_disabled</item>
@@ -25,6 +25,15 @@
         <item name="colorControlActivated">?attr/colorPrimary</item>
         <item name="android:textColor">?attr/colorControlNormal</item>
         <item name="android:windowBackground">@color/color_light_background</item>
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+
+        <item name="textAppearanceHeadline6">@style/TextAppearance.GetLine.Headline6</item>
+        <item name="textAppearanceSubtitle1">@style/TextAppearance.GetLine.Subtitle1</item>
+        <item name="textAppearanceBody1">@style/TextAppearance.GetLine.Body1</item>
+        <item name="textAppearanceBody2">@style/TextAppearance.GetLine.Body2</item>
+        <item name="textAppearanceCaption">@style/TextAppearance.GetLine.Caption</item>
+        <item name="textAppearanceButton">@style/TextAppearance.GetLine.Button</item>
     </style>
 
     <style name="AppFullScreenDialogDarkBase" parent="Theme.MaterialComponents.Dialog">
@@ -37,7 +46,7 @@
         <item name="paddingLeftSystemWindowInsets">false</item>
 
         <item name="colorPrimary">@color/color_clash_dark</item>
-        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnPrimary">@color/getline_brand_on_primary</item>
         <item name="colorSurface">@color/color_dark_surface</item>
         <item name="colorControlDisabled">@color/color_dark_control_disabled</item>
         <item name="android:windowBackground">@color/color_dark_background</item>
@@ -48,6 +57,15 @@
         <item name="colorControlActivated">?attr/colorPrimary</item>
         <item name="colorClashStopped">?attr/colorSurface</item>
         <item name="android:textColor">?attr/colorControlNormal</item>
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+
+        <item name="textAppearanceHeadline6">@style/TextAppearance.GetLine.Headline6</item>
+        <item name="textAppearanceSubtitle1">@style/TextAppearance.GetLine.Subtitle1</item>
+        <item name="textAppearanceBody1">@style/TextAppearance.GetLine.Body1</item>
+        <item name="textAppearanceBody2">@style/TextAppearance.GetLine.Body2</item>
+        <item name="textAppearanceCaption">@style/TextAppearance.GetLine.Caption</item>
+        <item name="textAppearanceButton">@style/TextAppearance.GetLine.Button</item>
     </style>
 
     <style name="AppFullScreenDialogLight" parent="AppFullScreenDialogLightBase">
@@ -67,7 +85,7 @@
         <item name="paddingLeftSystemWindowInsets">false</item>
 
         <item name="colorPrimary">@color/color_clash_light</item>
-        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnPrimary">@color/getline_brand_on_primary</item>
         <item name="colorControlNormal">@android:color/black</item>
         <item name="colorClashStopped">@color/color_light_clash_stopped</item>
         <item name="colorControlDisabled">@color/color_light_control_disabled</item>
@@ -79,6 +97,15 @@
         <item name="android:textColor">?attr/colorControlNormal</item>
 
         <item name="bottomSheetStyle">@style/AppBottomSheetStyle</item>
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+
+        <item name="textAppearanceHeadline6">@style/TextAppearance.GetLine.Headline6</item>
+        <item name="textAppearanceSubtitle1">@style/TextAppearance.GetLine.Subtitle1</item>
+        <item name="textAppearanceBody1">@style/TextAppearance.GetLine.Body1</item>
+        <item name="textAppearanceBody2">@style/TextAppearance.GetLine.Body2</item>
+        <item name="textAppearanceCaption">@style/TextAppearance.GetLine.Caption</item>
+        <item name="textAppearanceButton">@style/TextAppearance.GetLine.Button</item>
     </style>
 
     <style name="AppBottomSheetDialogDarkBase" parent="Theme.MaterialComponents.BottomSheetDialog">
@@ -88,7 +115,7 @@
         <item name="paddingLeftSystemWindowInsets">false</item>
 
         <item name="colorPrimary">@color/color_clash_dark</item>
-        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnPrimary">@color/getline_brand_on_primary</item>
         <item name="colorSurface">@color/color_dark_surface</item>
         <item name="colorControlDisabled">@color/color_dark_control_disabled</item>
 
@@ -100,6 +127,15 @@
         <item name="android:textColor">?attr/colorControlNormal</item>
 
         <item name="bottomSheetStyle">@style/AppBottomSheetStyle</item>
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+
+        <item name="textAppearanceHeadline6">@style/TextAppearance.GetLine.Headline6</item>
+        <item name="textAppearanceSubtitle1">@style/TextAppearance.GetLine.Subtitle1</item>
+        <item name="textAppearanceBody1">@style/TextAppearance.GetLine.Body1</item>
+        <item name="textAppearanceBody2">@style/TextAppearance.GetLine.Body2</item>
+        <item name="textAppearanceCaption">@style/TextAppearance.GetLine.Caption</item>
+        <item name="textAppearanceButton">@style/TextAppearance.GetLine.Button</item>
     </style>
 
     <style name="AppBottomSheetDialogLight" parent="AppBottomSheetDialogLightBase">
@@ -118,7 +154,7 @@
         <item name="android:spotShadowAlpha">0.08</item>
 
         <item name="colorPrimary">@color/color_clash_light</item>
-        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnPrimary">@color/getline_brand_on_primary</item>
         <item name="colorControlNormal">@android:color/black</item>
         <item name="colorClashStopped">@color/color_light_clash_stopped</item>
         <item name="colorControlDisabled">@color/color_light_control_disabled</item>
@@ -129,21 +165,35 @@
         <item name="colorControlActivated">?attr/colorPrimary</item>
         <item name="colorLogo">?attr/colorControlActivated</item>
         <item name="android:textColor">?attr/colorControlNormal</item>
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+        <item name="textAppearanceHeadline6">@style/TextAppearance.GetLine.Headline6</item>
+        <item name="textAppearanceSubtitle1">@style/TextAppearance.GetLine.Subtitle1</item>
+        <item name="textAppearanceBody1">@style/TextAppearance.GetLine.Body1</item>
+        <item name="textAppearanceBody2">@style/TextAppearance.GetLine.Body2</item>
+        <item name="textAppearanceCaption">@style/TextAppearance.GetLine.Caption</item>
+        <item name="textAppearanceButton">@style/TextAppearance.GetLine.Button</item>
 
         <item name="bottomSheetDialogTheme">@style/AppBottomSheetDialogLight</item>
         <item name="fullScreenDialogTheme">@style/AppFullScreenDialogLight</item>
     </style>
 
+    <!--
+      Fixed dark theme (not DayNight). ForceDark overlays this while the OS may
+      stay in light uiMode; DayNight would still resolve the light Material parent.
+    -->
     <style name="AppThemeDarkBase" parent="Theme.MaterialComponents.NoActionBar">
         <item name="android:windowBackground">@color/color_dark_background</item>
+        <item name="android:colorBackground">@color/color_dark_background</item>
         <item name="android:ambientShadowAlpha">0.08</item>
         <item name="android:spotShadowAlpha">0.08</item>
 
         <item name="colorPrimary">@color/color_clash_dark</item>
-        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorOnPrimary">@color/getline_brand_on_primary</item>
         <item name="colorSurface">@color/color_dark_surface</item>
-        <item name="colorControlNormal">@android:color/white</item>
-        <item name="colorControlDisabled">@color/color_dark_control_disabled</item>
+        <item name="colorOnSurface">@color/getline_text_primary</item>
+        <item name="colorControlNormal">@color/getline_text_primary</item>
+        <item name="colorControlDisabled">@color/getline_text_disabled</item>
 
         <item name="colorPrimaryDark">?attr/colorPrimary</item>
         <item name="colorSecondary">?attr/colorPrimary</item>
@@ -151,7 +201,19 @@
         <item name="colorControlActivated">?attr/colorPrimary</item>
         <item name="colorClashStopped">?attr/colorSurface</item>
         <item name="colorLogo">?attr/colorControlNormal</item>
-        <item name="android:textColor">?attr/colorControlNormal</item>
+        <item name="android:textColor">@color/getline_text_primary</item>
+        <item name="android:textColorPrimary">@color/getline_text_primary</item>
+        <item name="android:textColorSecondary">@color/getline_text_secondary</item>
+        <item name="android:textColorHint">@color/getline_text_disabled</item>
+        <item name="android:textColorPrimaryDisableOnly">@color/getline_text_disabled</item>
+        <item name="android:fontFamily">@font/mulish</item>
+        <item name="fontFamily">@font/mulish</item>
+        <item name="textAppearanceHeadline6">@style/TextAppearance.GetLine.Headline6</item>
+        <item name="textAppearanceSubtitle1">@style/TextAppearance.GetLine.Subtitle1</item>
+        <item name="textAppearanceBody1">@style/TextAppearance.GetLine.Body1</item>
+        <item name="textAppearanceBody2">@style/TextAppearance.GetLine.Body2</item>
+        <item name="textAppearanceCaption">@style/TextAppearance.GetLine.Caption</item>
+        <item name="textAppearanceButton">@style/TextAppearance.GetLine.Button</item>
 
         <item name="bottomSheetDialogTheme">@style/AppBottomSheetDialogDark</item>
         <item name="fullScreenDialogTheme">@style/AppFullScreenDialogDark</item>

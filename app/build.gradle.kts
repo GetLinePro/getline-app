@@ -1,11 +1,17 @@
-import java.net.URL
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.Properties
 
 plugins {
     kotlin("android")
     kotlin("kapt")
     id("com.android.application")
+}
+
+android {
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -24,49 +30,71 @@ dependencies {
     implementation(libs.androidx.coordinator)
     implementation(libs.androidx.recyclerview)
     implementation(libs.google.material)
-    implementation(libs.quickie.bundled)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.zxing.cpp)
     implementation(libs.androidx.activity.ktx)
+    implementation(libs.androidx.browser)
+    implementation(libs.androidx.security.crypto)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
 }
 
 tasks.getByName("clean", type = Delete::class) {
     delete(file("release"))
 }
 
-val geoFilesDownloadDir = "src/main/assets"
+val geoFilesDir = layout.projectDirectory.dir("src/main/assets")
+val geoFilesManifest = rootProject.layout.projectDirectory.file("gradle/geodata.properties")
+val geoFilesProperties = Properties().apply {
+    geoFilesManifest.asFile.inputStream().use { load(it) }
+}
+val geoFiles = (0 until geoFilesProperties.getProperty("file.count").toInt()).associate { index ->
+    val outputName = geoFilesProperties.getProperty("file.$index.output")
+    outputName to geoFilesProperties.getProperty("file.$index.sha256")
+}
 
-task("downloadGeoFiles") {
+val verifyGeoFiles by tasks.registering {
+    group = "verification"
+    description = "Verifies the pinned geodata files bundled with the app."
 
-    val geoFilesUrls = mapOf(
-        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb" to "geoip.metadb",
-        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat" to "geosite.dat",
-        // "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb" to "country.mmdb",
-        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb" to "ASN.mmdb",
-        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/BundleMRS.7z" to "BundleMRS.7z",
-    )
+    inputs.file(geoFilesManifest)
+    geoFiles.forEach { (outputName, _) ->
+        inputs.file(geoFilesDir.file(outputName))
+            .withPropertyName(outputName)
+            .withPathSensitivity(PathSensitivity.NONE)
+    }
 
     doLast {
-        geoFilesUrls.forEach { (downloadUrl, outputFileName) ->
-            val url = URL(downloadUrl)
-            val outputPath = file("$geoFilesDownloadDir/$outputFileName")
-            outputPath.parentFile.mkdirs()
-            url.openStream().use { input ->
-                Files.copy(input, outputPath.toPath(), StandardCopyOption.REPLACE_EXISTING)
-                println("$outputFileName downloaded to $outputPath")
+        geoFiles.forEach { (outputName, expectedSha256) ->
+            val geoFile = geoFilesDir.file(outputName).asFile
+            check(geoFile.isFile) {
+                "Missing pinned geodata file $geoFile. Run scripts/update-geodata.sh and commit its output."
+            }
+
+            val digest = MessageDigest.getInstance("SHA-256")
+            geoFile.inputStream().buffered().use { input ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            val actualSha256 = digest.digest().joinToString("") { "%02x".format(it) }
+            check(actualSha256 == expectedSha256) {
+                "SHA-256 mismatch for $geoFile: expected $expectedSha256, got $actualSha256"
             }
         }
     }
 }
 
-afterEvaluate {
-    val downloadGeoFilesTask = tasks["downloadGeoFiles"]
-
-    tasks.forEach {
-        if (it.name.startsWith("assemble")) {
-            it.dependsOn(downloadGeoFilesTask)
-        }
+tasks.configureEach {
+    // APK and AAB packaging must fail before consuming missing or modified geodata.
+    if (name.startsWith("assemble") || name.startsWith("bundle")) {
+        dependsOn(verifyGeoFiles)
     }
-}
-
-tasks.getByName("clean", type = Delete::class) {
-    delete(file(geoFilesDownloadDir))
 }
