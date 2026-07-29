@@ -2,12 +2,16 @@
 
 Client implementation uses AndroidX `AuthTabIntent` with HTTPS completion:
 
-- host: `app.getline.pro`
+- host: from `AppEnvironment.callbackHost` — production `app.getline.pro`, e2e `auth.stage.getline.pro`
 - path: `/`
 - fragment: `/login?auth_token=...` (parsed via `Uri.fragment`)
 
 Providers share one Auth Tab launcher and one callback parser. Provider-specific
 code only obtains the launch URL.
+
+**E2E / stage mock (S0 + S1 green):** synthetic API lives under `tools/e2e-mock/`.  
+Observed client contract: [`../e2e-auth-session-contract.md`](../e2e-auth-session-contract.md).  
+Runbooks and troubleshooting: [`../../../tools/e2e-mock/README.md`](../../../tools/e2e-mock/README.md).
 
 ## Auth methods (client)
 
@@ -38,7 +42,7 @@ GET /api/auth/telegram-oidc/start?intent=login&return_to=...
 → JSON { "auth_url": "https://oauth.telegram.org/..." }
 ```
 
-Telegram start sets HttpOnly PKCE cookies (`tg_oidc_verifier`, `tg_oidc_state`).
+Telegram start sets HttpOnly PKCE cookies.
 Those cookies must be stored in the Auth Tab browser jar, so the app does **not**
 call the start endpoint from the app process. Instead it opens the same-origin
 trampoline below, which performs start in-browser and navigates to `auth_url`.
@@ -148,31 +152,9 @@ network:
 
 Optional: trigger 429 carefully and confirm wait copy + cooldown UI.
 
-## Passkey recon (not implementing)
-
-Live (2026-07): `GET /api/auth/passkey/status` → `enabled: true`. SPA has Passkey
-button + `begin`/`finish` (rpId `app.getline.pro`, discoverable login).
-
-**Gap:** after `POST /api/auth/passkey/login/finish` the SPA only applies the
-token in-memory (`Tt({token,…})` + `onLoginSuccess`). It does **not** navigate to
-`#/login?auth_token=…`. OAuth is the only path that puts `auth_token` in the
-fragment for Auth Tab. Opening general web login is also a bad start URL (path
-`/` = Auth Tab completion host/path).
-
-So Android cannot reuse browser auth for free. Options later:
-
-1. **RWP change** — finish → `#/login?auth_token=…` (+ non-`/` trampoline) → thin
-   Android Auth Tab entry.
-2. **Native** — Credential Manager + same begin/finish; backend must accept
-   Android origin / apk-key-hash; expand `assetlinks.json` beyond alpha.debug.
-3. **Skip v1** — TG + Google + Email already cover acquisition.
-
-Not proven live: finish token → device-key (same shape as email/OAuth token in
-SPA, but no sample run). Desktop URL after Passkey success still HITL.
-
 ## Out of scope
 
-- Passkey / WebAuthn / Credential Manager (see recon above)
+- Passkey / WebAuthn / Credential Manager
 - `intent: register` / email registration CTA
 - Yandex / VK / Apple
 - Post-login tab IA redesign

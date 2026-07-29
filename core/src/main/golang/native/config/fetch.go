@@ -41,10 +41,25 @@ type fetchHeader struct {
 func openUrl(ctx context.Context, url string) (io.ReadCloser, fetchHeader, error) {
 	// Keep ClashMetaForAndroid token: subscription backends (e.g. Remnawave) select
 	// Mihomo-compatible payload by User-Agent. Brand only after backend recognizes GetLineVPN.
-	response, err := clashHttp.HttpRequest(ctx, url, http.MethodGet, http.Header{"User-Agent": {"ClashMetaForAndroid/" + app.VersionName()}}, nil)
+	//
+	// Same-host redirects only: an allowlisted e2e subscription_link must not
+	// follow Location to production (or any other host) during import fetch.
+	response, err := clashHttp.HttpRequest(
+		ctx,
+		url,
+		http.MethodGet,
+		http.Header{"User-Agent": {"ClashMetaForAndroid/" + app.VersionName()}},
+		nil,
+		clashHttp.WithCheckRedirect(clashHttp.SameHostOnlyRedirect),
+	)
 
 	if err != nil {
 		return nil, fetchHeader{}, err
+	}
+
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		_ = response.Body.Close()
+		return nil, fetchHeader{}, fmt.Errorf("fetch %s: %s", url, response.Status)
 	}
 
 	return response.Body, fetchHeader{

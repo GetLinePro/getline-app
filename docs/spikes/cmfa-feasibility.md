@@ -474,23 +474,38 @@ native session store → `/api/subscriptions` → stock CMFA import/activate/VPN
 
 Deploy notes and optional trampoline live under `docs/spikes/android-auth/`.
 
+**E2E foundation (channel × environment, S0 + S1):** stage mock +
+`alphaE2eDebug` prove Google Auth Tab → native session → YAML import → Home
+and force-stop persistence without production RWP Shop. Prefer current client
+facts in:
+
+- `docs/spikes/e2e-auth-session-contract.md` (HTTP contract Observed/Expected)
+- `tools/e2e-mock/README.md` (deploy, runbooks, browser notes)
+
+S2 OTP and Custom Tabs fallback are **not** part of that close-out.
+
 #### Unverified items
 
 The following remain implementation or contract checks rather than feasibility
 blockers:
 
-- Whether the target Android browser correctly returns the full fixed URI,
-  including the fragment, through `AuthTabIntent.AuthResult.resultUri`.
-- Required `assetlinks.json` configuration for the final release package and
-  signing certificate.
-- Browser compatibility and fallback behavior when Auth Tab is unsupported.
-- Exact nested schema of `/api/subscriptions`.
-- Live behavior of `POST /api/auth/native/refresh`.
+- ~~Whether the target Android browser correctly returns the full fixed URI,
+  including the fragment, through `AuthTabIntent.AuthResult.resultUri`.~~
+  **Observed green** on Chrome 150 (emulator + physical device) for e2e/prod
+  DAL paths; older Chrome (≤137 observed) can lack Auth Tab — see e2e-mock README.
+- Required `assetlinks.json` configuration for the final **store** package and
+  signing certificate (e2e package DAL is configured for stage).
+- Browser compatibility and **Custom Tabs fallback** when Auth Tab is unsupported
+  (**deferred**).
+- Full production nested schema of `/api/subscriptions` beyond fields the client
+  parses (client selection rules: `e2e-auth-session-contract.md`).
+- Live production behavior of `POST /api/auth/native/refresh` (client code path
+  + mock stub documented; not claimed on first-login device path).
 - Refresh-token rotation semantics.
 - Logout/revocation behavior.
 - Device-key TTL and replay response.
 - Whether multiple active subscriptions can exist and how the client should
-  choose among them.
+  choose among them (client prefers primary with link, else first with link).
 - Whether the subscription URL remains stable across renewals and tariff changes.
 
 ## Decision

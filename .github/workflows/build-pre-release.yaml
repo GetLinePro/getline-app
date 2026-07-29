@@ -55,13 +55,13 @@ jobs:
       # Intentionally no signing.properties: release must stay unsigned without a key.
       - name: Pre-release Build (unsigned AAB)
         if: success()
-        run: ./gradlew --no-daemon app:lintMetaRelease app:bundleMetaRelease
+        run: ./gradlew --no-daemon app:lintMetaProdRelease app:bundleMetaProdRelease
 
       - name: Confirm AAB is unsigned
         if: success()
         run: |
           set -euo pipefail
-          AAB=$(ls app/build/outputs/bundle/metaRelease/getline-vpn-*.aab | head -n1)
+          AAB=$(ls app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab | head -n1)
           echo "Checking: $AAB"
           # jarsigner -verify often exits 0 for both signed and unsigned AABs;
           # inspect the message text instead of the exit code.
@@ -83,4 +83,4 @@ jobs:
         with:
           name: GetLineVPN Meta Release Unsigned AAB
           path: |
-            app/build/outputs/bundle/metaRelease/getline-vpn-*.aab
+            app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab

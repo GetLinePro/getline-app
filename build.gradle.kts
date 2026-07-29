@@ -93,11 +93,13 @@ subprojects {
         }
 
         productFlavors {
-            flavorDimensions("feature")
+            // channel: distribution/package id only (not feature flags, not VPN core).
+            // alpha = side-by-side / default local; meta = production package id.
+            flavorDimensions("channel")
 
             create("alpha") {
                 isDefault = true
-                dimension = flavorDimensionList[0]
+                dimension = "channel"
                 versionNameSuffix = ".Alpha"
 
                 buildConfigField("boolean", "PREMIUM", "Boolean.parseBoolean(\"false\")")
@@ -113,13 +115,13 @@ subprojects {
             }
 
             create("meta") {
-                dimension = flavorDimensionList[0]
-                versionNameSuffix = ".Meta"
+                dimension = "channel"
 
                 buildConfigField("boolean", "PREMIUM", "Boolean.parseBoolean(\"false\")")
 
-                resValue("string", "launch_name", "GetLine VPN Meta")
-                resValue("string", "application_name", "GetLine VPN Meta")
+                // Production channel: clean product name, no .Meta suffix.
+                resValue("string", "launch_name", "GetLine VPN")
+                resValue("string", "application_name", "GetLine VPN")
             }
         }
 

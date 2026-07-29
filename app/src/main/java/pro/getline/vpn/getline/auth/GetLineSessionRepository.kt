@@ -3,6 +3,7 @@ package pro.getline.vpn.getline.auth
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import pro.getline.vpn.GetLineControlPlaneHostPolicy
 
 /**
  * Owns native session lifecycle. Raw tokens stay inside this layer except when
@@ -67,11 +68,20 @@ class GetLineSessionRepository(
      * Loads preferred subscription for profile import.
      * Does not persist the selected ID so callers can compare against
      * [rememberedSubscriptionId] before deciding profile reuse.
+     *
+     * [SubscriptionItem.subscriptionLink] must pass
+     * [GetLineControlPlaneHostPolicy] so e2e never imports a production URL.
+     * Does not restrict manual user-entered import URLs outside this path.
      */
     suspend fun loadPreferredSubscription(): SubscriptionItem {
         val response = getSubscriptionsAuthenticated()
-        return response.selectPreferred()
+        val preferred = response.selectPreferred()
             ?: throw GetLineAuthException.Protocol("No subscription with import URL")
+        GetLineControlPlaneHostPolicy.requireProductHttpsUrl(
+            preferred.subscriptionLink,
+            "subscription_link",
+        )
+        return preferred
     }
 
     /**

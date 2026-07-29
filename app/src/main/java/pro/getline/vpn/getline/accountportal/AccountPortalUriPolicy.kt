@@ -1,24 +1,30 @@
 package pro.getline.vpn.getline.accountportal
 
 import android.net.Uri
-import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
+import pro.getline.vpn.AppEnvironment
+import pro.getline.vpn.GetLineControlPlaneHostPolicy
 
 /**
  * Builds and validates the GetLine web account portal URI.
  *
- * Origin is taken from the existing auth API base ([RwpGetLineAuthApi.DEFAULT_ORIGIN]).
+ * Origin/host come from [AppEnvironment] (flavor `prod` / `e2e`).
+ * Host must also pass [GetLineControlPlaneHostPolicy].
  * Tokens must never appear in query, fragment, or path secrets.
  */
 object AccountPortalUriPolicy {
     const val EXPECTED_SCHEME = "https"
-    const val EXPECTED_HOST = "app.getline.pro"
     const val DASHBOARD_FRAGMENT = "/my-dashboard"
+
+    /** Portal host for the active environment flavor. */
+    val expectedHost: String
+        get() = Uri.parse(AppEnvironment.portalOrigin).host
+            ?: error("GETLINE_PORTAL_ORIGIN missing host")
 
     /**
      * Dashboard entry: `{origin}/#/my-dashboard` with no query or tokens.
      */
     fun dashboardUri(): Uri {
-        val origin = RwpGetLineAuthApi.DEFAULT_ORIGIN.trimEnd('/')
+        val origin = AppEnvironment.portalOrigin.trimEnd('/')
         val uri = Uri.parse("$origin/#$DASHBOARD_FRAGMENT")
         require(isAllowedPortalUri(uri)) {
             "Constructed portal URI failed policy validation"
@@ -30,7 +36,7 @@ object AccountPortalUriPolicy {
     }
 
     /**
-     * Allows only HTTPS URIs on the exact host [EXPECTED_HOST].
+     * Allows only HTTPS URIs on the exact portal host for this flavor.
      * Rejects cleartext, wrong hosts, subdomain spoofing, and userinfo.
      * Does not use [String.startsWith] for host checks.
      */
@@ -45,8 +51,14 @@ object AccountPortalUriPolicy {
             return false
         }
 
-        val host = uri.host ?: return false
-        if (!EXPECTED_HOST.equals(host, ignoreCase = true)) {
+        val host = GetLineControlPlaneHostPolicy.canonicalizeHost(uri.host)
+            ?: return false
+        val expected = GetLineControlPlaneHostPolicy.canonicalizeHost(expectedHost)
+            ?: return false
+        if (expected != host) {
+            return false
+        }
+        if (!GetLineControlPlaneHostPolicy.isAllowedProductHost(host)) {
             return false
         }
 

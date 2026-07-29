@@ -6,6 +6,7 @@ git submodule (`MetaCubeX/mihomo`).
 | Patch | Purpose |
 | --- | --- |
 | `0001-disable-ssh-outbound-no_ssh.patch` | Security gate: build tag `no_ssh` + stub; unlink product SSH outbound |
+| `0002-restrict-subscription-redirects.patch` | Subscription/HTTP fetch: same-host redirects only; reject HTTPS→HTTP; trailing-dot host canonicalize + tests |
 
 ## Why not a submodule commit?
 
@@ -63,7 +64,7 @@ git submodule update --remote --force
 ./scripts/verify-mihomo-gate.sh --skip-gitlink
 
 # 4. Build
-./gradlew :app:assembleAlphaDebug
+./gradlew :app:assembleAlphaProdDebug
 
 # 5. Device smoke: connect, traffic, server selection
 
@@ -83,5 +84,15 @@ git submodule update --remote --force
    changes, and the new gitlink.
 
 `m core/src/foss/golang/clash` after a successful apply is expected local dirt
-from the patch (tracked mods + untracked stubs). That is the gate working tree,
-not an accidental fork commit.
+from the patches (tracked mods + untracked new files). That is the product
+working tree, not an accidental fork commit.
+
+Expected footprint after both patches:
+
+| Kind | Paths |
+| --- | --- |
+| dirty tracked | `adapter/outbound/ssh.go`, `constant/features/tags.go`, `component/http/http.go` |
+| untracked | `adapter/outbound/ssh_stub.go`, `ssh_stub_test.go`, `constant/features/no_ssh.go`, `no_ssh_stub.go`, `component/http/http_redirect_test.go` |
+
+Do **not** commit those paths inside the Mihomo submodule. Refresh
+`core/patches/mihomo/*.patch` in the parent repo instead.

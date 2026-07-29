@@ -2,3 +2,4 @@
 	path = core/src/foss/golang/clash
 	url = https://github.com/MetaCubeX/mihomo
 	branch = Alpha
+	ignore = dirty

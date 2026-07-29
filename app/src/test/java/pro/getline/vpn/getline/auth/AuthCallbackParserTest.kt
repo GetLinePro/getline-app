@@ -9,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import pro.getline.vpn.AppEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -66,9 +67,28 @@ class AuthCallbackParserTest {
     }
 
     @Test
+    fun parse_wrongEnvironmentHost_rejected() {
+        // Production callback host on e2e build (and vice versa).
+        val foreign = if (AppEnvironment.callbackHost == "auth.stage.getline.pro") {
+            "app.getline.pro"
+        } else {
+            "auth.stage.getline.pro"
+        }
+        val uri = Uri.parse(
+            "https://$foreign/#/login?auth_token=token",
+        )
+        try {
+            AuthCallbackParser.parse(uri)
+            fail("expected InvalidCallback for wrong-environment host")
+        } catch (_: GetLineAuthException.InvalidCallback) {
+            // expected
+        }
+    }
+
+    @Test
     fun parse_unrelatedRoute_rejected() {
         val uri = Uri.parse(
-            "https://app.getline.pro/#/settings?auth_token=token",
+            "https://${AppEnvironment.callbackHost}/#/settings?auth_token=token",
         )
         try {
             AuthCallbackParser.parse(uri)
@@ -95,6 +115,8 @@ class AuthCallbackParserTest {
     }
 
     private fun callback(fragmentQuery: String): Uri {
-        return Uri.parse("https://app.getline.pro/#/login?$fragmentQuery")
+        return Uri.parse(
+            "https://${AppEnvironment.callbackHost}/#/login?$fragmentQuery",
+        )
     }
 }

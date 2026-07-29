@@ -4,7 +4,7 @@
 #
 # Source of truth is core/patches/mihomo/*.patch in the parent repo — not the
 # submodule gitlink. A clean `git submodule update --force` alone does NOT
-# enable product gates (e.g. no_ssh).
+# enable product gates (e.g. no_ssh, subscription redirect policy).
 #
 # Usage:
 #   ./scripts/apply-mihomo-patches.sh           # apply (default)
@@ -46,7 +46,6 @@ if ((${#patches[@]} == 0)); then
 fi
 
 # Paths from 0001-disable-ssh-outbound-no_ssh.patch
-# Shared source for apply recovery and --verify (do not duplicate elsewhere).
 SSH_GATE_TRACKED=(
   "adapter/outbound/ssh.go"
   "constant/features/tags.go"
@@ -56,6 +55,24 @@ SSH_GATE_NEW_FILES=(
   "adapter/outbound/ssh_stub_test.go"
   "constant/features/no_ssh.go"
   "constant/features/no_ssh_stub.go"
+)
+
+# Paths from 0002-restrict-subscription-redirects.patch
+REDIRECT_TRACKED=(
+  "component/http/http.go"
+)
+REDIRECT_NEW_FILES=(
+  "component/http/http_redirect_test.go"
+)
+
+# Full product patch footprint (exact-tree verify + leftover recovery).
+PRODUCT_TRACKED=(
+  "${SSH_GATE_TRACKED[@]}"
+  "${REDIRECT_TRACKED[@]}"
+)
+PRODUCT_NEW_FILES=(
+  "${SSH_GATE_NEW_FILES[@]}"
+  "${REDIRECT_NEW_FILES[@]}"
 )
 
 fail_apply() {
@@ -89,28 +106,38 @@ path_is_tracked() {
   git -C "$CLASH" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1
 }
 
-# Materialize post-patch file tree for NEW files into $1 (absolute temp dir).
-# Uses HEAD versions of tracked paths + the product patch. No writes under CLASH.
+# Materialize post-patch file tree for product patches into $1 (absolute temp dir).
+# Uses HEAD versions of tracked paths + every *.patch in order. No writes under CLASH.
 # Note: do not use `git apply --directory` — some git versions reject those paths;
 # apply from inside the temp tree instead.
-build_expected_ssh_gate_tree() {
+build_expected_product_tree() {
   local expect_root="$1"
-  local patch="$2"
   local rel
   local patch_abs
+  local p
+  local dirs=()
 
-  patch_abs="$(cd "$(dirname "$patch")" && pwd)/$(basename "$patch")"
+  for rel in "${PRODUCT_TRACKED[@]}" "${PRODUCT_NEW_FILES[@]}"; do
+    dirs+=("$(dirname "$rel")")
+  done
+  # shellcheck disable=SC2207
+  dirs=($(printf '%s\n' "${dirs[@]}" | sort -u))
+  for rel in "${dirs[@]}"; do
+    mkdir -p "$expect_root/$rel"
+  done
 
-  mkdir -p "$expect_root/adapter/outbound" "$expect_root/constant/features"
-  for rel in "${SSH_GATE_TRACKED[@]}"; do
+  for rel in "${PRODUCT_TRACKED[@]}"; do
     git -C "$CLASH" show "HEAD:$rel" >"$expect_root/$rel"
   done
 
-  if ! (cd "$expect_root" && git apply --check -p1 "$patch_abs") >/dev/null 2>&1; then
-    echo "  refuse recovery: cannot materialize expected tree from patch" >&2
-    return 1
-  fi
-  (cd "$expect_root" && git apply -p1 "$patch_abs")
+  for p in "${patches[@]}"; do
+    patch_abs="$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
+    if ! (cd "$expect_root" && git apply --check -p1 "$patch_abs") >/dev/null 2>&1; then
+      echo "  refuse recovery: cannot materialize expected tree from $(basename "$p")" >&2
+      return 1
+    fi
+    (cd "$expect_root" && git apply -p1 "$patch_abs")
+  done
 }
 
 # Safe recovery for leftover untracked patch outputs after submodule --force.
@@ -118,22 +145,21 @@ build_expected_ssh_gate_tree() {
 #   - tracked patch targets are clean vs HEAD
 #   - complete set of new files exists
 #   - each is untracked
-#   - each byte-matches the content the patch would create on HEAD
+#   - each byte-matches the content the patches would create on HEAD
 # Otherwise fails with no writes.
-try_recover_ssh_gate_leftovers() {
-  local patch="$1"
+try_recover_product_leftovers() {
   local rel
   local expect_root
   local missing=0
 
-  for rel in "${SSH_GATE_TRACKED[@]}"; do
+  for rel in "${PRODUCT_TRACKED[@]}"; do
     if path_is_dirty "$rel"; then
       echo "  refuse recovery: tracked file has local changes: $rel" >&2
       return 1
     fi
   done
 
-  for rel in "${SSH_GATE_NEW_FILES[@]}"; do
+  for rel in "${PRODUCT_NEW_FILES[@]}"; do
     if [[ ! -e "$CLASH/$rel" ]]; then
       echo "  refuse recovery: incomplete leftover set, missing: $rel" >&2
       missing=1
@@ -148,15 +174,15 @@ try_recover_ssh_gate_leftovers() {
     return 1
   fi
 
-  expect_root="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-ssh-gate-expect.XXXXXX")"
+  expect_root="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-product-expect.XXXXXX")"
   # shellcheck disable=SC2064
   trap "rm -rf '$expect_root'" RETURN
 
-  if ! build_expected_ssh_gate_tree "$expect_root" "$patch"; then
+  if ! build_expected_product_tree "$expect_root"; then
     return 1
   fi
 
-  for rel in "${SSH_GATE_NEW_FILES[@]}"; do
+  for rel in "${PRODUCT_NEW_FILES[@]}"; do
     if [[ ! -f "$expect_root/$rel" ]]; then
       echo "  refuse recovery: expected tree missing $rel (patch changed?)" >&2
       return 1
@@ -168,7 +194,58 @@ try_recover_ssh_gate_leftovers() {
   done
 
   # Content-verified complete leftover set — safe to remove, then re-apply.
-  for rel in "${SSH_GATE_NEW_FILES[@]}"; do
+  for rel in "${PRODUCT_NEW_FILES[@]}"; do
+    rm -f "$CLASH/$rel"
+  done
+  return 0
+}
+
+# Per-patch leftover recovery when only that patch's new files remain and
+# its tracked targets are clean (partial product leftover sets).
+try_recover_patch_new_files() {
+  local patch="$1"
+  shift
+  local -a new_files=("$@")
+  local rel
+  local expect_root
+  local patch_abs
+  local missing=0
+
+  for rel in "${new_files[@]}"; do
+    if [[ ! -e "$CLASH/$rel" ]]; then
+      missing=1
+      continue
+    fi
+    if path_is_tracked "$rel"; then
+      echo "  refuse recovery: would remove tracked file: $rel" >&2
+      return 1
+    fi
+  done
+  if ((missing)); then
+    return 1
+  fi
+
+  # Full product expected tree for byte-compare of this patch's new files.
+  expect_root="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-patch-expect.XXXXXX")"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$expect_root'" RETURN
+
+  if ! build_expected_product_tree "$expect_root"; then
+    return 1
+  fi
+
+  for rel in "${new_files[@]}"; do
+    if [[ ! -f "$expect_root/$rel" ]]; then
+      echo "  refuse recovery: expected tree missing $rel" >&2
+      return 1
+    fi
+    if ! cmp -s "$CLASH/$rel" "$expect_root/$rel"; then
+      echo "  refuse recovery: untracked file differs from patch output: $rel" >&2
+      return 1
+    fi
+  done
+
+  for rel in "${new_files[@]}"; do
     rm -f "$CLASH/$rel"
   done
   return 0
@@ -191,25 +268,47 @@ apply_one() {
     return 0
   fi
 
-  # Partial state: untracked stubs left after submodule update --force while
+  # Partial state: untracked outputs left after submodule update --force while
   # tracked files were reset to upstream. Recover only when leftovers are the
-  # exact complete set the patch creates.
+  # exact complete set the product patches create (or this patch's new files).
+  echo "attempting safe recovery of product patch leftovers: $name"
+  if try_recover_product_leftovers; then
+    if git -C "$CLASH" apply --check "$patch" >/dev/null 2>&1; then
+      git -C "$CLASH" apply "$patch"
+      echo "applied: $name"
+      return 0
+    fi
+    # After full leftover cleanup, earlier patches may already be applied;
+    # continue apply loop for remaining patches from caller.
+    if git -C "$CLASH" apply --reverse --check "$patch" >/dev/null 2>&1; then
+      echo "already applied: $name"
+      return 0
+    fi
+  fi
+
   if [[ "$name" == *disable-ssh-outbound* ]]; then
-    echo "attempting safe recovery of SSH gate leftovers: $name"
-    if try_recover_ssh_gate_leftovers "$patch"; then
+    if try_recover_patch_new_files "$patch" "${SSH_GATE_NEW_FILES[@]}"; then
       if git -C "$CLASH" apply --check "$patch" >/dev/null 2>&1; then
         git -C "$CLASH" apply "$patch"
         echo "applied: $name"
         return 0
       fi
-      fail_apply "$name" "recovery cleaned verified leftovers but patch still does not apply"
     fi
-    fail_apply "$name" \
-      "recovery refused (dirty tracked, incomplete set, content mismatch, or tracked outputs)" \
-      "fix local changes or reset submodule, then re-run"
   fi
 
-  fail_apply "$name"
+  if [[ "$name" == *restrict-subscription-redirects* ]]; then
+    if try_recover_patch_new_files "$patch" "${REDIRECT_NEW_FILES[@]}"; then
+      if git -C "$CLASH" apply --check "$patch" >/dev/null 2>&1; then
+        git -C "$CLASH" apply "$patch"
+        echo "applied: $name"
+        return 0
+      fi
+    fi
+  fi
+
+  fail_apply "$name" \
+    "recovery refused (dirty tracked, incomplete set, content mismatch, or tracked outputs)" \
+    "fix local changes or reset submodule, then re-run"
 }
 
 # Sorted unique lines on stdin → stdout.
@@ -251,26 +350,13 @@ set_equals_array() {
   return 0
 }
 
-# Verify working tree is exactly the SSH-gate patch result: no extra dirty/untracked
-# paths, and every gate file byte-matches materializing the patch on HEAD.
-verify_ssh_gate_tree() {
-  local patch=""
-  local p name rel
+# Verify working tree is exactly the product patch result: no extra dirty/untracked
+# paths, and every product file byte-matches materializing all patches on HEAD.
+verify_product_tree() {
+  local rel
   local dirty_tracked untracked
   local expect_root
   local failed=0
-
-  for p in "${patches[@]}"; do
-    name="$(basename "$p")"
-    if [[ "$name" == *disable-ssh-outbound* ]]; then
-      patch="$p"
-      break
-    fi
-  done
-  if [[ -z "$patch" ]]; then
-    echo "error: SSH gate patch not found in $PATCH_DIR" >&2
-    exit 1
-  fi
 
   dirty_tracked="$(
     {
@@ -280,10 +366,10 @@ verify_ssh_gate_tree() {
   )"
   untracked="$(git -C "$CLASH" ls-files --others --exclude-standard | sed '/^$/d' | sort_unique)"
 
-  if ! set_equals_array "$dirty_tracked" SSH_GATE_TRACKED "dirty tracked"; then
+  if ! set_equals_array "$dirty_tracked" PRODUCT_TRACKED "dirty tracked"; then
     failed=1
   fi
-  if ! set_equals_array "$untracked" SSH_GATE_NEW_FILES "untracked"; then
+  if ! set_equals_array "$untracked" PRODUCT_NEW_FILES "untracked"; then
     failed=1
   fi
   if ((failed)); then
@@ -293,16 +379,16 @@ verify_ssh_gate_tree() {
     exit 1
   fi
 
-  expect_root="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-ssh-gate-verify.XXXXXX")"
+  expect_root="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-product-verify.XXXXXX")"
   # shellcheck disable=SC2064
   trap "rm -rf '$expect_root'" RETURN
 
-  if ! build_expected_ssh_gate_tree "$expect_root" "$patch"; then
-    echo "error: cannot materialize expected SSH gate tree from patch on HEAD" >&2
+  if ! build_expected_product_tree "$expect_root"; then
+    echo "error: cannot materialize expected product tree from patches on HEAD" >&2
     exit 1
   fi
 
-  for rel in "${SSH_GATE_TRACKED[@]}" "${SSH_GATE_NEW_FILES[@]}"; do
+  for rel in "${PRODUCT_TRACKED[@]}" "${PRODUCT_NEW_FILES[@]}"; do
     if [[ ! -f "$expect_root/$rel" ]]; then
       echo "error: expected tree missing $rel (patch changed?)" >&2
       failed=1
@@ -320,7 +406,7 @@ verify_ssh_gate_tree() {
   done
 
   if ((failed)); then
-    echo "error: SSH gate file contents do not match patch applied to HEAD" >&2
+    echo "error: product patch file contents do not match patches applied to HEAD" >&2
     exit 1
   fi
 
@@ -328,7 +414,7 @@ verify_ssh_gate_tree() {
 }
 
 if [[ "$MODE" == "verify" ]]; then
-  verify_ssh_gate_tree
+  verify_product_tree
   exit 0
 fi
 

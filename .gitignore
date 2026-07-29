@@ -66,3 +66,7 @@ google-services.json
 
 # Security scan working reports (baselines under security/baselines/ are committed)
 /security/reports/
+
+# Internal working notes: incident journals, priorities, vendor recon.
+# Only distilled contracts belong in docs/.
+/docs/internal/

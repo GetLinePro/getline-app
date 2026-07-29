@@ -21,6 +21,47 @@ import org.robolectric.annotation.Config
 @Config(sdk = [28])
 class SubscriptionLoadRepositoryTest {
     @Test
+    fun loadPreferredSubscription_rejectsWrongEnvironmentLink() = runBlocking {
+        val foreignLink = if (pro.getline.vpn.GetLineControlPlaneHostPolicy.isE2e) {
+            "https://app.getline.pro/sub/real"
+        } else {
+            "https://app.stage.getline.pro/sub/e2e"
+        }
+        val api = FakeAuthApi(
+            subscriptions = SubscriptionsResponse(
+                false,
+                listOf(item(id = "1", primary = true, link = foreignLink)),
+            ),
+        )
+        val repo = GetLineSessionRepository(api, seededStore())
+        try {
+            repo.loadPreferredSubscription()
+            fail("must reject foreign-environment subscription_link before import")
+        } catch (_: GetLineAuthException.Protocol) {
+            // expected
+        }
+    }
+
+    @Test
+    fun loadPreferredSubscription_acceptsEnvironmentLink() = runBlocking {
+        val okLink = if (pro.getline.vpn.GetLineControlPlaneHostPolicy.isE2e) {
+            "https://app.stage.getline.pro/sub/e2e"
+        } else {
+            "https://app.getline.pro/sub/user"
+        }
+        val api = FakeAuthApi(
+            subscriptions = SubscriptionsResponse(
+                false,
+                listOf(item(id = "9", primary = true, link = okLink)),
+            ),
+        )
+        val repo = GetLineSessionRepository(api, seededStore())
+        val item = repo.loadPreferredSubscription()
+        assertEquals("9", item.id)
+        assertEquals(okLink, item.subscriptionLink)
+    }
+
+    @Test
     fun loadSubscriptionForUi_noSession_signedOut() = runBlocking {
         val api = FakeAuthApi()
         val store = GetLineSessionStore(RuntimeEnvironment.getApplication())

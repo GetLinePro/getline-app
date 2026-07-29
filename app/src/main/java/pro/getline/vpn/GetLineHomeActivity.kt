@@ -1214,7 +1214,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     }
 
     /**
-     * Opens the web account portal in a Custom Tab (HTTPS app.getline.pro only).
+     * Opens the web account portal in a Custom Tab (HTTPS portal host for this flavor).
      * Does not pass native tokens, use WebView, or import profiles / touch VPN.
      */
     private fun GetLineHomeDesign.openAccountPortal() {

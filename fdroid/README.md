@@ -10,8 +10,8 @@ with these locked facts:
 - application ID: `pro.getline.vpn`
 - license: `GPL-3.0-only`
 - source: `https://github.com/momai/getline-app`
-- build flavor: `metaRelease`
-- build command: `./gradlew --offline --no-daemon :app:assembleMetaRelease`
+- build flavor: `metaProdRelease`
+- build command: `./gradlew --offline --no-daemon :app:assembleMetaProdRelease`
 - submodules: required
 - JDK: Temurin `21.0.10+7.0.LTS`
 - Go: MetaCubeX patched Go `1.26` Linux amd64 asset `469676048`,

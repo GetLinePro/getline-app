@@ -8,6 +8,8 @@ import android.os.Build
 import androidx.browser.auth.AuthTabIntent
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsService
+import pro.getline.vpn.AppEnvironment
+import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import pro.getline.vpn.getlineui.GetLineScreen
 import pro.getline.vpn.product.GetLineActivity
 
@@ -18,7 +20,7 @@ import pro.getline.vpn.product.GetLineActivity
  * The launcher is provider-agnostic: callers obtain `auth_url` (or a same-origin
  * trampoline that resolves it in-browser) and pass it here unchanged.
  *
- * Completion: https://app.getline.pro/#/login?auth_token=... (path `/` + fragment).
+ * Completion host/path come from [AppEnvironment] (prod or e2e flavor).
  *
  * Start URL must not be the HTTPS completion path (`/`), otherwise supporting
  * browsers can treat the initial navigation as completion.
@@ -37,7 +39,7 @@ class BrowserAuthLauncher {
         val intent = Intent(authTab.intent).apply {
             data = launchUri
             setPackage(browserPackage)
-            putExtra(AuthTabIntent.EXTRA_HTTPS_REDIRECT_HOST, REDIRECT_HOST)
+            putExtra(AuthTabIntent.EXTRA_HTTPS_REDIRECT_HOST, AppEnvironment.callbackHost)
             putExtra(AuthTabIntent.EXTRA_HTTPS_REDIRECT_PATH, REDIRECT_PATH)
         }
 
@@ -101,8 +103,9 @@ class BrowserAuthLauncher {
          * `/api/auth/telegram-oidc/start` inside the browser so PKCE cookies
          * land in the Auth Tab jar. See `docs/spikes/android-auth/`.
          */
-        const val TELEGRAM_TRAMPOLINE_URL = "https://app.getline.pro/android-auth/telegram"
-        const val REDIRECT_HOST = "app.getline.pro"
+        val TELEGRAM_TRAMPOLINE_URL: String
+            get() = AppEnvironment.telegramTrampolineUrl
+
         const val REDIRECT_PATH = "/"
 
         private val PREFERRED_BROWSERS = listOf(
@@ -127,6 +130,9 @@ class BrowserAuthLauncher {
             if (uri.host.isNullOrBlank()) {
                 throw GetLineAuthException.Protocol("auth_url host missing")
             }
+            // E2E: only stage product hosts. Prod: block wrong-env GetLine hosts;
+            // third-party OAuth (accounts.google.com) still allowed on prod.
+            GetLineControlPlaneHostPolicy.requireBrowserLaunchUrl(trimmed)
             return uri
         }
     }

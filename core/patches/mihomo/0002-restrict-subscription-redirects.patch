@@ -1,0 +1,251 @@
+From: GetLine maintainers
+Subject: [PATCH] restrict subscription HTTP redirects (GetLine isolation)
+
+Parent-tracked patch for the clash-foss (Mihomo) submodule.
+Applied after `git submodule update` by scripts/apply-mihomo-patches.sh
+(and core Gradle Golang build). Do not rely on a dirty submodule working tree.
+
+Upstream gitlink remains MetaCubeX/mihomo @ recorded SHA; this product
+change is intentionally not pushed to upstream.
+
+Restricts Clash HTTP client redirect following used by subscription
+profile fetch (FetchAndValid / openUrl via WithCheckRedirect):
+
+- same host only (canonical host strips port + trailing FQDN dots)
+- reject HTTPS-to-HTTP scheme downgrades
+
+Adds component/http/http_redirect_test.go unit coverage.
+
+Applies with: git -C core/src/foss/golang/clash apply -p1 < this file
+(or via scripts/apply-mihomo-patches.sh)
+
+---
+ component/http/http.go               | 91 ++++++++++++++++++++++++-
+ component/http/http_redirect_test.go | 99 ++++++++++++++++++++++++++++
+ 2 files changed, 187 insertions(+), 3 deletions(-)
+ create mode 100644 component/http/http_redirect_test.go
+
+diff --git a/component/http/http.go b/component/http/http.go
+index af6ffea..e511135 100644
+--- a/component/http/http.go
++++ b/component/http/http.go
+@@ -2,6 +2,7 @@ package http
+ 
+ import (
+ 	"context"
++	"fmt"
+ 	"io"
+ 	"net"
+ 	URL "net/url"
+@@ -87,15 +88,19 @@ func HttpRequest(ctx context.Context, url, method string, header map[string][]st
+ 	}
+ 
+ 	client := http.Client{Transport: transport}
++	if opt.checkRedirect != nil {
++		client.CheckRedirect = opt.checkRedirect
++	}
+ 	return client.Do(req)
+ }
+ 
+ type Option func(opt *option)
+ 
+ type option struct {
+-	specialProxy string
+-	dialer       C.Dialer
+-	caOption     ca.Option
++	specialProxy  string
++	dialer        C.Dialer
++	caOption      ca.Option
++	checkRedirect func(req *http.Request, via []*http.Request) error
+ }
+ 
+ func WithSpecialProxy(name string) Option {
+@@ -115,3 +120,83 @@ func WithCAOption(caOption ca.Option) Option {
+ 		opt.caOption = caOption
+ 	}
+ }
++
++// WithCheckRedirect sets http.Client.CheckRedirect (nil keeps library default).
++func WithCheckRedirect(fn func(req *http.Request, via []*http.Request) error) Option {
++	return func(opt *option) {
++		opt.checkRedirect = fn
++	}
++}
++
++// SameHostOnlyRedirect allows same-host hops only.
++//
++// Rules:
++//   - Host must match after canonicalization (strip port + trailing FQDN dots),
++//     so app.stage.getline.pro → app.getline.pro is rejected.
++//   - HTTPS-to-HTTP downgrades are rejected (scheme must not weaken).
++//   - HTTP→HTTPS upgrade on the same host is allowed.
++//   - Port may change (e.g. :80 → :443 with scheme upgrade).
++func SameHostOnlyRedirect(req *http.Request, via []*http.Request) error {
++	if len(via) >= 10 {
++		return fmt.Errorf("stopped after 10 redirects")
++	}
++	if len(via) == 0 {
++		return nil
++	}
++	origURL := via[0].URL
++	nextURL := req.URL
++	if nextURL == nil {
++		return fmt.Errorf("redirect missing URL")
++	}
++	origHost := canonicalHTTPHost(origURL.Host)
++	nextHost := canonicalHTTPHost(nextURL.Host)
++	if origHost == "" || nextHost == "" || origHost != nextHost {
++		return fmt.Errorf("cross-host redirect rejected: %q -> %q", origURL.Host, nextURL.Host)
++	}
++	origScheme := strings.ToLower(origURL.Scheme)
++	nextScheme := strings.ToLower(nextURL.Scheme)
++	// Preserve confidentiality of an initially HTTPS subscription URL.
++	if origScheme == "https" && nextScheme != "https" {
++		return fmt.Errorf(
++			"https-to-%s redirect rejected: %q -> %q",
++			nextScheme,
++			canonicalOrigin(origURL),
++			canonicalOrigin(nextURL),
++		)
++	}
++	return nil
++}
++
++func canonicalOrigin(u *URL.URL) string {
++	if u == nil {
++		return ""
++	}
++	scheme := strings.ToLower(u.Scheme)
++	host := canonicalHTTPHost(u.Host)
++	if scheme == "" || host == "" {
++		return ""
++	}
++	return scheme + "://" + host
++}
++
++func canonicalHTTPHost(hostport string) string {
++	h := strings.TrimSpace(hostport)
++	if h == "" {
++		return ""
++	}
++	// Strip brackets from IPv6 literals when present without port.
++	if strings.HasPrefix(h, "[") {
++		if host, _, err := net.SplitHostPort(h); err == nil {
++			h = host
++		} else {
++			h = strings.TrimSuffix(strings.TrimPrefix(h, "["), "]")
++		}
++	} else if host, _, err := net.SplitHostPort(h); err == nil {
++		h = host
++	}
++	h = strings.ToLower(h)
++	for strings.HasSuffix(h, ".") {
++		h = strings.TrimSuffix(h, ".")
++	}
++	return h
++}
+diff --git a/component/http/http_redirect_test.go b/component/http/http_redirect_test.go
+new file mode 100644
+index 0000000..0ef8a5a
+--- /dev/null
++++ b/component/http/http_redirect_test.go
+@@ -0,0 +1,99 @@
++package http
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/metacubex/http"
++)
++
++func TestCanonicalHTTPHost(t *testing.T) {
++	cases := []struct {
++		in   string
++		want string
++	}{
++		{"app.stage.getline.pro", "app.stage.getline.pro"},
++		{"app.stage.getline.pro.", "app.stage.getline.pro"},
++		{"App.Stage.GetLine.Pro.", "app.stage.getline.pro"},
++		{"app.stage.getline.pro:443", "app.stage.getline.pro"},
++		{"[2001:db8::1]:443", "2001:db8::1"},
++		{"", ""},
++	}
++	for _, tc := range cases {
++		if got := canonicalHTTPHost(tc.in); got != tc.want {
++			t.Fatalf("canonicalHTTPHost(%q)=%q want %q", tc.in, got, tc.want)
++		}
++	}
++}
++
++func TestSameHostOnlyRedirect_rejectsCrossHost(t *testing.T) {
++	orig, err := http.NewRequest("GET", "https://app.stage.getline.pro/sub/e2e", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	next, err := http.NewRequest("GET", "https://app.getline.pro/sub/e2e", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := SameHostOnlyRedirect(next, []*http.Request{orig}); err == nil {
++		t.Fatal("expected cross-host redirect rejection")
++	}
++}
++
++func TestSameHostOnlyRedirect_allowsSameHostTrailingDot(t *testing.T) {
++	orig, err := http.NewRequest("GET", "https://app.stage.getline.pro/sub/e2e", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	next, err := http.NewRequest("GET", "https://app.stage.getline.pro./sub/e2e", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := SameHostOnlyRedirect(next, []*http.Request{orig}); err != nil {
++		t.Fatalf("same host with trailing dot should be allowed: %v", err)
++	}
++}
++
++func TestSameHostOnlyRedirect_rejectsHttpsToHttpDowngrade(t *testing.T) {
++	orig, err := http.NewRequest("GET", "https://app.stage.getline.pro/sub/e2e", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	next, err := http.NewRequest("GET", "http://app.stage.getline.pro/sub/e2e", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	err = SameHostOnlyRedirect(next, []*http.Request{orig})
++	if err == nil {
++		t.Fatal("expected HTTPS-to-HTTP redirect rejection")
++	}
++	if !strings.Contains(err.Error(), "https-to-http") {
++		t.Fatalf("error should mention https downgrade: %v", err)
++	}
++}
++
++func TestSameHostOnlyRedirect_allowsHttpToHttpsUpgrade(t *testing.T) {
++	orig, err := http.NewRequest("GET", "http://app.stage.getline.pro/sub/e2e", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	next, err := http.NewRequest("GET", "https://app.stage.getline.pro/sub/e2e", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := SameHostOnlyRedirect(next, []*http.Request{orig}); err != nil {
++		t.Fatalf("HTTP-to-HTTPS same-host upgrade should be allowed: %v", err)
++	}
++}
++
++func TestCanonicalOrigin(t *testing.T) {
++	u, err := http.NewRequest("GET", "https://App.Stage.GetLine.Pro.:8443/sub", nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	got := canonicalOrigin(u.URL)
++	// Host port is stripped; scheme + canonical host only.
++	if got != "https://app.stage.getline.pro" {
++		t.Fatalf("canonicalOrigin=%q", got)
++	}
++}

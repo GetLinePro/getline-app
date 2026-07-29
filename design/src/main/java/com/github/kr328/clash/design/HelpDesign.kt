@@ -16,6 +16,12 @@ import com.github.kr328.clash.design.util.root
 class HelpDesign(
     context: Context,
     openLink: (Uri) -> Unit,
+    /**
+     * Account portal origin for this app environment (prod/e2e). Prefer an
+     * app-level override of [R.string.getline_account_url]; this parameter is
+     * the explicit entry point from HelpActivity when the string is injected.
+     */
+    accountPortalUrl: String = context.getString(R.string.getline_account_url),
 ) : Design<Unit>(context) {
     private val binding = DesignSettingsCommonBinding
         .inflate(context.layoutInflater, context.root, false)
@@ -29,6 +35,10 @@ class HelpDesign(
         binding.activityBarLayout.applyFrom(context)
 
         binding.scrollRoot.bindAppBarElevation(binding.activityBarLayout)
+
+        val accountUrl = accountPortalUrl.trim().ifEmpty {
+            context.getString(R.string.getline_account_url)
+        }
 
         val screen = preferenceScreen(context) {
             tips(R.string.tips_help)
@@ -55,10 +65,10 @@ class HelpDesign(
 
             clickable(
                 title = R.string.getline_account,
-                summary = R.string.getline_account_url
             ) {
+                summary = accountUrl
                 clicked {
-                    openLink(Uri.parse(context.getString(R.string.getline_account_url)))
+                    openLink(Uri.parse(accountUrl))
                 }
             }
 

@@ -92,7 +92,7 @@ class AccountPortalLauncherTest {
         )
         val result = launcher.open(
             context,
-            Uri.parse("http://app.getline.pro/#/my-dashboard"),
+            Uri.parse("http://${AccountPortalUriPolicy.expectedHost}/#/my-dashboard"),
         )
         assertEquals(AccountPortalLaunchResult.RejectedUri, result)
         assertEquals(0, started)
@@ -105,9 +105,10 @@ class AccountPortalLauncherTest {
             startActivity = { _, _ -> started++ },
             buildCustomTabsIntent = { CustomTabsIntent.Builder().build() },
         )
+        val origin = pro.getline.vpn.AppEnvironment.portalOrigin.trimEnd('/')
         val result = launcher.open(
             context,
-            Uri.parse("https://app.getline.pro/?access_token=abc"),
+            Uri.parse("$origin/?access_token=abc"),
         )
         assertEquals(AccountPortalLaunchResult.RejectedUri, result)
         assertEquals(0, started)

@@ -12,6 +12,86 @@ android {
         unitTests.isIncludeAndroidResources = true
         unitTests.isReturnDefaultValues = true
     }
+
+    // App-only: RWP/Auth origins. Do not add to library modules (would multiply
+    // core/Go/NDK variants). Root subprojects already owns channel (alpha/meta).
+    flavorDimensions += "environment"
+
+    productFlavors {
+        create("prod") {
+            isDefault = true
+            dimension = "environment"
+
+            buildConfigField(
+                "String",
+                "GETLINE_API_ORIGIN",
+                "\"https://app.getline.pro\"",
+            )
+            buildConfigField(
+                "String",
+                "GETLINE_AUTH_ORIGIN",
+                "\"https://app.getline.pro\"",
+            )
+            buildConfigField(
+                "String",
+                "GETLINE_CALLBACK_HOST",
+                "\"app.getline.pro\"",
+            )
+            buildConfigField(
+                "String",
+                "GETLINE_PORTAL_ORIGIN",
+                "\"https://app.getline.pro\"",
+            )
+            // Overrides design's hardcoded getline_account_url (Help → Account).
+            resValue("string", "getline_account_url", "https://app.getline.pro/")
+        }
+
+        create("e2e") {
+            dimension = "environment"
+            applicationIdSuffix = ".e2e"
+
+            buildConfigField(
+                "String",
+                "GETLINE_API_ORIGIN",
+                "\"https://app.stage.getline.pro\"",
+            )
+            buildConfigField(
+                "String",
+                "GETLINE_AUTH_ORIGIN",
+                "\"https://auth.stage.getline.pro\"",
+            )
+            buildConfigField(
+                "String",
+                "GETLINE_CALLBACK_HOST",
+                "\"auth.stage.getline.pro\"",
+            )
+            buildConfigField(
+                "String",
+                "GETLINE_PORTAL_ORIGIN",
+                "\"https://app.stage.getline.pro\"",
+            )
+            // Overrides design's hardcoded getline_account_url (Help → Account).
+            resValue("string", "getline_account_url", "https://app.stage.getline.pro/")
+        }
+    }
+}
+
+// Keep e2e limited to alphaDebug (side-channel smoke). Production package and
+// release builds stay on prod only.
+androidComponents {
+    beforeVariants(selector().all()) { variant ->
+        val flavors = variant.productFlavors.toMap()
+        val channel = flavors["channel"]
+        val environment = flavors["environment"]
+
+        if (environment == "e2e" && channel != "alpha") {
+            variant.enable = false
+        }
+
+        if (environment == "e2e" && variant.buildType != "debug") {
+            variant.enable = false
+        }
+    }
 }
 
 dependencies {

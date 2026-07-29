@@ -3,6 +3,8 @@ package pro.getline.vpn.getline.auth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import pro.getline.vpn.AppEnvironment
+import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.OutputStreamWriter
@@ -11,8 +13,13 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 
 class RwpGetLineAuthApi(
-    private val origin: String = DEFAULT_ORIGIN,
+    private val origin: String = AppEnvironment.apiOrigin,
 ) : GetLineAuthApi {
+    init {
+        // Fail closed before any network I/O if origin is wrong for this flavor.
+        GetLineControlPlaneHostPolicy.requireApiOrigin(origin)
+    }
+
     override suspend fun startBrowserAuth(method: AuthMethod): BrowserAuthStartResponse {
         require(method.requiresBrowser()) {
             "AuthMethod.$method cannot start browser auth"
@@ -31,6 +38,8 @@ class RwpGetLineAuthApi(
         if (authUrl.isBlank()) {
             throw GetLineAuthException.Protocol("auth_url is blank")
         }
+        // Reject wrong-environment / arbitrary hosts before browser launch.
+        GetLineControlPlaneHostPolicy.requireBrowserLaunchUrl(authUrl)
         return BrowserAuthStartResponse(authUrl = authUrl)
     }
 
@@ -147,6 +156,9 @@ class RwpGetLineAuthApi(
             readTimeout = TIMEOUT_MS
             useCaches = false
             doInput = true
+            // Never follow 3xx: a stage handler must not bounce the e2e client
+            // onto production RWP/Auth (or any other host) with Bearer headers.
+            instanceFollowRedirects = false
             setRequestProperty("Accept", "application/json")
             if (xhr) {
                 setRequestProperty("X-Requested-With", "XMLHttpRequest")
@@ -172,6 +184,12 @@ class RwpGetLineAuthApi(
             }
 
             val code = connection.responseCode
+            // Explicit reject: do not read Location or open a second connection.
+            if (code in 300..399) {
+                throw GetLineAuthException.Protocol(
+                    "Unexpected redirect from control-plane API",
+                )
+            }
             val stream = if (code in 200..299) {
                 connection.inputStream
             } else {
@@ -240,13 +258,11 @@ class RwpGetLineAuthApi(
     }
 
     companion object {
-        const val DEFAULT_ORIGIN = "https://app.getline.pro"
         const val EMAIL_SEND_OTP_PATH = "/api/auth/email/send-otp"
         const val EMAIL_VERIFY_OTP_PATH = "/api/auth/email/verify-otp"
         private const val EMAIL_LOGIN_INTENT = "login"
         private const val TIMEOUT_MS = 30_000
         private const val DEFAULT_EXPIRES_IN_SECONDS = 86_400L
-        private const val TELEGRAM_RETURN_TO = "https://app.getline.pro/"
 
         fun startPath(method: AuthMethod): String {
             require(method.requiresBrowser()) {
@@ -256,7 +272,10 @@ class RwpGetLineAuthApi(
                 AuthMethod.Google -> "/api/auth/google/start"
                 AuthMethod.Telegram ->
                     "/api/auth/telegram-oidc/start?intent=login&return_to=" +
-                        java.net.URLEncoder.encode(TELEGRAM_RETURN_TO, StandardCharsets.UTF_8.name())
+                        java.net.URLEncoder.encode(
+                            AppEnvironment.telegramReturnTo,
+                            StandardCharsets.UTF_8.name(),
+                        )
                 AuthMethod.Email -> error("unreachable: Email requiresBrowser is false")
             }
         }

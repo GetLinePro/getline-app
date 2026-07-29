@@ -143,13 +143,13 @@ jobs:
 
       - name: Release Build (signed AAB)
         if: success()
-        run: ./gradlew --no-daemon app:lintMetaRelease app:bundleMetaRelease
+        run: ./gradlew --no-daemon app:lintMetaProdRelease app:bundleMetaProdRelease
 
       - name: Verify AAB is signed
         if: success()
         run: |
           set -euo pipefail
-          AAB=$(ls app/build/outputs/bundle/metaRelease/getline-vpn-*.aab | head -n1)
+          AAB=$(ls app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab | head -n1)
           echo "Verifying signature on: $AAB"
           jarsigner -verify -verbose -certs "$AAB" | tee /tmp/jarsigner-verify.txt
           # jarsigner -verify succeeds only when a signature is present.
@@ -176,7 +176,7 @@ jobs:
         if: ${{ success() }}
         with:
           tag_name: ${{ inputs.release-tag }}
-          files: app/build/outputs/bundle/metaRelease/getline-vpn-*.aab
+          files: app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab
           generate_release_notes: true
 
       - name: Release Changelog Builder

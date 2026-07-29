@@ -9,14 +9,19 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import pro.getline.vpn.GetLineControlPlaneHostPolicy
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class BrowserAuthStarterTest {
     @Test
     fun google_usesStartEndpointAuthUrlUnchanged() = runBlocking {
-        val expected =
+        // Must be valid for the active environment control-plane policy.
+        val expected = if (GetLineControlPlaneHostPolicy.isE2e) {
+            "https://auth.stage.getline.pro/__mock__/google"
+        } else {
             "https://accounts.google.com/o/oauth2/auth?client_id=x&state=y"
+        }
         val api = FakeAuthApi(googleAuthUrl = expected)
         val starter = BrowserAuthStarter(api)
 
@@ -27,13 +32,30 @@ class BrowserAuthStarterTest {
     }
 
     @Test
+    fun google_foreignEnvironmentAuthUrl_rejected() = runBlocking {
+        val foreign = if (GetLineControlPlaneHostPolicy.isE2e) {
+            "https://app.getline.pro/oauth"
+        } else {
+            "https://auth.stage.getline.pro/__mock__/google"
+        }
+        val api = FakeAuthApi(googleAuthUrl = foreign)
+        val starter = BrowserAuthStarter(api)
+        try {
+            starter.resolveAuthUrl(AuthMethod.Google)
+            fail("expected Protocol for foreign environment auth_url")
+        } catch (_: GetLineAuthException.Protocol) {
+            // expected
+        }
+    }
+
+    @Test
     fun telegram_usesTrampolineWithoutCallingStartApi() = runBlocking {
         val api = FakeAuthApi()
         val starter = BrowserAuthStarter(api)
 
         val url = starter.resolveAuthUrl(AuthMethod.Telegram)
 
-        assertEquals(BrowserAuthLauncher.TELEGRAM_TRAMPOLINE_URL, url)
+        assertEquals(pro.getline.vpn.AppEnvironment.telegramTrampolineUrl, url)
         assertTrue(api.startCalls.isEmpty())
     }
 

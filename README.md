@@ -58,12 +58,14 @@ GetLine VPN is a modified fork of [Clash Meta for Android (CMFA)](https://github
 5. Build
 
    ```bash
-   ./gradlew app:assembleMetaRelease
-   # or alpha channel:
-   ./gradlew app:assembleAlphaRelease
+   ./gradlew app:assembleMetaProdRelease
+   # side-channel alpha + production API hosts:
+   ./gradlew app:assembleAlphaProdRelease
+   # stage e2e (Auth Tab smoke against stage mock; alpha debug only):
+   ./gradlew app:assembleAlphaE2eDebug
    ```
 
-Application id: `pro.getline.vpn` (alpha builds may use a suffix).
+Application id: `pro.getline.vpn` (alpha adds `.alpha`; e2e adds `.e2e`; debug adds `.debug`).
 
 ### Automation
 
