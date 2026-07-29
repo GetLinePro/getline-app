@@ -4,6 +4,7 @@ include(":app")
 include(":core")
 include(":service")
 include(":design")
+include(":getlineui")
 include(":common")
 include(":hideapi")
 

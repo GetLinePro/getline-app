@@ -43,7 +43,7 @@ sealed interface VpnServerUiState {
     data object Failed : VpnServerUiState
 }
 
-/** Outcome of loading the main selector group via withClash. */
+/** Outcome of loading the main selector group via the server-selection adapter. */
 sealed interface VpnServerLoadResult {
     data class Success(
         val groupName: String,

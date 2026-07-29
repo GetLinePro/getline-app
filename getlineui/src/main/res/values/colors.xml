@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="color_clash_dark">@color/getline_brand_primary</color>
+    <color name="color_dark_background">@color/getline_brand_background</color>
+    <color name="color_dark_surface">@color/getline_brand_surface</color>
+</resources>

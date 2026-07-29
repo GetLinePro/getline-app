@@ -4,7 +4,7 @@
     <data>
         <variable
             name="self"
-            type="pro.getline.vpn.design.ProxyDesign" />
+            type="com.github.kr328.clash.design.ProxyDesign" />
     </data>
 
     <androidx.coordinatorlayout.widget.CoordinatorLayout
@@ -33,7 +33,7 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <pro.getline.vpn.design.view.ActivityBarLayout
+            <com.github.kr328.clash.design.view.ActivityBarLayout
                 android:id="@+id/activity_bar_layout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -95,7 +95,7 @@
                         android:src="@drawable/ic_baseline_more_vert" />
 
                 </RelativeLayout>
-            </pro.getline.vpn.design.view.ActivityBarLayout>
+            </com.github.kr328.clash.design.view.ActivityBarLayout>
 
             <com.google.android.material.tabs.TabLayout
                 android:id="@+id/tab_layout_view"

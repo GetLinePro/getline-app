@@ -1,15 +1,18 @@
 package pro.getline.vpn
 
+import com.github.kr328.clash.BuildConfig
+
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import androidx.activity.result.contract.ActivityResultContracts
-import pro.getline.vpn.design.GetLineOnboardingDesign
-import pro.getline.vpn.design.R
-import pro.getline.vpn.design.model.GetLineProductState
+import com.github.kr328.clash.design.R as DesignR
+import pro.getline.vpn.getlineui.GetLineOnboardingDesign
+import pro.getline.vpn.getlineui.R as GetLineUiR
+import pro.getline.vpn.getlineui.model.GetLineProductState
 import pro.getline.vpn.getline.GetLineBackendProvider
+import pro.getline.vpn.product.GetLineActivity
 import pro.getline.vpn.getline.GetLineBackendResult
-import pro.getline.vpn.getline.GetLineImportResult
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
@@ -30,7 +33,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 
-class GetLineOnboardingActivity : BaseActivity<GetLineOnboardingDesign>() {
+class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private val backend by lazy { GetLineBackendProvider.create(this) }
     private val authApi by lazy { RwpGetLineAuthApi() }
     private val sessionRepository by lazy {
@@ -95,7 +98,7 @@ class GetLineOnboardingActivity : BaseActivity<GetLineOnboardingDesign>() {
                         GetLineOnboardingDesign.Request.BackFromEmail ->
                             backFromEmail(design)
                         GetLineOnboardingDesign.Request.AddExistingSubscription ->
-                            importSubscription(design)
+                            addExistingSubscription(design)
                         GetLineOnboardingDesign.Request.OpenAdvanced ->
                             openAdvanced()
                         GetLineOnboardingDesign.Request.Retry ->
@@ -107,6 +110,35 @@ class GetLineOnboardingActivity : BaseActivity<GetLineOnboardingDesign>() {
                 }
             }
         }
+    }
+
+    /**
+     * Manual "add existing subscription": product URL dialog, then headless import.
+     * Cancel returns to providers (or restores mid-OTP email flow).
+     */
+    private suspend fun addExistingSubscription(design: GetLineOnboardingDesign) {
+        if (busy) return
+
+        val emailToRestore = pendingEmailAuth
+        val url = design.requestSubscriptionUrl()
+        if (url == null) {
+            if (emailToRestore != null) {
+                restoreEmailAuth(design)
+            } else {
+                retryTarget = RetryTarget.Refresh
+                refreshEntryState(design)
+            }
+            return
+        }
+
+        importSubscription(
+            design = design,
+            request = GetLineSubscriptionDraft(
+                type = GetLineSubscriptionType.Url,
+                name = getString(DesignR.string.new_profile),
+                source = url,
+            ),
+        )
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -380,7 +412,7 @@ class GetLineOnboardingActivity : BaseActivity<GetLineOnboardingDesign>() {
         val draft = GetLineSubscriptionDraft(
             type = GetLineSubscriptionType.Url,
             name = subscription.displayName
-                ?: getString(R.string.get_line_subscription_profile_name),
+                ?: getString(GetLineUiR.string.get_line_subscription_profile_name),
             source = source,
         )
 
@@ -402,7 +434,7 @@ class GetLineOnboardingActivity : BaseActivity<GetLineOnboardingDesign>() {
 
     private suspend fun importSubscription(
         design: GetLineOnboardingDesign,
-        request: GetLineSubscriptionDraft? = null,
+        request: GetLineSubscriptionDraft,
         reuseId: GetLineSubscriptionId? = null,
         alreadyBusy: Boolean = false,
         subscriptionIdToRemember: String? = null,
@@ -429,81 +461,37 @@ class GetLineOnboardingActivity : BaseActivity<GetLineOnboardingDesign>() {
         design.setProductState(GetLineProductState.Loading)
 
         try {
-            val draft = request ?: GetLineSubscriptionDraft(
-                type = GetLineSubscriptionType.Url,
-                name = getString(R.string.new_profile),
-            )
-
-            val created = backend.subscriptions.createOrUpdatePending(draft, reuseId)
-            val id = when (created) {
-                is GetLineBackendResult.Success -> created.value
-                GetLineBackendResult.Unavailable -> {
-                    if (emailToRestore != null) {
-                        restoreEmailAuth(design)
-                    } else {
-                        design.setProductState(GetLineProductState.BackendUnavailable)
-                    }
-                    return
-                }
+            // reuseId is consumed only inside importAndCommit — do not
+            // createOrUpdatePending here or profiles duplicate on each login.
+            val imported = backend.subscriptions.importAndCommit(request, reuseId) { stage ->
+                design.setImportStage(stage)
             }
 
-            val result = startActivityForResult(
-                ActivityResultContracts.StartActivityForResult(),
-                backend.navigation.editSubscription(id),
-            )
-
-            when (
-                val importResult = backend.navigation.classifyImportResult(
-                    result.resultCode,
-                    result.data,
-                )
-            ) {
-                is GetLineImportResult.Confirmed -> {
+            when (imported) {
+                is GetLineBackendResult.Success -> {
+                    val id = imported.value
                     pendingEmailAuth = null
-                    // Prefer committed Properties URL (manual Add link); fall back to draft.
-                    val committedSource = importResult.source
-                        ?: request?.source
                     sessionRepository.rememberManagedProfile(
                         uuid = id.value,
-                        source = committedSource,
+                        source = request.source,
                     )
                     if (subscriptionIdToRemember != null) {
                         sessionRepository.rememberSubscription(subscriptionIdToRemember)
                     }
-                    val activateDraft = when {
-                        request != null && committedSource == request.source -> request
-                        committedSource != null -> GetLineSubscriptionDraft(
-                            type = request?.type ?: GetLineSubscriptionType.Url,
-                            name = importResult.name
-                                ?: request?.name
-                                ?: getString(R.string.new_profile),
-                            source = committedSource,
-                            interval = request?.interval ?: 0L,
-                        )
-                        else -> request
-                    }
-                    activateImportedProfile(design, id, activateDraft)
+                    activateImportedProfile(design, id, request)
                 }
-                is GetLineImportResult.Failed -> {
+                GetLineBackendResult.Unavailable -> {
                     if (emailToRestore != null) {
                         // Don't trap the user on import-only UI after a mid-OTP detour.
                         restoreEmailAuth(design)
                     } else {
                         design.setProductState(
-                            if (importResult.offline) {
+                            if (!hasValidatedInternetConnection()) {
                                 GetLineProductState.Offline
                             } else {
                                 GetLineProductState.ImportFailed
                             }
                         )
-                    }
-                }
-                GetLineImportResult.Cancelled -> {
-                    if (emailToRestore != null) {
-                        restoreEmailAuth(design)
-                    } else {
-                        retryTarget = RetryTarget.Refresh
-                        refreshEntryState(design)
                     }
                 }
             }
@@ -596,7 +584,13 @@ class GetLineOnboardingActivity : BaseActivity<GetLineOnboardingDesign>() {
         when (val activated = backend.subscriptions.activateIfImported(id)) {
             is GetLineBackendResult.Success -> {
                 if (!activated.value) {
-                    retryTarget = RetryTarget.ImportSubscription(request, id)
+                    // request is non-null on all product import paths; reuse id on retry.
+                    if (request != null) {
+                        retryTarget = RetryTarget.ImportSubscription(
+                            request = request,
+                            reuseId = id,
+                        )
+                    }
                     design.setProductState(GetLineProductState.ImportFailed)
                     return
                 }
@@ -717,10 +711,6 @@ class GetLineOnboardingActivity : BaseActivity<GetLineOnboardingDesign>() {
         }
     }
 
-    override fun shouldDisplayHomeAsUpEnabled(): Boolean {
-        return false
-    }
-
     private data class PendingEmailAuth(
         val email: String,
         val otpSent: Boolean,
@@ -749,7 +739,7 @@ class GetLineOnboardingActivity : BaseActivity<GetLineOnboardingDesign>() {
          */
         data class CompleteFromWebToken(val webToken: String) : RetryTarget()
         data class ImportSubscription(
-            val request: GetLineSubscriptionDraft?,
+            val request: GetLineSubscriptionDraft,
             val reuseId: GetLineSubscriptionId? = null,
             val subscriptionIdToRemember: String? = null,
         ) : RetryTarget()

@@ -252,10 +252,8 @@
     <string name="app">App</string>
     <string name="service">Service</string>
 
-
     <string name="show_traffic">Show Traffic</string>
     <string name="show_traffic_summary">Auto refresh traffic in notification</string>
-
 
     <string name="tun_stack_mode">Stack Mode</string>
     <string name="tun_stack_system">System Stack</string>
@@ -373,149 +371,11 @@
     <string name="shortcut_stop_short">Stop VPN</string>
     <string name="shortcut_stop_long">Stop VPN service</string>
 
-    <string name="get_line_vpn" translatable="false">GetLine VPN</string>
-    <string name="get_line_brand_name" translatable="false">GetLine</string>
-    <string name="get_line_onboarding_value_prop">Simple secure access with your GetLine subscription</string>
-    <string name="get_line_login">Sign in with Telegram</string>
-    <string name="get_line_login_google">Sign in with Google</string>
-    <string name="get_line_login_email">Sign in with Email</string>
-    <string name="get_line_email_hint">Email</string>
-    <string name="get_line_email_send_code">Send code</string>
-    <string name="get_line_email_resend">Resend code</string>
-    <string name="get_line_email_resend_in">Resend in %1$d s</string>
-    <string name="get_line_otp_hint">Verification code</string>
-    <string name="get_line_otp_verify">Verify</string>
-    <string name="get_line_email_back">Back</string>
-    <string name="get_line_subscription_profile_name">GetLine</string>
-    <string name="get_line_add_existing_subscription">I have a subscription link</string>
-    <string name="get_line_open_advanced">Advanced</string>
-    <string name="get_line_import_not_completed">Subscription import was not completed</string>
-    <string name="get_line_home_status_disconnected">Disconnected</string>
-    <string name="get_line_home_status_connecting">Connecting…</string>
-    <string name="get_line_home_status_connected">Connected</string>
-    <string name="get_line_home_connect">Connect</string>
-    <string name="get_line_home_connecting">Connecting…</string>
-    <string name="get_line_home_disconnect">Disconnect</string>
-    <string name="get_line_home_change_server">Change server</string>
-    <string name="get_line_shell_home">Home</string>
-    <string name="get_line_shell_servers">Servers</string>
-    <string name="get_line_shell_subscription">Subscription</string>
-    <string name="get_line_shell_location_label">Location</string>
-    <string name="get_line_shell_location_unknown">Not selected</string>
-    <string name="get_line_shell_servers_title">Servers</string>
-    <string name="get_line_shell_servers_explanation">Choose a location for your VPN connection. Switching tabs does not disconnect VPN.</string>
-    <string name="get_line_shell_select_server">Select server</string>
-    <string name="get_line_shell_current_server_label">Current server</string>
-    <string name="get_line_shell_available_servers_label">Available servers</string>
-    <string name="get_line_server_delay_format">%1$d ms</string>
-    <string name="get_line_server_delay_unknown">—</string>
-    <string name="get_line_home_connect_hint">Tap to connect</string>
-    <string name="get_line_home_forwarded_format">%1$s forwarded</string>
-    <string name="get_line_home_ring_action_connect">Connect VPN</string>
-    <string name="get_line_home_ring_action_disconnect">Disconnect VPN</string>
-    <string name="get_line_server_active_via_group">in use by automatic selection</string>
-    <string name="get_line_server_delay_unknown_talkback">latency not measured</string>
-    <string name="get_line_server_now_format">now: %1$s</string>
-    <string name="get_line_server_expand">Show options</string>
-    <string name="get_line_server_collapse">Hide options</string>
-    <plurals name="get_line_server_variants_count">
-        <item quantity="one">%1$d option</item>
-        <item quantity="other">%1$d options</item>
-    </plurals>
-    <string name="get_line_servers_vpn_stopped_title">VPN is not connected</string>
-    <string name="get_line_servers_vpn_stopped_explanation">Connect on Home to load servers. Switching tabs does not disconnect VPN.</string>
-    <string name="get_line_servers_empty_title">No servers available</string>
-    <string name="get_line_servers_empty_explanation">The active profile has no selectable servers in the main group.</string>
-    <string name="get_line_servers_load_failed_title">Couldn’t load servers</string>
-    <string name="get_line_servers_load_failed_explanation">Check the connection and try again. Your VPN session is unchanged.</string>
-    <string name="get_line_shell_subscription_title">Subscription</string>
-    <string name="get_line_home_no_profile">No active profile</string>
-    <string name="get_line_home_expire_format">%1$s</string>
-    <string name="get_line_home_expire_until_format">Until %1$s</string>
-    <string name="get_line_home_expire_unknown">Not provided by subscription</string>
-    <plurals name="get_line_home_days_left_unit">
-        <item quantity="one">day left</item>
-        <item quantity="other">days left</item>
-    </plurals>
-    <string name="get_line_home_traffic_label">Traffic</string>
-    <string name="get_line_home_traffic_format">%1$s / %2$s</string>
-    <string name="get_line_home_traffic_used_format">%1$s used</string>
-    <string name="get_line_home_traffic_unknown">Not provided by subscription</string>
-    <string name="get_line_home_traffic_unlimited">Unlimited traffic</string>
-    <string name="get_line_home_status_active">Active</string>
-    <string name="get_line_home_status_inactive">Inactive</string>
-    <string name="get_line_home_devices_label">Devices</string>
-    <string name="get_line_home_devices_limit_format">Up to %1$d devices</string>
-    <string name="get_line_home_plan_unknown">Subscription</string>
-    <string name="get_line_home_refresh_subscription">Refresh subscription</string>
-    <string name="get_line_subscription_refreshing">Refreshing subscription</string>
-    <string name="get_line_subscription_load_failed_title">Couldn’t load subscription</string>
-    <string name="get_line_subscription_load_failed_explanation">Check your connection and try again.</string>
-    <string name="get_line_subscription_empty_title">Subscription not found</string>
-    <string name="get_line_subscription_empty_explanation">Refresh the data or contact support.</string>
-    <string name="get_line_subscription_signed_out_title">Subscription management unavailable</string>
-    <string name="get_line_subscription_signed_out_explanation">Sign in to GetLine to view and manage your subscription.</string>
-    <string name="get_line_subscription_transient_error">Couldn’t refresh. Showing last known data.</string>
-    <string name="get_line_account_portal_title">Personal account</string>
-    <string name="get_line_account_portal_explanation">Plans, payments, and device management</string>
-    <string name="get_line_account_portal_open">Open personal account</string>
-    <string name="get_line_account_portal_opening">Opening…</string>
-    <string name="get_line_account_portal_open_failed_title">Couldn’t open personal account</string>
-    <string name="get_line_account_portal_no_browser">No suitable browser found on this device.</string>
-    <string name="get_line_action_sign_in">Sign in</string>
-    <string name="get_line_action_logout">Sign out</string>
-    <string name="get_line_logout_confirm_title">Sign out of your account?</string>
-    <string name="get_line_logout_confirm_message">VPN will be disconnected and the GetLine configuration will be removed from this device.</string>
-    <string name="get_line_fetch_loading_config">Getting configuration</string>
-    <string name="get_line_fetch_checking">Checking settings</string>
-    <string name="get_line_fetch_updating">Updating connection</string>
-    <string name="get_line_fetch_starting_vpn">Starting VPN</string>
-    <string name="get_line_fetch_ready">Connection ready</string>
-    <string name="get_line_service_timeout_fallback">Background service is unavailable. Please retry.</string>
-    <string name="get_line_state_loading_title">Please wait</string>
-    <string name="get_line_state_loading_explanation">The current operation is in progress. It cannot be started again.</string>
-    <string name="get_line_state_preparing_vpn_title">Preparing VPN…</string>
-    <string name="get_line_state_preparing_vpn_explanation">Restoring your connection settings. This usually takes a moment.</string>
-    <string name="get_line_state_offline_title">No internet connection</string>
-    <string name="get_line_state_offline_explanation">Check your connection and try again. An existing VPN connection remains available.</string>
-    <string name="get_line_state_backend_unavailable_title">VPN service is temporarily unavailable</string>
-    <string name="get_line_state_backend_unavailable_explanation">Profile data could not be loaded. Check the connection and try again.</string>
-    <string name="get_line_state_no_profile_title">No VPN profile yet</string>
-    <string name="get_line_state_no_profile_explanation">Sign in to GetLine or add a subscription link to continue.</string>
-    <string name="get_line_state_connection_repair_failed_title">Couldn’t prepare VPN</string>
-    <string name="get_line_state_connection_repair_failed_explanation">The app could not restore your VPN configuration. Retry, or sign in again if the problem continues.</string>
-    <string name="get_line_state_connection_restore_failed_title">Couldn’t restore connection</string>
-    <string name="get_line_state_connection_restore_failed_explanation">Check your internet connection and try again.</string>
-    <string name="get_line_state_import_failed_title">Couldn’t import the subscription</string>
-    <string name="get_line_state_import_failed_explanation">Check that the subscription link is correct, then try the import again.</string>
-    <string name="get_line_state_auth_failed_title">Couldn’t sign in</string>
-    <string name="get_line_state_auth_failed_explanation">Sign-in did not complete. Try again, or add a subscription link.</string>
-    <string name="get_line_state_auth_email_entry_title">Sign in with email</string>
-    <string name="get_line_state_auth_email_entry_explanation">Enter the email for your GetLine account. We’ll send a one-time login code.</string>
-    <string name="get_line_state_auth_email_otp_sent_title">Enter the code from your email</string>
-    <string name="get_line_state_auth_email_otp_sent_explanation">We sent a verification code. Type it below and tap Verify to finish sign-in.</string>
-    <string name="get_line_state_auth_invalid_otp_title">Incorrect code</string>
-    <string name="get_line_state_auth_invalid_otp_explanation">Check the code and try again. You can request a new code if needed.</string>
-    <string name="get_line_state_auth_otp_expired_title">Code expired</string>
-    <string name="get_line_state_auth_otp_expired_explanation">Request a new code, then enter it here.</string>
-    <string name="get_line_state_auth_email_domain_title">Email domain not allowed</string>
-    <string name="get_line_state_auth_email_domain_explanation">Use an allowed work or personal email domain, then try again.</string>
-    <string name="get_line_state_auth_no_account_title">No account for this email</string>
-    <string name="get_line_state_auth_no_account_explanation">This email is not registered for GetLine login. Use Telegram or Google if you already have an account, or contact support.</string>
-    <string name="get_line_state_auth_rate_limited_title">Please wait</string>
-    <string name="get_line_state_auth_rate_limited_explanation">Too many attempts. Wait about a minute before requesting another code.</string>
-    <string name="get_line_state_expired_title">Subscription expired</string>
-    <string name="get_line_state_expired_explanation">Renew the subscription in your GetLine account, then retry the connection.</string>
-    <string name="get_line_action_retry">Retry</string>
-    <string name="get_line_action_choose_profile">Choose profile</string>
-    <string name="get_line_action_open_account">Open GetLine account</string>
-    <string name="get_line_vpn_stopped">VPN stopped. Retry the connection.</string>
-    <string name="get_line_vpn_start_timeout">VPN did not start. Please try again.</string>
-
     <string name="about_based_on_clash_meta">Based on CMFA and Mihomo</string>
     <string name="about_license_gplv3">Licensed under GNU GPLv3</string>
     <string name="about_upstream_ack">Upstream: MetaCubeX Clash Meta for Android and Mihomo</string>
     <!-- Must be a public HTTPS location before release (GPL source disclosure). -->
+    <string name="getline_sources_title" translatable="false">GetLine VPN</string>
     <string name="getline_sources_url" translatable="false">https://github.com/momai/getline-app</string>
     <string name="sources_open_failed">No browser found. Source URL copied to clipboard.</string>
 </resources>

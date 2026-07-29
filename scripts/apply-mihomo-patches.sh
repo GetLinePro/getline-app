@@ -5,11 +5,23 @@
 # Source of truth is core/patches/mihomo/*.patch in the parent repo — not the
 # submodule gitlink. A clean `git submodule update --force` alone does NOT
 # enable product gates (e.g. no_ssh).
+#
+# Usage:
+#   ./scripts/apply-mihomo-patches.sh           # apply (default)
+#   ./scripts/apply-mihomo-patches.sh --verify  # check working tree == patch result
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLASH="$ROOT/core/src/foss/golang/clash"
 PATCH_DIR="$ROOT/core/patches/mihomo"
+
+MODE="apply"
+if [[ "${1:-}" == "--verify" ]]; then
+  MODE="verify"
+elif [[ -n "${1:-}" ]]; then
+  echo "usage: $0 [--verify]" >&2
+  exit 2
+fi
 
 if [[ ! -d "$CLASH" ]]; then
   echo "error: mihomo submodule missing at $CLASH" >&2
@@ -25,11 +37,16 @@ fi
 shopt -s nullglob
 patches=("$PATCH_DIR"/*.patch)
 if ((${#patches[@]} == 0)); then
+  if [[ "$MODE" == "verify" ]]; then
+    echo "error: no mihomo patches in $PATCH_DIR (nothing to verify)" >&2
+    exit 1
+  fi
   echo "no mihomo patches in $PATCH_DIR"
   exit 0
 fi
 
 # Paths from 0001-disable-ssh-outbound-no_ssh.patch
+# Shared source for apply recovery and --verify (do not duplicate elsewhere).
 SSH_GATE_TRACKED=(
   "adapter/outbound/ssh.go"
   "constant/features/tags.go"
@@ -194,6 +211,126 @@ apply_one() {
 
   fail_apply "$name"
 }
+
+# Sorted unique lines on stdin → stdout.
+sort_unique() {
+  sort -u
+}
+
+# True if $1 (newline-separated paths) equals the bash array named by $2.
+# Prints extras/missing on mismatch.
+set_equals_array() {
+  local actual_blob="$1"
+  local -n expected_arr="$2"
+  local label="$3"
+  local expected_blob
+  local extra missing
+
+  expected_blob="$(printf '%s\n' "${expected_arr[@]}" | sort_unique)"
+  actual_blob="$(printf '%s\n' "$actual_blob" | sed '/^$/d' | sort_unique)"
+
+  extra="$(comm -13 <(printf '%s\n' "$expected_blob") <(printf '%s\n' "$actual_blob") || true)"
+  missing="$(comm -23 <(printf '%s\n' "$expected_blob") <(printf '%s\n' "$actual_blob") || true)"
+
+  if [[ -n "$extra" || -n "$missing" ]]; then
+    echo "error: $label set mismatch in $CLASH" >&2
+    if [[ -n "$extra" ]]; then
+      echo "  unexpected:" >&2
+      while IFS= read -r line; do
+        printf '    %s\n' "$line" >&2
+      done <<<"$extra"
+    fi
+    if [[ -n "$missing" ]]; then
+      echo "  missing:" >&2
+      while IFS= read -r line; do
+        printf '    %s\n' "$line" >&2
+      done <<<"$missing"
+    fi
+    return 1
+  fi
+  return 0
+}
+
+# Verify working tree is exactly the SSH-gate patch result: no extra dirty/untracked
+# paths, and every gate file byte-matches materializing the patch on HEAD.
+verify_ssh_gate_tree() {
+  local patch=""
+  local p name rel
+  local dirty_tracked untracked
+  local expect_root
+  local failed=0
+
+  for p in "${patches[@]}"; do
+    name="$(basename "$p")"
+    if [[ "$name" == *disable-ssh-outbound* ]]; then
+      patch="$p"
+      break
+    fi
+  done
+  if [[ -z "$patch" ]]; then
+    echo "error: SSH gate patch not found in $PATCH_DIR" >&2
+    exit 1
+  fi
+
+  dirty_tracked="$(
+    {
+      git -C "$CLASH" diff --name-only HEAD
+      git -C "$CLASH" diff --name-only --cached
+    } | sed '/^$/d' | sort_unique
+  )"
+  untracked="$(git -C "$CLASH" ls-files --others --exclude-standard | sed '/^$/d' | sort_unique)"
+
+  if ! set_equals_array "$dirty_tracked" SSH_GATE_TRACKED "dirty tracked"; then
+    failed=1
+  fi
+  if ! set_equals_array "$untracked" SSH_GATE_NEW_FILES "untracked"; then
+    failed=1
+  fi
+  if ((failed)); then
+    echo "error: submodule working tree is not exactly the product patch result" >&2
+    echo "  run: ./scripts/apply-mihomo-patches.sh  (after clean gitlink checkout)" >&2
+    git -C "$CLASH" status --short >&2 || true
+    exit 1
+  fi
+
+  expect_root="$(mktemp -d "${TMPDIR:-/tmp}/mihomo-ssh-gate-verify.XXXXXX")"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$expect_root'" RETURN
+
+  if ! build_expected_ssh_gate_tree "$expect_root" "$patch"; then
+    echo "error: cannot materialize expected SSH gate tree from patch on HEAD" >&2
+    exit 1
+  fi
+
+  for rel in "${SSH_GATE_TRACKED[@]}" "${SSH_GATE_NEW_FILES[@]}"; do
+    if [[ ! -f "$expect_root/$rel" ]]; then
+      echo "error: expected tree missing $rel (patch changed?)" >&2
+      failed=1
+      continue
+    fi
+    if [[ ! -f "$CLASH/$rel" ]]; then
+      echo "error: working tree missing $rel" >&2
+      failed=1
+      continue
+    fi
+    if ! cmp -s "$CLASH/$rel" "$expect_root/$rel"; then
+      echo "error: content differs from patch output: $rel" >&2
+      failed=1
+    fi
+  done
+
+  if ((failed)); then
+    echo "error: SSH gate file contents do not match patch applied to HEAD" >&2
+    exit 1
+  fi
+
+  echo "ok: submodule working tree matches product patches"
+}
+
+if [[ "$MODE" == "verify" ]]; then
+  verify_ssh_gate_tree
+  exit 0
+fi
 
 for p in "${patches[@]}"; do
   apply_one "$p"

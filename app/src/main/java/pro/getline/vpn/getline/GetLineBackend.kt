@@ -1,11 +1,23 @@
 package pro.getline.vpn.getline
 
+import android.app.Activity
 import android.content.Intent
+import pro.getline.vpn.cmfa.CmfaGetLineBackend
+import pro.getline.vpn.getlineui.model.GetLineImportStage
+import pro.getline.vpn.getlineui.model.GetLineTraffic
+import pro.getline.vpn.getline.servers.VpnServerSelectionRepository
 
 interface GetLineBackend {
     val subscriptions: GetLineSubscriptionRepository
     val vpn: GetLineVpnController
+    val servers: VpnServerSelectionRepository
     val navigation: GetLineNavigation
+}
+
+object GetLineBackendProvider {
+    fun create(activity: Activity): GetLineBackend {
+        return CmfaGetLineBackend(activity)
+    }
 }
 
 interface GetLineSubscriptionRepository {
@@ -61,6 +73,17 @@ interface GetLineSubscriptionRepository {
     ): GetLineBackendResult<GetLineSubscriptionId>
 
     /**
+     * Create-or-reuse pending profile, patch from [draft], fetch and commit.
+     * Does not activate — caller decides (see [activateIfImported]).
+     * [onProgress] is best-effort UI feedback; drops intermediate stages under load.
+     */
+    suspend fun importAndCommit(
+        draft: GetLineSubscriptionDraft,
+        reuseId: GetLineSubscriptionId? = null,
+        onProgress: suspend (GetLineImportStage) -> Unit = {},
+    ): GetLineBackendResult<GetLineSubscriptionId>
+
+    /**
      * Force re-fetch of an imported URL profile config (nodes + userinfo) in-process.
      * Used after /api/subscriptions shows active so Servers pick up provider node changes.
      *
@@ -104,13 +127,17 @@ interface GetLineVpnController {
 
     fun start(): Intent?
     fun stop()
+
+    /** null when the tunnel is not running or the query failed. */
+    suspend fun querySession(): GetLineSession?
 }
 
+data class GetLineSession(
+    val durationMs: Long?,
+    val traffic: GetLineTraffic,
+)
+
 interface GetLineNavigation {
-    fun editSubscription(id: GetLineSubscriptionId): Intent
-    fun classifyImportResult(resultCode: Int, data: Intent?): GetLineImportResult
-    fun openServerSelection()
-    fun openProfiles()
     fun openAdvanced()
     fun openOnboarding()
     fun openHome()
@@ -150,17 +177,3 @@ data class GetLineSubscriptionSnapshot(
     val active: GetLineSubscriptionSummary?,
     val hasImported: Boolean,
 )
-
-sealed class GetLineImportResult {
-    /**
-     * @param source committed profile URL when known (PropertiesActivity manual entry
-     *   or auto-commit draft). Required for repair binding on URL import.
-     */
-    data class Confirmed(
-        val source: String? = null,
-        val name: String? = null,
-    ) : GetLineImportResult()
-
-    data class Failed(val offline: Boolean) : GetLineImportResult()
-    object Cancelled : GetLineImportResult()
-}

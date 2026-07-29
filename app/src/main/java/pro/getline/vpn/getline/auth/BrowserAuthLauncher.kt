@@ -8,8 +8,8 @@ import android.os.Build
 import androidx.browser.auth.AuthTabIntent
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsService
-import pro.getline.vpn.BaseActivity
-import pro.getline.vpn.design.Design
+import pro.getline.vpn.getlineui.GetLineScreen
+import pro.getline.vpn.product.GetLineActivity
 
 /**
  * Opens a server-provided auth URL in an AndroidX Auth Tab and returns the
@@ -24,8 +24,8 @@ import pro.getline.vpn.design.Design
  * browsers can treat the initial navigation as completion.
  */
 class BrowserAuthLauncher {
-    suspend fun <D : Design<*>> launch(
-        activity: BaseActivity<D>,
+    suspend fun <D : GetLineScreen<*>> launch(
+        activity: GetLineActivity<D>,
         authUrl: String,
     ): BrowserAuthLaunchResult {
         val launchUri = parseAndValidateLaunchUrl(authUrl)

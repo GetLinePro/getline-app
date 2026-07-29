@@ -3,7 +3,7 @@
     <data>
         <variable
             name="surface"
-            type="pro.getline.vpn.design.ui.Surface" />
+            type="com.github.kr328.clash.design.ui.Surface" />
     </data>
 
     <androidx.coordinatorlayout.widget.CoordinatorLayout

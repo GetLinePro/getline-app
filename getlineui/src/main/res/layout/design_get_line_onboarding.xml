@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+    <data>
+        <variable
+            name="self"
+            type="pro.getline.vpn.getlineui.GetLineOnboardingDesign" />
+        <variable
+            name="providersVisible"
+            type="boolean" />
+        <variable
+            name="emailStepVisible"
+            type="boolean" />
+        <variable
+            name="otpStepVisible"
+            type="boolean" />
+        <variable
+            name="actionsEnabled"
+            type="boolean" />
+        <variable
+            name="resendEnabled"
+            type="boolean" />
+        <variable
+            name="resendLabel"
+            type="String" />
+
+        <import type="android.view.View" />
+    </data>
+
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_getline_surface"
+        android:paddingStart="@{self.surface.insets.start}"
+        android:paddingEnd="@{self.surface.insets.end}">
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:overScrollMode="ifContentScrolls"
+            android:scrollbars="none">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="@{self.surface.insets.top}"
+                android:paddingBottom="@{self.surface.insets.bottom}">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center_horizontal"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="@dimen/main_padding_horizontal"
+                    android:paddingVertical="@dimen/get_line_onboarding_section_gap">
+
+                    <ImageView
+                        android:layout_width="@dimen/get_line_onboarding_logo_size"
+                        android:layout_height="@dimen/get_line_onboarding_logo_size"
+                        android:contentDescription="@string/get_line_brand_name"
+                        android:importantForAccessibility="yes"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_getline_logo"
+                        tools:src="@drawable/ic_getline_logo" />
+
+                    <TextView
+                        android:id="@+id/brand_title"
+                        style="@style/Widget.GetLine.Text.Title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_title_margin_top"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:onClick="@{() -> self.onBrandTitleClicked()}"
+                        android:text="@string/get_line_brand_name"
+                        android:textColor="@color/getline_text_primary"
+                        tools:text="GetLine" />
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Secondary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_value_margin_top"
+                        android:gravity="center"
+                        android:text="@string/get_line_onboarding_value_prop"
+                        android:textColor="@color/getline_text_secondary"
+                        tools:text="Simple secure access with your GetLine subscription" />
+
+                    <pro.getline.vpn.getlineui.view.GetLineStateView
+                        android:id="@+id/state_view"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_actions_margin_top"
+                        tools:visibility="visible" />
+
+                    <!-- Provider list: Google (primary) / Email / Telegram last —
+                         TG may be unreachable without VPN. -->
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.GetLine.Onboarding.PrimaryButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onLoginGoogle()}"
+                        android:text="@string/get_line_login_google"
+                        android:visibility="@{providersVisible ? View.VISIBLE : View.GONE}"
+                        app:icon="@drawable/ic_google"
+                        app:iconGravity="textStart"
+                        app:iconPadding="8dp"
+                        app:iconTint="@null"
+                        tools:text="Sign in with Google" />
+
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.GetLine.Onboarding.SecondaryButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onLoginEmail()}"
+                        android:text="@string/get_line_login_email"
+                        android:visibility="@{providersVisible ? View.VISIBLE : View.GONE}"
+                        app:icon="@drawable/ic_email"
+                        app:iconGravity="textStart"
+                        app:iconPadding="8dp"
+                        app:iconTint="@color/getline_brand_primary"
+                        tools:text="Sign in with Email" />
+
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.GetLine.Onboarding.SecondaryButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onLoginTelegram()}"
+                        android:text="@string/get_line_login"
+                        android:visibility="@{providersVisible ? View.VISIBLE : View.GONE}"
+                        app:icon="@drawable/ic_telegram"
+                        app:iconGravity="textStart"
+                        app:iconPadding="8dp"
+                        app:iconTint="@color/getline_brand_primary"
+                        tools:text="Sign in with Telegram" />
+
+                    <!-- Email entry -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.GetLine.Onboarding.TextInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:hint="@string/get_line_email_hint"
+                        android:visibility="@{emailStepVisible ? View.VISIBLE : View.GONE}">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/email_field"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:enabled="@{actionsEnabled}"
+                            android:imeOptions="actionDone"
+                            android:inputType="textEmailAddress"
+                            android:textColor="@color/getline_brand_text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.GetLine.Onboarding.PrimaryButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onSendEmailOtp()}"
+                        android:text="@string/get_line_email_send_code"
+                        android:visibility="@{emailStepVisible ? View.VISIBLE : View.GONE}"
+                        tools:text="Send code" />
+
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.GetLine.Onboarding.AdvancedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onBackEmailAuth()}"
+                        android:text="@string/get_line_email_back"
+                        android:visibility="@{emailStepVisible ? View.VISIBLE : View.GONE}"
+                        tools:text="Back" />
+
+                    <!-- OTP entry -->
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.GetLine.Onboarding.TextInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:hint="@string/get_line_otp_hint"
+                        android:visibility="@{otpStepVisible ? View.VISIBLE : View.GONE}">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/otp_field"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:enabled="@{actionsEnabled}"
+                            android:imeOptions="actionDone"
+                            android:inputType="number"
+                            android:saveEnabled="false"
+                            android:textColor="@color/getline_brand_text" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.GetLine.Onboarding.PrimaryButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onVerifyEmailOtp()}"
+                        android:text="@string/get_line_otp_verify"
+                        android:visibility="@{otpStepVisible ? View.VISIBLE : View.GONE}"
+                        tools:text="Verify" />
+
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.GetLine.Onboarding.SecondaryButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled &amp;&amp; resendEnabled}"
+                        android:onClick="@{() -> self.onResendEmailOtp()}"
+                        android:text="@{resendLabel}"
+                        android:visibility="@{otpStepVisible ? View.VISIBLE : View.GONE}"
+                        tools:text="Resend code" />
+
+                    <com.google.android.material.button.MaterialButton
+                        style="@style/Widget.GetLine.Onboarding.AdvancedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onBackEmailAuth()}"
+                        android:text="@string/get_line_email_back"
+                        android:visibility="@{otpStepVisible ? View.VISIBLE : View.GONE}"
+                        tools:text="Back" />
+
+                    <!-- Release product nav: hidden. Debug or multi-tap brand title hatch. -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/open_advanced"
+                        style="@style/Widget.GetLine.Onboarding.AdvancedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginTop="@dimen/get_line_onboarding_advanced_margin_top"
+                        android:alpha="0.72"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onOpenAdvanced()}"
+                        android:text="@string/get_line_open_advanced"
+                        android:visibility="gone"
+                        tools:text="Advanced"
+                        tools:visibility="visible" />
+                </LinearLayout>
+            </FrameLayout>
+        </ScrollView>
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+</layout>

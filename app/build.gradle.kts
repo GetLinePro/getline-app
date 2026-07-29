@@ -20,6 +20,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":service"))
     implementation(project(":design"))
+    implementation(project(":getlineui"))
     implementation(project(":common"))
 
     implementation(libs.kotlin.coroutine)

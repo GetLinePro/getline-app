@@ -49,6 +49,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
+
+      - name: Verify Mihomo security gate
+        run: ./scripts/verify-mihomo-gate.sh
       
       - name: Convert and set version env
         id: process-version
@@ -56,8 +59,11 @@ jobs:
           VERSION_TAG=${{ inputs.release-tag }}
           VERSION_TAG=${VERSION_TAG#v}                              # remove the 'v' prefix
           IFS='.' read -ra VERSION_PARTS <<< "$VERSION_TAG"         # split into array
-          VERSION_CODE=$(printf "%1d%02d%03d" "${VERSION_PARTS[0]}" "${VERSION_PARTS[1]}" "${VERSION_PARTS[2]}")
-          
+          # Arithmetic, not printf: a 0.x tag would zero-pad to "001000", and Kotlin
+          # rejects integer literals with leading zeros ("Unsupported [literal
+          # prefixes and suffixes]"), so build.gradle.kts would stop compiling.
+          VERSION_CODE=$(( VERSION_PARTS[0] * 100000 + VERSION_PARTS[1] * 1000 + VERSION_PARTS[2] ))
+
           echo "versonName=$VERSION_TAG" >> $GITHUB_OUTPUT          # "1.2.3"
           echo "versonCode=$VERSION_CODE" >> $GITHUB_OUTPUT         # "102003"
       

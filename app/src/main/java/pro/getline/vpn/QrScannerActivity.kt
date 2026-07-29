@@ -1,5 +1,7 @@
 package pro.getline.vpn
 
+import com.github.kr328.clash.R
+
 import android.Manifest
 import android.app.Activity
 import android.content.Context

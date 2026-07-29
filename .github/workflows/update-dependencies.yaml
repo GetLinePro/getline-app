@@ -41,6 +41,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      # After Go cache restore so go list -deps reuses modules. Submodule was
+      # moved with --remote; parent gitlink still points at the old pin until
+      # create-pull-request commits — skip A (gitlink), still enforce patch
+      # tree + Android no_ssh dep exclusion before opening a PR.
+      - name: Verify Mihomo security gate
+        run: ./scripts/verify-mihomo-gate.sh --skip-gitlink
+
       - name: Install update-go-mod-replace
         run: |
           go install github.com/metacubex/update-go-mod-replace@latest

@@ -49,6 +49,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Verify Mihomo security gate
+        run: ./scripts/verify-mihomo-gate.sh
+
       # Intentionally no signing.properties: release must stay unsigned without a key.
       - name: Pre-release Build (unsigned AAB)
         if: success()

@@ -3,7 +3,7 @@
     <data>
         <variable
             name="app"
-            type="pro.getline.vpn.design.model.AppInfo" />
+            type="com.github.kr328.clash.design.model.AppInfo" />
         <variable
             name="selected"
             type="boolean" />

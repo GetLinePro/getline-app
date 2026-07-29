@@ -6,7 +6,7 @@
             type="String" />
         <variable
             name="self"
-            type="pro.getline.vpn.design.MainDesign" />
+            type="com.github.kr328.clash.design.MainDesign" />
     </data>
 
     <LinearLayout

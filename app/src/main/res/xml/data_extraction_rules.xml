@@ -1,52 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<data-extraction-rules>
-    <!-- Cloud backup (Android 12+). Keep parity with full_backup_content.xml. -->
-    <cloud-backup>
-        <include
-            domain="sharedpref"
-            path="." />
-        <exclude
-            domain="sharedpref"
-            path="getline_native_session.xml" />
-        <exclude
-            domain="sharedpref"
-            path="getline_native_session_fallback.xml" />
-        <include
-            domain="database"
-            path="." />
-        <include
-            domain="file"
-            path="imported" />
-        <include
-            domain="file"
-            path="pending" />
-        <include
-            domain="file"
-            path="clash/override.json" />
-    </cloud-backup>
+<!--
+    Nothing about a VPN install leaves the device. Reinstall starts from scratch:
+    sign in again, profile is provisioned again.
 
-    <!-- Device-to-device transfer ignores legacy fullBackupContent include/exclude. -->
+    Two reasons, either one sufficient:
+    - A subscription profile names the servers this user connects to. Where the app
+      is used, that is not something to hand to a cloud backup.
+    - Profiles survived a reinstall while the session (Keystore-backed, never backed
+      up) did not, so the launcher opened Home for a user who was not signed in.
+
+    android:allowBackup="false" covers cloud backup on every version. It does NOT
+    cover device-to-device transfer on Android 12+, hence the rules below. An empty
+    block would mean "transfer everything" — the default set applies whenever no
+    rule says otherwise — so every domain is excluded by name.
+-->
+<data-extraction-rules>
     <device-transfer>
-        <include
-            domain="sharedpref"
-            path="." />
-        <exclude
-            domain="sharedpref"
-            path="getline_native_session.xml" />
-        <exclude
-            domain="sharedpref"
-            path="getline_native_session_fallback.xml" />
-        <include
-            domain="database"
-            path="." />
-        <include
-            domain="file"
-            path="imported" />
-        <include
-            domain="file"
-            path="pending" />
-        <include
-            domain="file"
-            path="clash/override.json" />
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
     </device-transfer>
 </data-extraction-rules>

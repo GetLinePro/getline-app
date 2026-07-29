@@ -1,0 +1,783 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+    <data>
+        <variable
+            name="self"
+            type="pro.getline.vpn.getlineui.GetLineHomeDesign" />
+        <variable
+            name="vpnStatus"
+            type="pro.getline.vpn.getlineui.GetLineHomeDesign.VpnStatus" />
+        <variable
+            name="statusText"
+            type="String" />
+        <variable
+            name="primaryActionEnabled"
+            type="boolean" />
+        <variable
+            name="vpnControlsVisible"
+            type="boolean" />
+        <variable
+            name="profileCardVisible"
+            type="boolean" />
+        <variable
+            name="locationText"
+            type="String" />
+        <variable
+            name="locationVisible"
+            type="boolean" />
+        <variable
+            name="homeVisible"
+            type="boolean" />
+        <variable
+            name="serversVisible"
+            type="boolean" />
+        <variable
+            name="subscriptionVisible"
+            type="boolean" />
+        <variable
+            name="cardTitle"
+            type="String" />
+        <variable
+            name="subscriptionStatusText"
+            type="String" />
+        <variable
+            name="subscriptionStatusVisible"
+            type="boolean" />
+        <variable
+            name="expireText"
+            type="String" />
+        <variable
+            name="daysLeftValue"
+            type="String" />
+        <variable
+            name="daysLeftUnit"
+            type="String" />
+        <variable
+            name="daysLeftVisible"
+            type="boolean" />
+        <variable
+            name="trafficText"
+            type="String" />
+        <variable
+            name="devicesText"
+            type="String" />
+        <variable
+            name="devicesVisible"
+            type="boolean" />
+
+        <import type="android.view.View" />
+        <import type="pro.getline.vpn.getlineui.GetLineHomeDesign.Request" />
+        <import type="pro.getline.vpn.getlineui.GetLineHomeDesign.VpnStatus" />
+    </data>
+
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/getline_brand_background"
+        android:paddingStart="@{self.surface.insets.start}"
+        android:paddingEnd="@{self.surface.insets.end}">
+
+        <!-- Solid brand base first so activity transitions never show the previous screen through. -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_getline_surface" />
+
+        <!-- ─── Home destination ─── -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:overScrollMode="ifContentScrolls"
+            android:scrollbars="none"
+            android:visibility="@{homeVisible ? View.VISIBLE : View.GONE}">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:paddingHorizontal="@dimen/main_padding_horizontal"
+                android:paddingTop="@{self.surface.insets.top + (int) @dimen/get_line_home_section_gap}"
+                android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_shell_content_bottom}">
+
+                <pro.getline.vpn.getlineui.view.GetLineStateView
+                    android:id="@+id/state_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    tools:visibility="visible" />
+
+                <!--
+                  Uneven spacers put the ring below centre: it is the main tap
+                  target on a tall phone, and centred it still sat above a
+                  comfortable thumb arc.
+                -->
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1.6" />
+
+                <!--
+                  Connect ring: the whole thing is the VPN toggle, replacing the
+                  logo, the status line and the primary button. The logo stays on
+                  splash and onboarding, where it identifies the app; here it only
+                  occupied the best part of the screen without saying anything.
+                -->
+                <FrameLayout
+                    android:id="@+id/connect_ring"
+                    android:layout_width="@dimen/get_line_connect_ring_size"
+                    android:layout_height="@dimen/get_line_connect_ring_size"
+                    android:layout_marginTop="@dimen/get_line_connect_ring_margin_top"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:enabled="@{primaryActionEnabled}"
+                    android:focusable="true"
+                    android:onClick="@{() -> self.request(Request.ToggleVpn)}"
+                    android:visibility="@{vpnControlsVisible ? View.VISIBLE : View.GONE}">
+
+                    <pro.getline.vpn.getlineui.view.GetLineConnectRingView
+                        android:id="@+id/connect_ring_arc"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+
+                    <!--
+                      noHideDescendants, not "no": the ring already announces the
+                      state, so leaving these readable would add duplicate focus
+                      stops that do nothing when tapped.
+                    -->
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center_horizontal"
+                        android:importantForAccessibility="noHideDescendants"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="24dp">
+
+                        <TextView
+                            style="@style/Widget.GetLine.Text.Status"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center"
+                            android:text="@{statusText}"
+                            android:textColor="@{vpnStatus == VpnStatus.Connected ? @color/getline_accent : (vpnStatus == VpnStatus.Connecting ? @color/getline_brand_gradient_start : @color/getline_text_secondary)}"
+                            tools:text="Подключён"
+                            tools:textColor="@color/getline_accent" />
+
+                        <TextView
+                            android:id="@+id/connect_ring_detail"
+                            style="@style/Widget.GetLine.Text.Location"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:gravity="center"
+                            android:textColor="@color/getline_text_primary"
+                            tools:text="1:42:17" />
+
+                        <TextView
+                            android:id="@+id/connect_ring_traffic"
+                            style="@style/Widget.GetLine.Text.Caption"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:gravity="center"
+                            android:textColor="@color/getline_text_secondary"
+                            android:visibility="gone"
+                            tools:text="1,2 ГБ передано"
+                            tools:visibility="visible" />
+                    </LinearLayout>
+                </FrameLayout>
+
+                <!-- Entire location row opens Servers (does not touch VPN). -->
+                <LinearLayout
+                    android:id="@+id/home_location"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_card_margin_top"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:contentDescription="@string/get_line_shell_servers"
+                    android:focusable="true"
+                    android:gravity="center_horizontal"
+                    android:onClick="@{() -> self.openServers()}"
+                    android:orientation="vertical"
+                    android:paddingVertical="8dp"
+                    android:visibility="@{locationVisible ? View.VISIBLE : View.GONE}">
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:text="@string/get_line_shell_location_label"
+                        android:textColor="@color/getline_text_secondary" />
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Location"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:gravity="center"
+                        android:text="@{locationText}"
+                        android:textColor="@color/getline_text_primary"
+                        tools:text="Amsterdam" />
+                </LinearLayout>
+
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ─── Servers destination ─── -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:overScrollMode="ifContentScrolls"
+            android:scrollbars="none"
+            android:visibility="@{serversVisible ? View.VISIBLE : View.GONE}">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="@dimen/main_padding_horizontal"
+                android:paddingTop="@{self.surface.insets.top + (int) @dimen/get_line_home_section_gap}"
+                android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_shell_content_bottom}">
+
+                <TextView
+                    style="@style/Widget.GetLine.Text.Title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/get_line_shell_servers_title"
+                    android:textColor="@color/getline_text_primary"
+                    tools:text="Servers" />
+
+                <TextView
+                    style="@style/Widget.GetLine.Text.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_title_margin_top"
+                    android:text="@string/get_line_shell_servers_explanation"
+                    android:textColor="@color/getline_text_secondary"
+                    tools:text="Choose a location…" />
+
+                <!-- No "current server" block: the selected row is already the
+                     only cyan-outlined one, so repeating it just duplicated it. -->
+                <TextView
+                    android:id="@+id/servers_available_label"
+                    style="@style/Widget.GetLine.Text.Caption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_card_margin_top"
+                    android:text="@string/get_line_shell_available_servers_label"
+                    android:textColor="@color/getline_text_secondary"
+                    android:visibility="gone"
+                    tools:visibility="visible" />
+
+                <pro.getline.vpn.getlineui.view.GetLineStateView
+                    android:id="@+id/servers_state_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_card_margin_top"
+                    tools:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/servers_list"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_cta_gap"
+                    android:orientation="vertical"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ─── Subscription destination (card moved from Home) ─── -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:overScrollMode="ifContentScrolls"
+            android:scrollbars="none"
+            android:visibility="@{subscriptionVisible ? View.VISIBLE : View.GONE}">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="@dimen/main_padding_horizontal"
+                android:paddingTop="@{self.surface.insets.top + (int) @dimen/get_line_home_section_gap}"
+                android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_shell_content_bottom}">
+
+                <TextView
+                    style="@style/Widget.GetLine.Text.Title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/get_line_shell_subscription_title"
+                    android:textColor="@color/getline_text_primary"
+                    tools:text="Subscription" />
+
+                <pro.getline.vpn.getlineui.view.GetLineStateView
+                    android:id="@+id/subscription_state_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_card_margin_top"
+                    tools:visibility="gone" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/subscription_card"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_card_margin_top"
+                    android:visibility="@{profileCardVisible ? View.VISIBLE : View.GONE}"
+                    app:cardBackgroundColor="@color/getline_brand_surface"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/getline_hairline"
+                    app:strokeWidth="1dp">
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="16dp">
+
+                            <!--
+                              Plan name and state. The screen heading above already
+                              reads "Subscription", so the card does not repeat it.
+                              End padding leaves room for the refresh control that
+                              floats over this row.
+                            -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginBottom="18dp"
+                                android:baselineAligned="false"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal"
+                                android:paddingEnd="48dp">
+
+                                <TextView
+                                    style="@style/Widget.GetLine.Text.Subtitle"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:ellipsize="end"
+                                    android:maxLines="1"
+                                    android:text="@{cardTitle}"
+                                    android:textColor="@color/getline_text_primary"
+                                    tools:text="Trial" />
+
+                                <TextView
+                                    android:id="@+id/subscription_status_pill"
+                                    style="@style/Widget.GetLine.Text.Caption"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="8dp"
+                                    android:background="@drawable/bg_getline_pill"
+                                    android:paddingStart="10dp"
+                                    android:paddingTop="3dp"
+                                    android:paddingEnd="10dp"
+                                    android:paddingBottom="3dp"
+                                    android:text="@{subscriptionStatusText}"
+                                    android:visibility="@{subscriptionStatusVisible ? View.VISIBLE : View.GONE}"
+                                    tools:text="Active" />
+                            </LinearLayout>
+
+                            <!--
+                              Days left is what this screen is opened for, so it is
+                              the one thing set in display type. The parts are
+                              separate views only to keep the number and its noun on
+                              one baseline, so the container carries the phrase and
+                              the children stay out of the tree — "no" on each child
+                              rather than noHideDescendants on the parent, which
+                              would take the container's description with them.
+                            -->
+                            <LinearLayout
+                                android:id="@+id/days_left_block"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:importantForAccessibility="yes"
+                                android:orientation="horizontal"
+                                android:visibility="@{daysLeftVisible ? View.VISIBLE : View.GONE}">
+
+                                <TextView
+                                    style="@style/Widget.GetLine.Text.Metric"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:importantForAccessibility="no"
+                                    android:text="@{daysLeftValue}"
+                                    tools:text="255" />
+
+                                <TextView
+                                    style="@style/Widget.GetLine.Text.Primary"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="8dp"
+                                    android:importantForAccessibility="no"
+                                    android:text="@{daysLeftUnit}"
+                                    android:textColor="@color/getline_text_secondary"
+                                    tools:text="days left" />
+                            </LinearLayout>
+
+                            <TextView
+                                style="@style/Widget.GetLine.Text.Caption"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="@{expireText}"
+                                android:textColor="@color/getline_text_secondary"
+                                tools:text="Until 30 July 2026" />
+
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="1dp"
+                                android:layout_marginTop="18dp"
+                                android:background="@color/getline_hairline_subtle" />
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="16dp"
+                                android:baselineAligned="true"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    style="@style/Widget.GetLine.Text.Caption"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/get_line_home_traffic_label"
+                                    android:textColor="@color/getline_text_secondary" />
+
+                                <TextView
+                                    style="@style/Widget.GetLine.Text.Primary"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="12dp"
+                                    android:text="@{trafficText}"
+                                    android:textColor="@color/getline_text_primary"
+                                    tools:text="0 Bytes / 15.00 GiB" />
+                            </LinearLayout>
+
+                            <!--
+                              Decorative: the figures above already state the same
+                              thing, and a second reading of it would only be noise.
+                            -->
+                            <com.google.android.material.progressindicator.LinearProgressIndicator
+                                android:id="@+id/traffic_progress"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:importantForAccessibility="no"
+                                android:max="1000"
+                                android:visibility="gone"
+                                app:indicatorColor="@color/getline_brand_primary"
+                                app:trackColor="@color/getline_onboarding_field_fill"
+                                app:trackCornerRadius="3dp"
+                                app:trackThickness="6dp"
+                                tools:progress="120"
+                                tools:visibility="visible" />
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:visibility="@{devicesVisible ? View.VISIBLE : View.GONE}">
+
+                                <View
+                                    android:layout_width="match_parent"
+                                    android:layout_height="1dp"
+                                    android:layout_marginTop="16dp"
+                                    android:background="@color/getline_hairline_subtle" />
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="16dp"
+                                    android:baselineAligned="true"
+                                    android:orientation="horizontal">
+
+                                    <TextView
+                                        style="@style/Widget.GetLine.Text.Caption"
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:text="@string/get_line_home_devices_label"
+                                        android:textColor="@color/getline_text_secondary" />
+
+                                    <TextView
+                                        style="@style/Widget.GetLine.Text.Primary"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginStart="12dp"
+                                        android:text="@{devicesText}"
+                                        android:textColor="@color/getline_text_primary"
+                                        tools:text="Up to 3 devices" />
+                                </LinearLayout>
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/subscription_transient_error"
+                                style="@style/Widget.GetLine.Text.Secondary"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="14dp"
+                                android:text="@string/get_line_subscription_transient_error"
+                                android:textColor="@color/getline_text_secondary"
+                                android:visibility="gone"
+                                tools:text="Couldn’t refresh. Showing last known data."
+                                tools:visibility="visible" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:id="@+id/refresh_subscription"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:layout_gravity="top|end"
+                            android:layout_margin="4dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:clickable="true"
+                            android:contentDescription="@string/get_line_home_refresh_subscription"
+                            android:focusable="true"
+                            android:onClick="@{() -> self.request(Request.RefreshSubscription)}"
+                            android:padding="12dp"
+                            android:src="@drawable/ic_baseline_sync"
+                            app:tint="@color/getline_text_secondary" />
+
+                        <ProgressBar
+                            android:id="@+id/refresh_subscription_progress"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:layout_gravity="top|end"
+                            android:layout_margin="4dp"
+                            android:indeterminate="true"
+                            android:indeterminateTint="@color/getline_brand_primary"
+                            android:padding="12dp"
+                            android:visibility="gone"
+                            tools:visibility="gone" />
+                    </FrameLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Account portal CTA: Subscription destination only (not Home). -->
+                <LinearLayout
+                    android:id="@+id/account_portal_block"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_card_margin_top"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/get_line_account_portal_title"
+                        android:textColor="@color/getline_text_primary" />
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Secondary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/get_line_account_portal_explanation"
+                        android:textColor="@color/getline_text_secondary" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/open_account_portal"
+                        style="@style/Widget.GetLine.Onboarding.PrimaryButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_home_cta_gap"
+                        android:contentDescription="@string/get_line_account_portal_open"
+                        android:minHeight="@dimen/get_line_home_primary_button_min_height"
+                        android:onClick="@{() -> self.request(Request.OpenAccountPortal)}"
+                        android:text="@string/get_line_account_portal_open" />
+
+                    <LinearLayout
+                        android:id="@+id/account_portal_error"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical"
+                        android:visibility="gone"
+                        tools:visibility="visible">
+
+                        <TextView
+                            style="@style/Widget.GetLine.Text.Primary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/get_line_account_portal_open_failed_title"
+                            android:textColor="@color/getline_text_primary" />
+
+                        <TextView
+                            android:id="@+id/account_portal_error_detail"
+                            style="@style/Widget.GetLine.Text.Secondary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/get_line_account_portal_no_browser"
+                            android:textColor="@color/getline_text_secondary" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/account_portal_retry"
+                            style="@style/Widget.GetLine.Onboarding.SecondaryButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:contentDescription="@string/get_line_action_retry"
+                            android:minHeight="@dimen/get_line_home_primary_button_min_height"
+                            android:onClick="@{() -> self.request(Request.OpenAccountPortal)}"
+                            android:text="@string/get_line_action_retry" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Account logout: bottom of Subscription, red text — not a filled danger block. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/logout_account"
+                    style="@style/Widget.GetLine.LogoutTextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_section_gap"
+                    android:contentDescription="@string/get_line_action_logout"
+                    android:onClick="@{() -> self.request(Request.Logout)}"
+                    android:text="@string/get_line_action_logout"
+                    android:visibility="gone"
+                    tools:visibility="visible" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- Floating translucent bottom shell bar (padding hosts system nav inset). -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:paddingStart="@dimen/get_line_shell_bar_margin_horizontal"
+            android:paddingEnd="@dimen/get_line_shell_bar_margin_horizontal"
+            android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_shell_bar_margin_bottom}">
+
+            <LinearLayout
+                android:id="@+id/shell_bar"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/get_line_shell_bar_height"
+                android:background="@drawable/bg_getline_shell_bar"
+                android:elevation="6dp"
+                android:orientation="horizontal"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp">
+
+                <LinearLayout
+                    android:id="@+id/tab_home"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:contentDescription="@string/get_line_shell_home"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="@dimen/get_line_shell_tab_icon"
+                        android:layout_height="@dimen/get_line_shell_tab_icon"
+                        android:contentDescription="@null"
+                        android:duplicateParentState="true"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_getline_shell_home"
+                        app:tint="@color/getline_shell_nav_item" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:duplicateParentState="true"
+                        android:fontFamily="@font/mulish"
+                        android:text="@string/get_line_shell_home"
+                        android:textAppearance="@style/TextAppearance.GetLine.Caption"
+                        android:textColor="@color/getline_shell_nav_item"
+                        tools:text="Home" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/tab_servers"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:contentDescription="@string/get_line_shell_servers"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="@dimen/get_line_shell_tab_icon"
+                        android:layout_height="@dimen/get_line_shell_tab_icon"
+                        android:contentDescription="@null"
+                        android:duplicateParentState="true"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_getline_shell_servers"
+                        app:tint="@color/getline_shell_nav_item" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:duplicateParentState="true"
+                        android:fontFamily="@font/mulish"
+                        android:text="@string/get_line_shell_servers"
+                        android:textAppearance="@style/TextAppearance.GetLine.Caption"
+                        android:textColor="@color/getline_shell_nav_item"
+                        tools:text="Servers" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/tab_subscription"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:contentDescription="@string/get_line_shell_subscription"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageView
+                        android:layout_width="@dimen/get_line_shell_tab_icon"
+                        android:layout_height="@dimen/get_line_shell_tab_icon"
+                        android:contentDescription="@null"
+                        android:duplicateParentState="true"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_getline_shell_subscription"
+                        app:tint="@color/getline_shell_nav_item" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:duplicateParentState="true"
+                        android:fontFamily="@font/mulish"
+                        android:text="@string/get_line_shell_subscription"
+                        android:textAppearance="@style/TextAppearance.GetLine.Caption"
+                        android:textColor="@color/getline_shell_nav_item"
+                        tools:text="Subscription" />
+                </LinearLayout>
+            </LinearLayout>
+        </FrameLayout>
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+</layout>
+

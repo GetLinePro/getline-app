@@ -3,19 +3,19 @@
     <data>
         <variable
             name="provider"
-            type="pro.getline.vpn.core.model.Provider" />
+            type="com.github.kr328.clash.core.model.Provider" />
         <variable
             name="state"
-            type="pro.getline.vpn.design.model.ProviderState" />
+            type="com.github.kr328.clash.design.model.ProviderState" />
         <variable
             name="currentTime"
-            type="pro.getline.vpn.design.ui.ObservableCurrentTime" />
+            type="com.github.kr328.clash.design.ui.ObservableCurrentTime" />
         <variable
             name="update"
             type="android.view.View.OnClickListener" />
 
-        <import type="pro.getline.vpn.design.util.I18nKt" />
-        <import type="pro.getline.vpn.design.util.IntervalKt" />
+        <import type="com.github.kr328.clash.design.util.I18nKt" />
+        <import type="com.github.kr328.clash.design.util.IntervalKt" />
         <import type="android.view.View" />
     </data>
 

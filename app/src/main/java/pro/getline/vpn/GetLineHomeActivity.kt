@@ -6,11 +6,13 @@ import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import pro.getline.vpn.design.GetLineHomeDesign
-import pro.getline.vpn.design.model.GetLineProductState
-import pro.getline.vpn.design.model.GetLineRecoveryAction
-import pro.getline.vpn.design.ui.ToastDuration
+import pro.getline.vpn.getlineui.GetLineHomeDesign
+import pro.getline.vpn.getlineui.model.GetLineProductState
+import pro.getline.vpn.getlineui.model.GetLineRecoveryAction
+import pro.getline.vpn.getlineui.model.GetLineTraffic
+import pro.getline.vpn.getlineui.ToastDuration
 import pro.getline.vpn.getline.GetLineBackendProvider
+import pro.getline.vpn.product.GetLineActivity
 import pro.getline.vpn.getline.GetLineBackendResult
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
@@ -32,12 +34,10 @@ import pro.getline.vpn.getline.auth.SubscriptionUiState
 import pro.getline.vpn.getline.servers.ServerGroupingPolicy
 import pro.getline.vpn.getline.servers.ServerNameParser
 import pro.getline.vpn.getline.servers.VpnServerLoadResult
-import pro.getline.vpn.getline.servers.VpnServerSelectionRepository
 import pro.getline.vpn.getline.servers.VpnServerStateHolder
 import pro.getline.vpn.getline.servers.VpnServerUiState
-import pro.getline.vpn.common.util.ticker
+import com.github.kr328.clash.common.util.ticker
 import pro.getline.vpn.util.hasValidatedInternetConnection
-import pro.getline.vpn.util.withClash
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -49,9 +49,10 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import pro.getline.vpn.design.R as DesignR
+import com.github.kr328.clash.design.R as DesignR
+import pro.getline.vpn.getlineui.R as GetLineUiR
 
-class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
+class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private val backend by lazy { GetLineBackendProvider.create(this) }
     private val sessionRepository by lazy {
         GetLineSessionRepository(
@@ -59,7 +60,6 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
             store = GetLineSessionStore(this),
         )
     }
-    private val serverSelectionRepository by lazy { VpnServerSelectionRepository() }
     /** Survives tab switches; cleared only when Activity is destroyed. */
     private val subscriptionState = SubscriptionStateHolder()
     private val serverState = VpnServerStateHolder()
@@ -266,15 +266,13 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
      */
     private suspend fun GetLineHomeDesign.refreshSession() {
         if (!backend.vpn.running) {
-            setSession(sessionDurationMs = null, traffic = 0L)
+            setSession(sessionDurationMs = null, traffic = GetLineTraffic.Zero)
             return
         }
-        val snapshot = runCatching {
-            withClash { querySessionDurationMs() to queryTrafficTotal() }
-        }.getOrNull()
+        val session = backend.vpn.querySession()
         setSession(
-            sessionDurationMs = snapshot?.first,
-            traffic = snapshot?.second ?: 0L,
+            sessionDurationMs = session?.durationMs,
+            traffic = session?.traffic ?: GetLineTraffic.Zero,
         )
     }
 
@@ -393,7 +391,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
         if (boundSource != null) {
             draft = GetLineSubscriptionDraft(
                 type = GetLineSubscriptionType.Url,
-                name = getString(DesignR.string.get_line_subscription_profile_name),
+                name = getString(GetLineUiR.string.get_line_subscription_profile_name),
                 source = boundSource,
             )
             // Keep existing subscription id; do not rewrite from preferred catalog.
@@ -405,7 +403,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
             draft = GetLineSubscriptionDraft(
                 type = GetLineSubscriptionType.Url,
                 name = subscription.displayName
-                    ?: getString(DesignR.string.get_line_subscription_profile_name),
+                    ?: getString(GetLineUiR.string.get_line_subscription_profile_name),
                 source = source,
             )
             subscriptionIdToRemember = subscription.id
@@ -540,10 +538,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
             setLocation(null)
             return
         }
-        val name = serverSelectionRepository.queryMainSelectedName(
-            excludeNotSelectable = uiStore.proxyExcludeNotSelectable,
-            sort = uiStore.proxySort,
-        )
+        val name = backend.servers.queryMainSelectedName()
         setLocation(name?.let { ServerNameParser.parse(it).displayQualifiedLabel })
     }
 
@@ -626,10 +621,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
         serverLoadJob = launch {
             try {
                 val result = serversIoMutex.withLock {
-                    serverSelectionRepository.loadMainGroup(
-                        excludeNotSelectable = uiStore.proxyExcludeNotSelectable,
-                        sort = uiStore.proxySort,
-                    )
+                    backend.servers.loadMainGroup()
                 }
                 if (!isActive) return@launch
                 serverState.applyLoadResult(result)
@@ -662,18 +654,12 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
         serverState.onHealthCheckStarted(now)
 
         val measured = serversIoMutex.withLock {
-            serverSelectionRepository.healthCheckMainGroup(
-                excludeNotSelectable = uiStore.proxyExcludeNotSelectable,
-                sort = uiStore.proxySort,
-            )
+            backend.servers.healthCheckMainGroup()
         }
         if (!measured || !isActive) return
 
         val refreshed = serversIoMutex.withLock {
-            serverSelectionRepository.loadMainGroup(
-                excludeNotSelectable = uiStore.proxyExcludeNotSelectable,
-                sort = uiStore.proxySort,
-            )
+            backend.servers.loadMainGroup()
         }
         if (!isActive) return
         // Only delays changed; a failed re-read must not clobber a good list.
@@ -723,7 +709,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
                     ?: return@withLock false
                 if (!current.selectable) return@withLock false
                 val target = userSelectIntent ?: current.selectedName
-                val success = serverSelectionRepository.select(current.groupName, target)
+                val success = backend.servers.select(current.groupName, target)
                 if (success) {
                     if (userSelectIntent == target) {
                         userSelectIntent = null
@@ -767,7 +753,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
                 )
                 GetLineHomeDesign.ServersScreen.Ready(
                     currentDisplayName = current.ifBlank {
-                        getString(DesignR.string.get_line_shell_location_unknown)
+                        getString(GetLineUiR.string.get_line_shell_location_unknown)
                     },
                     groups = groups.map { group ->
                         GetLineHomeDesign.ServerGroupRow(
@@ -920,7 +906,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
                         val presentation = preferred?.let {
                             SubscriptionPresentation.fromPreferred(
                                 item = it,
-                                fallbackTitle = getString(DesignR.string.get_line_home_plan_unknown),
+                                fallbackTitle = getString(GetLineUiR.string.get_line_home_plan_unknown),
                             )
                         }
                         subscriptionState.applyLoadResult(result, presentation)
@@ -1069,7 +1055,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
     ): GetLineHomeDesign.CardContent {
         val expireText = expireAtEpochMillis
             ?.let { design.formatExpireUntil(it) }
-            ?: getString(DesignR.string.get_line_home_expire_unknown)
+            ?: getString(GetLineUiR.string.get_line_home_expire_unknown)
 
         val trafficText = when {
             trafficUnlimited -> design.formatApiTraffic(0L, 0L, isUnlimited = true)
@@ -1079,7 +1065,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
                     limitBytes = trafficLimitBytes ?: 0L,
                     isUnlimited = false,
                 )
-            else -> getString(DesignR.string.get_line_home_traffic_unknown)
+            else -> getString(GetLineUiR.string.get_line_home_traffic_unknown)
         }
 
         // Only a real allowance gives the bar a whole to draw a part of. An
@@ -1101,9 +1087,9 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
             isActive = isActive,
             statusText = getString(
                 if (isActive) {
-                    DesignR.string.get_line_home_status_active
+                    GetLineUiR.string.get_line_home_status_active
                 } else {
-                    DesignR.string.get_line_home_status_inactive
+                    GetLineUiR.string.get_line_home_status_inactive
                 }
             ),
             expireText = expireText,
@@ -1209,7 +1195,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
 
                 if (!backend.vpn.running) {
                     showToast(
-                        DesignR.string.get_line_vpn_start_timeout,
+                        GetLineUiR.string.get_line_vpn_start_timeout,
                         ToastDuration.Long,
                     )
                 }
@@ -1277,7 +1263,7 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
                 } else {
                     launch {
                         showToast(
-                            DesignR.string.get_line_account_portal_open_failed_title,
+                            GetLineUiR.string.get_line_account_portal_open_failed_title,
                             ToastDuration.Long,
                         )
                     }
@@ -1314,20 +1300,6 @@ class GetLineHomeActivity : BaseActivity<GetLineHomeDesign>() {
             return
         }
         super.handleBackPressed()
-    }
-
-    override fun onStopped(cause: String?) {
-        events.trySend(Event.ClashStop)
-
-        if (cause != null && activityStarted) {
-            launch {
-                design?.showToast(DesignR.string.get_line_vpn_stopped, ToastDuration.Long)
-            }
-        }
-    }
-
-    override fun shouldDisplayHomeAsUpEnabled(): Boolean {
-        return false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

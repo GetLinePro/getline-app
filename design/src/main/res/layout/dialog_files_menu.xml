@@ -4,13 +4,13 @@
     <data>
         <variable
             name="master"
-            type="pro.getline.vpn.design.FilesDesign" />
+            type="com.github.kr328.clash.design.FilesDesign" />
         <variable
             name="self"
             type="android.app.Dialog" />
         <variable
             name="file"
-            type="pro.getline.vpn.design.model.File" />
+            type="com.github.kr328.clash.design.model.File" />
         <variable
             name="currentInBase"
             type="boolean" />
@@ -25,7 +25,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
-        <pro.getline.vpn.design.view.LargeActionLabel
+        <com.github.kr328.clash.design.view.LargeActionLabel
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:onClick="@{() -> master.requestImport(self, file)}"
@@ -34,7 +34,7 @@
             app:icon="@drawable/ic_baseline_get_app"
             app:text="@string/import_" />
 
-        <pro.getline.vpn.design.view.LargeActionLabel
+        <com.github.kr328.clash.design.view.LargeActionLabel
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:onClick="@{() -> master.requestExport(self, file)}"
@@ -43,7 +43,7 @@
             app:icon="@drawable/ic_baseline_publish"
             app:text="@string/export" />
 
-        <pro.getline.vpn.design.view.LargeActionLabel
+        <com.github.kr328.clash.design.view.LargeActionLabel
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:onClick="@{() -> master.requestRename(self, file)}"
@@ -52,7 +52,7 @@
             app:icon="@drawable/ic_baseline_edit"
             app:text="@string/rename" />
 
-        <pro.getline.vpn.design.view.LargeActionLabel
+        <com.github.kr328.clash.design.view.LargeActionLabel
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:onClick="@{() -> master.requestDelete(self, file)}"

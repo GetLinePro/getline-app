@@ -40,17 +40,23 @@ subprojects {
                 applicationId = "pro.getline.vpn"
             }
 
-            project.name.let { name ->
-                namespace = if (name == "app") "pro.getline.vpn"
-                else "pro.getline.vpn.$name"
+            // CMFA modules use upstream namespace (slice 7a/7b). getlineui is product-only.
+            // project.name — not bare name: inside defaultConfig, name is the config name "main".
+            val moduleName = project.name
+            namespace = when (moduleName) {
+                "getlineui" -> "pro.getline.vpn.getlineui"
+                "app" -> "com.github.kr328.clash"
+                else -> "com.github.kr328.clash.$moduleName"
             }
 
             // androidx.browser 1.10+ (Auth Tab) requires minSdk 23.
             minSdk = 23
             targetSdk = 36
 
-            versionName = "2.11.32"
-            versionCode = 211032
+            // Product version, independent of the CMFA release we forked from.
+            // The mihomo core reports its own version via Bridge.nativeCoreVersion().
+            versionName = "0.1.0"
+            versionCode = 1000
 
             resValue("string", "release_name", "v$versionName")
             resValue("integer", "release_code", "$versionCode")
@@ -96,8 +102,10 @@ subprojects {
 
                 buildConfigField("boolean", "PREMIUM", "Boolean.parseBoolean(\"false\")")
 
-                resValue("string", "launch_name", "@string/launch_name_alpha")
-                resValue("string", "application_name", "@string/application_name_alpha")
+                // Use literal generated values: androidTest resource linking does not
+                // include the :design resource that previously supplied these aliases.
+                resValue("string", "launch_name", "GetLine VPN Alpha")
+                resValue("string", "application_name", "GetLine VPN Alpha")
 
                 if (isApp) {
                     applicationIdSuffix = ".alpha"
@@ -110,8 +118,8 @@ subprojects {
 
                 buildConfigField("boolean", "PREMIUM", "Boolean.parseBoolean(\"false\")")
 
-                resValue("string", "launch_name", "@string/launch_name_meta")
-                resValue("string", "application_name", "@string/application_name_meta")
+                resValue("string", "launch_name", "GetLine VPN Meta")
+                resValue("string", "application_name", "GetLine VPN Meta")
             }
         }
 

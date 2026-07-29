@@ -1,0 +1,17 @@
+package pro.getline.vpn.getlineui.util
+
+import android.content.Context
+import android.util.TypedValue
+import androidx.annotation.AttrRes
+
+fun Context.resolveThemedColor(@AttrRes resId: Int): Int {
+    return TypedValue().apply {
+        theme.resolveAttribute(resId, this, true)
+    }.data
+}
+
+fun Context.resolveThemedBoolean(@AttrRes resId: Int): Boolean {
+    return TypedValue().apply {
+        theme.resolveAttribute(resId, this, true)
+    }.data != 0
+}

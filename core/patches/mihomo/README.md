@@ -22,12 +22,66 @@ checkout + `scripts/apply-mihomo-patches.sh` matches CI and release builds.
 
 Gradle `core` Golang builds depend on the same script (idempotent).
 
-CI: run after `git submodule update --init --recursive --force`.
+CI: run after `git submodule update --init --recursive --force`, then
+`./scripts/verify-mihomo-gate.sh` (after Go is on PATH).
 
 **Not** the same as `.github/patch/*.patch` (those patch **GOROOT** only).
 
+## Verify (security gate)
+
+`git apply` succeeding is not enough. Upstream can refactor so the patch still
+applies while `no_ssh` no longer excludes SSH. Always run:
+
+```bash
+./scripts/verify-mihomo-gate.sh
+```
+
+Checks:
+
+1. Submodule HEAD matches the parent-recorded gitlink.
+2. Working tree is exactly the patch result (tracked + untracked sets and bytes).
+3. `GOOS=android GOARCH=arm64 go list -tags 'foss,with_gvisor,cmfa,no_ssh' -deps`
+   has no `metacubex/ssh`, and the same without `no_ssh` still has it
+   (control — gate not vacuous). Target is the Android product graph, not
+   the CI host OS (`VERIFY_GOOS` / `VERIFY_GOARCH` override defaults).
+
+Requires `go` in PATH; missing Go is a hard failure (no silent skip).
+
 ## Refresh after Mihomo bump
 
-1. `git submodule update --remote` (or pin new SHA in parent).
-2. Re-apply; if reject, refresh the patch against the new tree.
-3. Re-verify: `go list -tags 'foss,with_gvisor,cmfa,no_ssh' -deps` has no `metacubex/ssh`.
+Reproducible procedure:
+
+```bash
+# 1. Move submodule to the new upstream pin
+git submodule update --remote --force
+
+# 2. Apply product patches (fails if the patch no longer fits → refresh patch)
+./scripts/apply-mihomo-patches.sh
+
+# 3. Verify the security gate still works (fails if no_ssh is vacuous)
+#    --skip-gitlink: parent HEAD still has the old pin until you commit the gitlink
+./scripts/verify-mihomo-gate.sh --skip-gitlink
+
+# 4. Build
+./gradlew :app:assembleAlphaDebug
+
+# 5. Device smoke: connect, traffic, server selection
+
+# 6. Record the new gitlink SHA in the parent and commit (with refreshed
+#    patches if any). After commit, plain verify without --skip-gitlink must pass:
+./scripts/verify-mihomo-gate.sh
+```
+
+### When the patch does not apply
+
+1. Do **not** commit ad-hoc edits inside the submodule as the product source of truth.
+2. Reset the submodule to the intended upstream SHA (clean tree).
+3. Refresh `core/patches/mihomo/*.patch` against that tree (edit the patch file
+   in the parent repo).
+4. Re-run apply + verify until both succeed.
+5. Commit only parent-tracked paths: the updated `.patch`, any README/script
+   changes, and the new gitlink.
+
+`m core/src/foss/golang/clash` after a successful apply is expected local dirt
+from the patch (tracked mods + untracked stubs). That is the gate working tree,
+not an accidental fork commit.

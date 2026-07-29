@@ -1,3 +1,9 @@
+# Intentionally rewritten vs upstream ClashMetaForAndroid CMakeLists.
+# Reasons we keep our version on Mihomo/CMA bumps (resolve conflicts in our favor):
+# - upstream ran `git submodule foreach` with a wrong WORKING_DIRECTORY
+# - -ffile-prefix-map for reproducible native paths
+# - generated getline_native_version.h (version.h.in) for the bridge
+# Do not "restore upstream structure" for a smaller diff — that breaks the build.
 cmake_minimum_required(VERSION 3.22.1)
 
 execute_process(

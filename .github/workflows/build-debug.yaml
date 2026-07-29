@@ -49,6 +49,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Verify Mihomo security gate
+        run: ./scripts/verify-mihomo-gate.sh
+
       # - name: Signing properties
       #   env:
       #     SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}

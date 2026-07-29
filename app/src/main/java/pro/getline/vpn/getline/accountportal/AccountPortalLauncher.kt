@@ -7,7 +7,7 @@ import android.net.Uri
 import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
-import pro.getline.vpn.design.R as DesignR
+import pro.getline.vpn.getlineui.R as GetLineUiR
 
 /**
  * Opens the GetLine account portal in a Custom Tab (or browser fallback).
@@ -104,8 +104,8 @@ class DefaultAccountPortalLauncher(
 
     companion object {
         fun buildBrandedCustomTabsIntent(context: Context): CustomTabsIntent {
-            val toolbarColor = ContextCompat.getColor(context, DesignR.color.getline_brand_background)
-            val navBarColor = ContextCompat.getColor(context, DesignR.color.getline_brand_surface)
+            val toolbarColor = ContextCompat.getColor(context, GetLineUiR.color.getline_brand_background)
+            val navBarColor = ContextCompat.getColor(context, GetLineUiR.color.getline_brand_surface)
             val darkParams = CustomTabColorSchemeParams.Builder()
                 .setToolbarColor(toolbarColor)
                 .setNavigationBarColor(navBarColor)
