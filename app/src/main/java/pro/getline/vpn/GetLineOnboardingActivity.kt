@@ -13,6 +13,7 @@ import pro.getline.vpn.getlineui.model.GetLineProductState
 import pro.getline.vpn.getline.GetLineBackendProvider
 import pro.getline.vpn.product.GetLineActivity
 import pro.getline.vpn.getline.GetLineBackendResult
+import pro.getline.vpn.getline.GetLineImportCoordinator
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
@@ -26,6 +27,8 @@ import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
 import pro.getline.vpn.util.hasValidatedInternetConnection
+import com.github.kr328.clash.common.log.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -65,20 +68,52 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         design.setAdvancedButtonVisible(BuildConfig.DEBUG)
 
         val initialImport = intent.importRequest
-        if (initialImport != null) {
-            importSubscription(design, initialImport)
-        } else {
-            refreshEntryState(design)
+        when {
+            // Explicit external / deep-link import replaces any stale pending work.
+            initialImport != null -> importSubscription(design, initialImport)
+            // Resume durable import after HOME / process death (first-time only;
+            // MainActivity prefers Home when a managed profile already exists).
+            sessionRepository.hasPendingImport() -> {
+                val draft = sessionRepository.pendingImportDraft()
+                if (draft != null) {
+                    importSubscription(
+                        design = design,
+                        request = draft,
+                        reuseId = sessionRepository.pendingImportReuseId(),
+                        subscriptionIdToRemember =
+                            sessionRepository.pendingImportSubscriptionIdToRemember(),
+                    )
+                } else {
+                    sessionRepository.clearPendingImport()
+                    refreshEntryState(design)
+                }
+            }
+            else -> refreshEntryState(design)
         }
 
         while (isActive) {
             select<Unit> {
                 events.onReceive {
-                    if (it == Event.ActivityStart &&
-                        !busy &&
-                        retryTarget == RetryTarget.Refresh
-                    ) {
-                        refreshEntryState(design)
+                    when {
+                        it != Event.ActivityStart || busy -> Unit
+                        // Re-join only while coordinator still running (HOME without destroy).
+                        // Failed imports keep pending for Retry / next cold start, not every onStart.
+                        GetLineImportCoordinator.isInFlight() -> {
+                            val target = retryTarget as? RetryTarget.ImportSubscription
+                            val draft = target?.request
+                                ?: sessionRepository.pendingImportDraft()
+                            if (draft != null) {
+                                importSubscription(
+                                    design = design,
+                                    request = draft,
+                                    reuseId = target?.reuseId
+                                        ?: sessionRepository.pendingImportReuseId(),
+                                    subscriptionIdToRemember = target?.subscriptionIdToRemember
+                                        ?: sessionRepository.pendingImportSubscriptionIdToRemember(),
+                                )
+                            }
+                        }
+                        retryTarget == RetryTarget.Refresh -> refreshEntryState(design)
                     }
                 }
                 design.requests.onReceive {
@@ -106,11 +141,35 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     }
                 }
                 imports.onReceive {
-                    importSubscription(design, it)
+                    // singleTask + onNewIntent: while await-ing A, B sits in the
+                    // channel. If busy, mark supersede; A handoff drains/runs B.
+                    enqueueOrStartImport(design, it)
                 }
             }
         }
     }
+
+    /**
+     * External import while another is in flight: do not drop B. The active
+     * waiter finishes (or is superseded by coordinator) and [drainAndContinueImport]
+     * picks B up before opening Home.
+     */
+    private suspend fun enqueueOrStartImport(
+        design: GetLineOnboardingDesign,
+        request: GetLineSubscriptionDraft,
+    ) {
+        if (busy) {
+            pendingExternalImport = request
+            // Cancel headless A so B is the sole in-flight import; A's onTerminal
+            // is invalidated via generation.
+            GetLineImportCoordinator.reset()
+            return
+        }
+        importSubscription(design, request)
+    }
+
+    /** Newest external draft that arrived while [busy] (onNewIntent / channel). */
+    private var pendingExternalImport: GetLineSubscriptionDraft? = null
 
     /**
      * Manual "add existing subscription": product URL dialog, then headless import.
@@ -439,7 +498,12 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         alreadyBusy: Boolean = false,
         subscriptionIdToRemember: String? = null,
     ) {
-        if (busy && !alreadyBusy) return
+        if (busy && !alreadyBusy) {
+            // Nested call while waiting: treat as supersede target.
+            pendingExternalImport = request
+            GetLineImportCoordinator.reset()
+            return
+        }
 
         // User-driven link import (not post-login) can leave email OTP mid-flow.
         val userDrivenImport = !alreadyBusy && subscriptionIdToRemember == null
@@ -460,29 +524,73 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         }
         design.setProductState(GetLineProductState.Loading)
 
+        // Durable request so HOME/relaunch resumes instead of dead-ending.
+        sessionRepository.savePendingImport(
+            draft = request,
+            reuseId = reuseId,
+            subscriptionIdToRemember = subscriptionIdToRemember,
+        )
+        val importKey = GetLineImportCoordinator.importKey(
+            source = request.source,
+            subscriptionIdToRemember = subscriptionIdToRemember,
+            reuseId = reuseId,
+        )
+
         try {
-            // reuseId is consumed only inside importAndCommit — do not
-            // createOrUpdatePending here or profiles duplicate on each login.
-            val imported = backend.subscriptions.importAndCommit(request, reuseId) { stage ->
-                design.setImportStage(stage)
+            // Process-scoped import: Activity destroy cancels this waiter only,
+            // not the fetch (until supersede/reset). Terminal binding in onTerminal
+            // is generation-gated against logout.
+            val terminal = GetLineImportCoordinator.run(
+                request = GetLineImportCoordinator.ImportRequest(
+                    key = importKey,
+                    draft = request,
+                    reuseId = reuseId,
+                ),
+                import = { onProgress ->
+                    backend.subscriptions.importAndCommit(request, reuseId, onProgress)
+                },
+                onProgress = { stage ->
+                    runCatching { design.setImportStage(stage) }
+                },
+                onTerminal = { result ->
+                    when (result) {
+                        is GetLineImportCoordinator.ImportTerminal.Success -> {
+                            sessionRepository.rememberManagedProfile(
+                                uuid = result.id.value,
+                                source = request.source,
+                            )
+                            if (subscriptionIdToRemember != null) {
+                                sessionRepository.rememberSubscription(subscriptionIdToRemember)
+                            }
+                            sessionRepository.clearPendingImport()
+                            Log.i(
+                                "import_terminal success id=${result.id.value} " +
+                                    "verdict=${sessionRepository.consistencyVerdict()}",
+                            )
+                        }
+                        is GetLineImportCoordinator.ImportTerminal.Unavailable -> {
+                            sessionRepository.clearPendingImport()
+                            Log.i("import_terminal unavailable; pending cleared")
+                        }
+                    }
+                },
+            )
+
+            // Prefer a newer external import over Home / fail UI.
+            if (drainAndContinueImport(design)) {
+                return
             }
 
-            when (imported) {
-                is GetLineBackendResult.Success -> {
-                    val id = imported.value
+            when (terminal) {
+                is GetLineImportCoordinator.ImportTerminal.Success -> {
                     pendingEmailAuth = null
-                    sessionRepository.rememberManagedProfile(
-                        uuid = id.value,
-                        source = request.source,
-                    )
-                    if (subscriptionIdToRemember != null) {
-                        sessionRepository.rememberSubscription(subscriptionIdToRemember)
-                    }
-                    activateImportedProfile(design, id, request)
+                    // A live waiter owns activation and its recoverable UI. If the
+                    // waiter was destroyed, the durable managed binding routes the
+                    // next launch to Home, whose repair activates the profile.
+                    activateImportedProfile(design, terminal.id, request)
                 }
-                GetLineBackendResult.Unavailable -> {
+                is GetLineImportCoordinator.ImportTerminal.Unavailable -> {
                     if (emailToRestore != null) {
-                        // Don't trap the user on import-only UI after a mid-OTP detour.
                         restoreEmailAuth(design)
                     } else {
                         design.setProductState(
@@ -494,12 +602,68 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                         )
                     }
                 }
+                GetLineImportCoordinator.ImportTerminal.Superseded -> {
+                    // Replacement should have been drained above. A reset without
+                    // a replacement (logout) leaves this Activity until navigation.
+                    design.setProductState(GetLineProductState.Loading)
+                }
             }
+        } catch (e: CancellationException) {
+            // UI gone (HOME / renav). Import may still be running; pending kept only
+            // while in-flight — terminal paths clear it.
+            Log.i(
+                "import_waiter_cancelled key=$importKey " +
+                    "in_flight=${GetLineImportCoordinator.isInFlight()}",
+            )
+            throw e
         } finally {
             if (!alreadyBusy) {
                 busy = false
             }
         }
+    }
+
+    /**
+     * Drain channel + [pendingExternalImport]. Starts the newest draft if any.
+     * @return true if a replacement import was started (caller must not open Home).
+     */
+    private suspend fun drainAndContinueImport(design: GetLineOnboardingDesign): Boolean {
+        var latest: GetLineSubscriptionDraft? = pendingExternalImport
+        pendingExternalImport = null
+        while (true) {
+            val next = imports.tryReceive().getOrNull() ?: break
+            latest = next
+        }
+        val draft = latest ?: return false
+        // Keep outer busy ownership; nested call must not clear it early.
+        importSubscription(design, draft, alreadyBusy = true)
+        return true
+    }
+
+    /**
+     * UI handoff after a successful live-waiter activation. Headless completion
+     * only commits the managed binding; Home repair activates it on the next launch.
+     *
+     * Must not be called when [drainAndContinueImport] already took over.
+     * Drain again after VPN permission: onNewIntent can land while the system
+     * dialog / start is suspended, and that draft would otherwise die with finish().
+     */
+    private suspend fun finishImportToHome(
+        design: GetLineOnboardingDesign,
+    ) {
+        // Last chance before VPN: onNewIntent may have raced after post-await drain.
+        if (drainAndContinueImport(design)) {
+            return
+        }
+        design.setProductState(GetLineProductState.Loading)
+        startVpnWithPermission()
+        // onNewIntent during permission/start lands in [imports] while we were
+        // suspended — drain before leaving Onboarding.
+        if (drainAndContinueImport(design)) {
+            return
+        }
+        backend.navigation.openHome()
+        finish()
     }
 
     /** Resume in-progress email login (OTP preferred when a code was already sent). */
@@ -595,13 +759,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     return
                 }
 
-                sessionRepository.rememberManagedProfile(
-                    uuid = id.value,
-                    source = request?.source,
-                )
-                startVpnWithPermission()
-                backend.navigation.openHome()
-                finish()
+                finishImportToHome(design)
             }
             GetLineBackendResult.Unavailable -> {
                 design.setProductState(GetLineProductState.BackendUnavailable)
@@ -621,6 +779,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     backend.vpn.start()
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             // Active profile is already set; Home can retry VPN start.
         }

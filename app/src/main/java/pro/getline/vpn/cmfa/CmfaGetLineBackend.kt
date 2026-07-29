@@ -455,6 +455,9 @@ private class CmfaGetLineNavigation(
 
     override fun openOnboarding() {
         activity.startActivity(GetLineOnboardingActivity::class.intent)
+        // Sign-in / logout leave Home; keep task clean so partial auth cannot
+        // resurface Home underneath singleTask Onboarding.
+        activity.finish()
     }
 
     override fun openHome() {

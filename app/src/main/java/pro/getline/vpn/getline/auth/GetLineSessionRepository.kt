@@ -1,9 +1,13 @@
 package pro.getline.vpn.getline.auth
 
+import com.github.kr328.clash.common.log.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import pro.getline.vpn.GetLineControlPlaneHostPolicy
+import pro.getline.vpn.getline.GetLineSubscriptionDraft
+import pro.getline.vpn.getline.GetLineSubscriptionId
+import pro.getline.vpn.getline.GetLineSubscriptionType
 
 /**
  * Owns native session lifecycle. Raw tokens stay inside this layer except when
@@ -31,6 +35,16 @@ class GetLineSessionRepository(
         val deviceKey = api.generateDeviceKey(webToken)
         val session = api.exchangeDeviceKey(deviceKey.value)
         store.saveSession(session)
+        // Bug 3 diagnostic: one boolean after establish — never log token values.
+        val hasRefresh = store.hasRefreshToken()
+        Log.i(
+            "session_established has_refresh=$hasRefresh " +
+                "binding=${!store.managedProfileUuid.isNullOrBlank()}",
+        )
+        if (!hasRefresh) {
+            // Do not throw: callers map Exception → AuthFailed and lose the signal.
+            Log.e("session_established saveSession did not persist refresh token")
+        }
         return session
     }
 
@@ -206,6 +220,61 @@ class GetLineSessionRepository(
     fun managedProfileSource(): String? = store.managedProfileSource?.takeIf { it.isNotBlank() }
 
     fun rememberedSubscriptionId(): String? = store.subscriptionId
+
+    fun hasPendingImport(): Boolean = store.hasPendingImport()
+
+    fun pendingImport(): PendingImport? = store.pendingImport()
+
+    fun savePendingImport(
+        draft: GetLineSubscriptionDraft,
+        reuseId: GetLineSubscriptionId?,
+        subscriptionIdToRemember: String?,
+    ) {
+        val source = draft.source?.takeIf { it.isNotBlank() } ?: return
+        store.savePendingImport(
+            PendingImport(
+                name = draft.name,
+                source = source,
+                typeName = draft.type.name,
+                reuseUuid = reuseId?.value,
+                subscriptionIdToRemember = subscriptionIdToRemember,
+                interval = draft.interval,
+            ),
+        )
+    }
+
+    fun clearPendingImport() {
+        store.clearPendingImport()
+    }
+
+    fun pendingImportDraft(): GetLineSubscriptionDraft? {
+        val pending = store.pendingImport() ?: return null
+        val type = runCatching {
+            GetLineSubscriptionType.valueOf(pending.typeName)
+        }.getOrDefault(GetLineSubscriptionType.Url)
+        return GetLineSubscriptionDraft(
+            type = type,
+            name = pending.name,
+            source = pending.source,
+            interval = pending.interval,
+        )
+    }
+
+    fun pendingImportReuseId(): GetLineSubscriptionId? =
+        store.pendingImport()?.reuseUuid?.let { GetLineSubscriptionId(it) }
+
+    fun pendingImportSubscriptionIdToRemember(): String? =
+        store.pendingImport()?.subscriptionIdToRemember
+
+    /**
+     * Local session vs binding classification for logs / e2e (no token values).
+     */
+    fun consistencyVerdict(): SessionSubscriptionConsistency.Verdict {
+        return SessionSubscriptionConsistency.classify(
+            hasSession = hasSession(),
+            hasManagedBinding = managedProfileUuid() != null,
+        )
+    }
 
     /** True when Retry can attempt remote re-provision after local prove-absent. */
     fun canRemoteRepair(): Boolean = hasSession() || managedProfileSource() != null

@@ -21,7 +21,7 @@ GetLine VPN is a modified fork of [Clash Meta for Android (CMFA)](https://github
 
 ### Requirement
 
-- Android 5.0+ (minimum)
+- Android 6.0+ (minimum, `minSdk 23`)
 - Android 7.0+ (recommended)
 - `armeabi-v7a`, `arm64-v8a`, `x86` or `x86_64`
 
