@@ -139,11 +139,14 @@ class MainActivity : BaseActivity<MainDesign>() {
 
         launchTargetBackendUnavailable = false
 
-        // A locally known managed profile is enough to route. Skips the RemoteService
-        // IPC, which stalls launch for the full profile timeout when :background is
-        // down. Home re-queries the real snapshot and repairs (or offers import) if
-        // the profile turns out to be gone.
-        if (hasKnownManagedProfile()) return LaunchTarget.Home
+        // Managed binding wins over durable pending. Failed re-import must not
+        // trap a working VPN on Onboarding forever (pending only resumes first-time).
+        val sessionSnapshot = readSessionRoutingSnapshot()
+        if (sessionSnapshot.hasManagedProfile) return LaunchTarget.Home
+
+        // No profile yet: resume in-flight / interrupted first import on Onboarding.
+        // Terminal failures clear pending — so this is not a permanent fail loop.
+        if (sessionSnapshot.hasPendingImport) return LaunchTarget.Onboarding
 
         return when (val hasImported = getLineBackend.subscriptions.hasImported()) {
             GetLineBackendResult.Unavailable -> {
@@ -155,12 +158,22 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
     }
 
-    /** Keystore-backed prefs: read off the main thread, failure just falls through. */
-    private suspend fun hasKnownManagedProfile(): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            GetLineSessionStore(this@MainActivity).managedProfileUuid
-        }.getOrNull()?.isNotBlank() == true
-    }
+    /** One store init per launch route (MasterKey is not free). */
+    private suspend fun readSessionRoutingSnapshot(): SessionRoutingSnapshot =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val store = GetLineSessionStore(this@MainActivity)
+                SessionRoutingSnapshot(
+                    hasManagedProfile = !store.managedProfileUuid.isNullOrBlank(),
+                    hasPendingImport = store.hasPendingImport(),
+                )
+            }.getOrDefault(SessionRoutingSnapshot())
+        }
+
+    private data class SessionRoutingSnapshot(
+        val hasManagedProfile: Boolean = false,
+        val hasPendingImport: Boolean = false,
+    )
 
     private suspend fun MainDesign.fetch() {
         setClashRunning(clashRunning)

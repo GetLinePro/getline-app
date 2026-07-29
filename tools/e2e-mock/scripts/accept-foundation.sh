@@ -261,6 +261,21 @@ section_package() {
   rm -f "$hdr" "$body"
 }
 
+# --- Layout collision static guard -------------------------------------------
+
+section_layout_guard() {
+  bold "[L] Layout name collisions (:design vs :getlineui)"
+  if [[ "${SKIP_LAYOUT:-0}" == "1" ]]; then
+    yellow "SKIP_LAYOUT=1"
+    return 0
+  fi
+  if bash "$ROOT/scripts/check-layout-collisions.sh"; then
+    ok "no databinding layout collisions"
+  else
+    fail "layout name collision (Bug 4 class)"
+  fi
+}
+
 # --- F. Unit tests -----------------------------------------------------------
 
 section_unit() {
@@ -276,6 +291,9 @@ section_unit() {
     'pro.getline.vpn.getline.auth.BrowserAuthLauncherValidationTest'
     'pro.getline.vpn.getline.auth.BrowserAuthStarterTest'
     'pro.getline.vpn.getline.auth.SubscriptionLoadRepositoryTest'
+    'pro.getline.vpn.getline.ProductNavigationPolicyTest'
+    'pro.getline.vpn.getline.GetLineImportCoordinatorTest'
+    'pro.getline.vpn.getline.auth.SessionSubscriptionConsistencyTest'
   )
   local args=()
   local t
@@ -339,6 +357,7 @@ main() {
 
   section_build
   section_package
+  section_layout_guard
   section_unit
   section_api
   section_stage

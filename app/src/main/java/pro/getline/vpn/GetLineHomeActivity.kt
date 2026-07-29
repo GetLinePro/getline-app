@@ -18,6 +18,8 @@ import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
 import pro.getline.vpn.getline.LocalActiveRepair
+import pro.getline.vpn.getline.GetLineImportCoordinator
+import pro.getline.vpn.getline.ProductNavigationPolicy
 import pro.getline.vpn.getline.VpnConfigurationRepairPolicy
 import pro.getline.vpn.getline.accountportal.AccountPortalLaunchResult
 import pro.getline.vpn.getline.accountportal.AccountPortalUriPolicy
@@ -31,6 +33,8 @@ import pro.getline.vpn.getline.auth.SubscriptionLoadResult
 import pro.getline.vpn.getline.auth.SubscriptionPresentation
 import pro.getline.vpn.getline.auth.SubscriptionStateHolder
 import pro.getline.vpn.getline.auth.SubscriptionUiState
+import com.github.kr328.clash.common.log.Log
+import java.util.concurrent.atomic.AtomicBoolean
 import pro.getline.vpn.getline.servers.ServerGroupingPolicy
 import pro.getline.vpn.getline.servers.ServerNameParser
 import pro.getline.vpn.getline.servers.VpnServerLoadResult
@@ -39,7 +43,6 @@ import pro.getline.vpn.getline.servers.VpnServerUiState
 import com.github.kr328.clash.common.util.ticker
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -81,6 +84,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private var connectionTimeout: Job? = null
     private var subscriptionLoadJob: Job? = null
     private var serverLoadJob: Job? = null
+    /** Bug 3 diagnostic once per process — remove after saveSession question is closed. */
+    private val subscriptionConsistencyLogged = AtomicBoolean(false)
     /**
      * When a force refresh is requested while [subscriptionState.requestInFlight] is true
      * (e.g. return from account portal during a manual refresh), run one more force load
@@ -957,6 +962,21 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
 
     private fun GetLineHomeDesign.paintSubscriptionState() {
         launch {
+            // Bug 3 diagnostic (once per process): remove after saveSession question is closed.
+            if (subscriptionConsistencyLogged.compareAndSet(false, true)) {
+                val hasSession = sessionRepository.hasSession()
+                Log.i(
+                    "subscription_ui has_refresh=$hasSession " +
+                        "verdict=${sessionRepository.consistencyVerdict()} " +
+                        "state=${subscriptionState.state::class.simpleName}",
+                )
+                if (
+                    hasSession &&
+                    subscriptionState.state is SubscriptionUiState.SignedOut
+                ) {
+                    Log.w("subscription_ui inconsistent SignedOut while has_refresh=true")
+                }
+            }
             setSubscriptionScreen(subscriptionState.state.toScreen(this@paintSubscriptionState))
             setLogoutVisible(shouldShowLogout())
         }
@@ -1000,6 +1020,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             // Confirmed logout: clear account state even if later work is cancelled
             // (rotation / Activity destroy during profile IPC).
             withContext(NonCancellable) {
+                // Invalidate in-flight import callbacks before clearing session so a
+                // late onTerminal cannot re-write managed binding after logout.
+                GetLineImportCoordinator.reset()
                 sessionRepository.logout()
                 accountPortalVisit.clear()
                 pendingForceSubscriptionRefresh.clear()
@@ -1010,18 +1033,18 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             }
 
             if (managedUuid != null) {
-                // Best-effort; session is already cleared. Cancellation must not undo logout.
-                try {
+                // Best-effort; session is already cleared. Cancellation must not
+                // skip navigation (openOnboarding finishes this Activity).
+                ProductNavigationPolicy.bestEffortAfterLogout {
                     backend.subscriptions.deleteManaged(GetLineSubscriptionId(managedUuid))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    // Backend down / timeout — managed UUID may remain until next login reuse.
                 }
             }
 
             backend.navigation.openOnboarding()
-            finish()
+            // openOnboarding finishes the caller; keep finish() for safety if policy changes.
+            if (!isFinishing) {
+                finish()
+            }
         } finally {
             loggingOut = false
         }

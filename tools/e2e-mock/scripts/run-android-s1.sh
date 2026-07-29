@@ -33,6 +33,10 @@
 #   SKIP_SUB_LINK=1          skip manual subscription-link import path
 #   SKIP_GOOGLE=1            skip Google Auth Tab path (+ its persistence)
 #   SKIP_PERSISTENCE=1       skip force-stop relaunch (Google path only)
+#   SKIP_IMPORT_HOME=1       skip HOME mid-import survival check on link path
+#   REQUIRE_ENCRYPTED_SESSION_PREFS
+#                            default 1 after pm clear, 0 with SKIP_CLEAR=1;
+#                            set 0 explicitly for a supported fallback-store run
 #   SKIP_MARKERS=1           skip local docker log markers
 #   DOCKER_CONTAINER         default e2e-mock (local docker only)
 #   HOME_TIMEOUT_S           default 90
@@ -45,6 +49,13 @@ DOCKER_CONTAINER="${DOCKER_CONTAINER:-e2e-mock}"
 HOME_TIMEOUT_S="${HOME_TIMEOUT_S:-90}"
 SUB_LINK_URL="${SUB_LINK_URL:-https://app.stage.getline.pro/sub/e2e}"
 ADB="${ADB:-adb}"
+if [[ -z "${REQUIRE_ENCRYPTED_SESSION_PREFS+x}" ]]; then
+  if [[ "${SKIP_CLEAR:-0}" == "1" ]]; then
+    REQUIRE_ENCRYPTED_SESSION_PREFS=0
+  else
+    REQUIRE_ENCRYPTED_SESSION_PREFS=1
+  fi
+fi
 
 FAIL=0
 PASS_N=0
@@ -347,15 +358,55 @@ flow_subscription_link() {
     return 1
   }
 
-  if wait_activity_regex 'GetLineHomeActivity' "$HOME_TIMEOUT_S"; then
-    ok "GetLineHomeActivity after subscription link import"
-  else
-    fail "Home not reached via link import within ${HOME_TIMEOUT_S}s; last=$(top_activity || true)"
-    ui_texts || true
-    if logcat_has_dialog_classcast; then
-      fail "ClassCastException during link import"
+  # Mid-import HOME: must not leave a permanent ImportFailed dead-end.
+  # Coordinator keeps the fetch; relaunch should reach Home or recoverable Loading.
+  if [[ "${SKIP_IMPORT_HOME:-0}" != "1" ]]; then
+    sleep 1
+    adb_s shell input keyevent KEYCODE_HOME
+    ok "pressed HOME during subscription link import"
+    sleep 2
+    launch_app
+    if wait_activity_regex 'GetLineHomeActivity|GetLineOnboardingActivity' "$HOME_TIMEOUT_S"; then
+      ok "app resumed after HOME mid-import"
+    else
+      fail "no product activity after HOME mid-import; last=$(top_activity || true)"
+      ui_texts || true
+      return 1
     fi
-    return 1
+    # Give coordinator time to finish + activate if still in flight.
+    if ! wait_activity_regex 'GetLineHomeActivity' "$HOME_TIMEOUT_S"; then
+      # Still on Onboarding: must not be a permanent dead-end (Retry must work).
+      local mid_texts
+      mid_texts="$(ui_texts || true)"
+      if echo "$mid_texts" | grep -Eqi 'Couldn.t import|Import failed|Не удалось импорт'; then
+        # One Retry attempt — durable pending should re-run import.
+        ui_tap_exact Retry "Повторить" 2>/dev/null || true
+        if ! wait_activity_regex 'GetLineHomeActivity' "$HOME_TIMEOUT_S"; then
+          fail "ImportFailed dead-end after HOME mid-import; last=$(top_activity || true)"
+          ui_texts || true
+          return 1
+        fi
+        ok "Home after Retry post-HOME (import recovered)"
+      else
+        fail "Home not reached after HOME mid-import; last=$(top_activity || true)"
+        ui_texts || true
+        return 1
+      fi
+    else
+      ok "GetLineHomeActivity after HOME mid-import (no dead-end)"
+    fi
+  else
+    yellow "SKIP_IMPORT_HOME=1"
+    if wait_activity_regex 'GetLineHomeActivity' "$HOME_TIMEOUT_S"; then
+      ok "GetLineHomeActivity after subscription link import"
+    else
+      fail "Home not reached via link import within ${HOME_TIMEOUT_S}s; last=$(top_activity || true)"
+      ui_texts || true
+      if logcat_has_dialog_classcast; then
+        fail "ClassCastException during link import"
+      fi
+      return 1
+    fi
   fi
 
   sleep 2
@@ -431,6 +482,75 @@ flow_login() {
     ok "Home shell visible"
   else
     yellow "NOTE Home chrome texts unexpected: $(echo "$texts" | tr '\n' ' ' | head -c 200)"
+  fi
+
+  # Bug 3 guard: after Google login, session prefs and Subscription UI must agree.
+  assert_session_subscription_consistent || return 1
+}
+
+# After authenticated login: refresh token present; Subscription tab must not show SignedOut.
+assert_session_subscription_consistent() {
+  bold "[C] Session ↔ Subscription consistency (bug 3 guard)"
+  export E2E_SERIAL="$SERIAL"
+  export E2E_ADB="$ADB"
+
+  # Encrypted prefs or keystore-fallback file after establishFromWebToken.
+  local session_prefs=""
+  if adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session.xml >/dev/null 2>&1; then
+    session_prefs="getline_native_session.xml"
+  elif adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session_fallback.xml >/dev/null 2>&1; then
+    session_prefs="getline_native_session_fallback.xml"
+  fi
+  if [[ -n "$session_prefs" ]]; then
+    ok "native session prefs present after login ($session_prefs)"
+  else
+    fail "bug3: neither getline_native_session.xml nor _fallback.xml after Google login"
+    return 1
+  fi
+  if [[ "$REQUIRE_ENCRYPTED_SESSION_PREFS" == "1" &&
+    "$session_prefs" != "getline_native_session.xml" ]]; then
+    fail "security: clean run used plaintext fallback session prefs"
+    return 1
+  fi
+  if [[ "$session_prefs" == "getline_native_session_fallback.xml" ]]; then
+    yellow "NOTE supported plaintext fallback session store is active"
+  fi
+
+  # Soft check: refresh_token key present (encrypted values not readable as plain).
+  local prefs_dump
+  prefs_dump=$(adb_s shell run-as "$PACKAGE" cat "shared_prefs/$session_prefs" 2>/dev/null || true)
+  if echo "$prefs_dump" | grep -q 'refresh_token'; then
+    ok "session prefs mention refresh_token key"
+  else
+    # EncryptedSharedPreferences may obfuscate key names — file presence is the hard assert.
+    yellow "NOTE refresh_token key not plain in prefs dump (encrypted?); file presence still OK"
+  fi
+
+  if ! ui_tap_exact "Subscription"; then
+    fail "bug3: could not open Subscription tab after login"
+    return 1
+  fi
+  sleep 2
+  local texts
+  texts="$(ui_texts || true)"
+  if echo "$texts" | grep -Fq "Subscription management unavailable"; then
+    fail "bug3: SignedOut card after Google login (session/binding desync)"
+    return 1
+  fi
+  if echo "$texts" | grep -Fq "Управление подпиской недоступно"; then
+    fail "bug3: SignedOut card (ru) after Google login"
+    return 1
+  fi
+  if echo "$texts" | grep -Fq "E2E Plan"; then
+    ok "Subscription tab shows E2E Plan (session-backed)"
+  else
+    # Empty/Failed still means not SignedOut — acceptable soft pass with note.
+    if echo "$texts" | grep -Eqi 'Sign in to GetLine|Войдите в GetLine'; then
+      fail "bug3: sign-in CTA on Subscription after authenticated login"
+      return 1
+    fi
+    yellow "NOTE E2E Plan not visible yet; SignedOut not shown (texts: $(echo "$texts" | tr '\n' ' ' | head -c 180))"
+    ok "Subscription tab not SignedOut after login"
   fi
 }
 
@@ -528,11 +648,18 @@ flow_persistence() {
       fail "persistence: E2E Plan missing after relaunch (texts: $(echo "$texts" | tr '\n' ' ' | head -c 200))"
     fi
   fi
-  # Default e2e debug package is debuggable — run-as must see session store.
+  # Default clean-emulator run is also a keystore regression gate. A deliberate
+  # fallback test can set REQUIRE_ENCRYPTED_SESSION_PREFS=0.
   if adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session.xml >/dev/null 2>&1; then
     ok "encrypted native session prefs present"
+  elif adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session_fallback.xml >/dev/null 2>&1; then
+    if [[ "$REQUIRE_ENCRYPTED_SESSION_PREFS" == "1" ]]; then
+      fail "persistence security: clean run used plaintext fallback session prefs"
+    else
+      ok "fallback native session prefs present (explicitly allowed)"
+    fi
   else
-    fail "persistence: shared_prefs/getline_native_session.xml missing (session not saved or run-as failed)"
+    fail "persistence: session prefs missing (neither encrypted nor fallback; run-as failed?)"
   fi
 }
 
@@ -549,7 +676,7 @@ main() {
   resolve_serial
   export E2E_SERIAL="$SERIAL"
   export E2E_ADB="$ADB"
-  echo "SERIAL=$SERIAL PACKAGE=$PACKAGE ADB=$ADB SUB_LINK_URL=$SUB_LINK_URL"
+  echo "SERIAL=$SERIAL PACKAGE=$PACKAGE ADB=$ADB SUB_LINK_URL=$SUB_LINK_URL REQUIRE_ENCRYPTED_SESSION_PREFS=$REQUIRE_ENCRYPTED_SESSION_PREFS"
   chrome_note
 
   if ! install_fresh; then

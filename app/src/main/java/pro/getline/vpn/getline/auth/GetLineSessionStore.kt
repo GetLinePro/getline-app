@@ -66,6 +66,50 @@ class GetLineSessionStore(context: Context) {
         }
     }
 
+    /**
+     * In-flight product import. Survives Activity destroy and process death so
+     * HOME/relaunch can resume instead of dead-ending on a cancelled coroutine.
+     */
+    fun savePendingImport(pending: PendingImport) {
+        prefs.edit {
+            putString(KEY_PENDING_IMPORT_NAME, pending.name)
+            putString(KEY_PENDING_IMPORT_SOURCE, pending.source)
+            putString(KEY_PENDING_IMPORT_TYPE, pending.typeName)
+            putString(KEY_PENDING_IMPORT_REUSE_UUID, pending.reuseUuid)
+            putString(KEY_PENDING_IMPORT_SUBSCRIPTION_ID, pending.subscriptionIdToRemember)
+            putLong(KEY_PENDING_IMPORT_INTERVAL, pending.interval)
+        }
+    }
+
+    fun clearPendingImport() {
+        prefs.edit {
+            remove(KEY_PENDING_IMPORT_NAME)
+            remove(KEY_PENDING_IMPORT_SOURCE)
+            remove(KEY_PENDING_IMPORT_TYPE)
+            remove(KEY_PENDING_IMPORT_REUSE_UUID)
+            remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
+            remove(KEY_PENDING_IMPORT_INTERVAL)
+        }
+    }
+
+    fun pendingImport(): PendingImport? {
+        val source = prefs.getString(KEY_PENDING_IMPORT_SOURCE, null)?.takeIf { it.isNotBlank() }
+            ?: return null
+        val name = prefs.getString(KEY_PENDING_IMPORT_NAME, null)?.takeIf { it.isNotBlank() }
+            ?: "GetLine"
+        return PendingImport(
+            name = name,
+            source = source,
+            typeName = prefs.getString(KEY_PENDING_IMPORT_TYPE, null) ?: "Url",
+            reuseUuid = prefs.getString(KEY_PENDING_IMPORT_REUSE_UUID, null)?.takeIf { it.isNotBlank() },
+            subscriptionIdToRemember = prefs.getString(KEY_PENDING_IMPORT_SUBSCRIPTION_ID, null)
+                ?.takeIf { it.isNotBlank() },
+            interval = prefs.getLong(KEY_PENDING_IMPORT_INTERVAL, 0L),
+        )
+    }
+
+    fun hasPendingImport(): Boolean = pendingImport() != null
+
     fun clearAccountState() {
         prefs.edit {
             remove(KEY_ACCESS_TOKEN)
@@ -75,6 +119,12 @@ class GetLineSessionStore(context: Context) {
             remove(KEY_PROFILE_UUID)
             remove(KEY_PROFILE_SOURCE)
             remove(KEY_CUSTOMER_ID)
+            remove(KEY_PENDING_IMPORT_NAME)
+            remove(KEY_PENDING_IMPORT_SOURCE)
+            remove(KEY_PENDING_IMPORT_TYPE)
+            remove(KEY_PENDING_IMPORT_REUSE_UUID)
+            remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
+            remove(KEY_PENDING_IMPORT_INTERVAL)
         }
     }
 
@@ -114,5 +164,29 @@ class GetLineSessionStore(context: Context) {
         private const val KEY_PROFILE_UUID = "profile_uuid"
         private const val KEY_PROFILE_SOURCE = "profile_source"
         private const val KEY_CUSTOMER_ID = "customer_id"
+        private const val KEY_PENDING_IMPORT_NAME = "pending_import_name"
+        private const val KEY_PENDING_IMPORT_SOURCE = "pending_import_source"
+        private const val KEY_PENDING_IMPORT_TYPE = "pending_import_type"
+        private const val KEY_PENDING_IMPORT_REUSE_UUID = "pending_import_reuse_uuid"
+        private const val KEY_PENDING_IMPORT_SUBSCRIPTION_ID = "pending_import_subscription_id"
+        private const val KEY_PENDING_IMPORT_INTERVAL = "pending_import_interval"
+
+        /** Pref file names — e2e / debug probes may look for either. */
+        const val PREFS_FILE_ENCRYPTED = FILE_NAME
+        const val PREFS_FILE_FALLBACK = FILE_NAME_FALLBACK
     }
 }
+
+/**
+ * Durable in-flight import request (URL path only for product flows).
+ * [typeName] is the [pro.getline.vpn.getline.GetLineSubscriptionType] name.
+ * [interval] is the profile update interval in ms (ExternalControl may set it).
+ */
+data class PendingImport(
+    val name: String,
+    val source: String,
+    val typeName: String = "Url",
+    val reuseUuid: String? = null,
+    val subscriptionIdToRemember: String? = null,
+    val interval: Long = 0L,
+)
