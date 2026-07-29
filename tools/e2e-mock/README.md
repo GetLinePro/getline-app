@@ -270,7 +270,7 @@ Mock accepts that: only matching `device_key` is required. If a Bearer is presen
 | | **API contract smoke** | **Android S0/S1 smoke** | **Foundation acceptance** |
 | --- | --- | --- | --- |
 | Script | `scripts/smoke-api.sh` (`smoke.sh` → same) | `scripts/run-android-s1.sh` (adb UI) or `watch-android-smoke.sh` (markers + manual) | `scripts/accept-foundation.sh` |
-| Proves | HTTP status + JSON shape on mock endpoints | Auth Tab/CCT, DAL, APK callback, session, import, persistence | Build variants, package/BuildConfig hosts, debug SHA+DAL, isolation unit tests, public stage health/API smoke |
+| Proves | HTTP status + JSON shape on mock endpoints | Auth Tab/CCT, DAL, APK callback, session, import, persistence; **manual subscription-link dialog → YAML → Home** (no OAuth) | Build variants, package/BuildConfig hosts, debug SHA+DAL, isolation unit tests, public stage health/API smoke |
 | Does **not** prove | Auth Tab / DAL / APK session / import | Full curl negative matrix; production signed bundle | Full device UI alone (calls out to `run-android-s1.sh`) |
 | Log tag | `X-E2E-Client: api-smoke` → `source=api_smoke` | no test header → `source=app` | n/a (orchestrates other checks) |
 
@@ -290,10 +290,23 @@ SKIP_BUILD=1 SKIP_UNIT=1 ./tools/e2e-mock/scripts/accept-foundation.sh
 
 # Android UI S1 + persistence on emulator/device (adb required):
 SERIAL=emulator-5554 ./tools/e2e-mock/scripts/run-android-s1.sh
+
+# Link path only (no Auth Tab; guards dialog ClassCast + YAML import):
+SKIP_GOOGLE=1 SERIAL=emulator-5554 ./tools/e2e-mock/scripts/run-android-s1.sh
+
+# Google path only:
+SKIP_SUB_LINK=1 SERIAL=emulator-5554 ./tools/e2e-mock/scripts/run-android-s1.sh
 ```
 
-`run-android-s1.sh` uses `uiautomator` dumps: Google → Success → VPN OK → notification Allow → Home → force-stop relaunch.  
-It is best-effort against accessibility text; pin a working Chrome (currently **150** on emulator-5554).
+`run-android-s1.sh` uses `uiautomator` dumps, in order:
+
+1. **Subscription link** — “I have a subscription link” → dialog URL  
+   `SUB_LINK_URL` (default `https://app.stage.getline.pro/sub/e2e`) → Home  
+   (`e2e-direct`). Asserts no `ClassCastException` on the product text dialog.
+2. **Google Auth Tab** — clear → Google → Success → VPN OK → notification Allow  
+   → Home → force-stop relaunch / Subscription “E2E Plan”.
+
+It is best-effort against accessibility text; pin a working Chrome (currently **150** on emulator-5554) for the Google path.
 
 `false → true` transitions in server logs during `smoke-api.sh` are **script negatives** (`[NEGATIVE]` then `[POSITIVE]`), not Android retries or stale sessions. Do not treat them as app bugs without new evidence.
 
@@ -429,7 +442,9 @@ Invalid or unavailable subscription **YAML** is a separate UI state: `ImportFail
 
 ## Not in S1
 
-OTP, Telegram on stage mock, Custom Tabs fallback, expired/wrong key recovery UX, empty subscriptions list, process death mid Auth Tab, VPN connect, plan catalog, payments, device CRUD, full RWP Shop.
+OTP, Telegram on stage mock, Custom Tabs fallback, expired/wrong key recovery UX, empty subscriptions list, process death mid Auth Tab, live tunnel quality, plan catalog, payments, device CRUD, full RWP Shop.
+
+Manual subscription-link import **is** in the Android smoke (`flow_subscription_link`); it does not establish a native RWP session.
 
 ---
 

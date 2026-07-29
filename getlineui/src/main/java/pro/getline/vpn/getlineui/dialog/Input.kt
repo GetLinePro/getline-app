@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.appcompat.app.AlertDialog
 import androidx.core.widget.doOnTextChanged
 import pro.getline.vpn.getlineui.R
-import pro.getline.vpn.getlineui.databinding.DialogTextFieldBinding
+import pro.getline.vpn.getlineui.databinding.DialogGetLineTextFieldBinding
 import pro.getline.vpn.getlineui.util.Validator
 import pro.getline.vpn.getlineui.util.ValidatorAcceptAll
 import pro.getline.vpn.getlineui.util.layoutInflater
@@ -33,7 +33,9 @@ suspend fun Context.requestModelTextInput(
     validator: Validator = ValidatorAcceptAll,
 ): String? {
     return suspendCancellableCoroutine {
-        val binding = DialogTextFieldBinding
+        // Unique layout name: must not collide with design's dialog_text_field
+        // (merged R.layout + dual DataBinderMapperImpl → ClassCastException).
+        val binding = DialogGetLineTextFieldBinding
             .inflate(layoutInflater, this.root, false)
 
         val builder = MaterialAlertDialogBuilder(this)

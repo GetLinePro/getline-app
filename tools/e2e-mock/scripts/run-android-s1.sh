@@ -2,9 +2,13 @@
 # Android S0/S1 UI smoke via adb + uiautomator (emulator or device).
 #
 # Automates what previously needed manual taps:
-#   clear/install → Sign in with Google → Success on mock page
-#   → VPN OK → notification Allow → Home (e2e-direct / Connected)
-#   → force-stop → relaunch → Home without browser login
+#   A) Subscription link (no auth):
+#        clear/install → "I have a subscription link" → stage YAML URL
+#        → dialog must not ClassCastException → Home (e2e-direct)
+#   B) Google Auth Tab (existing S1):
+#        clear → Sign in with Google → Success on mock page
+#        → VPN OK → notification Allow → Home (e2e-direct / Connected)
+#        → force-stop → relaunch → Home without browser login
 #   → optional local docker markers (only if e2e-mock is on this machine)
 #
 # No SSH to deploy hosts. Remote mock logs: check on the host yourself or use
@@ -16,14 +20,19 @@
 # Usage:
 #   ./tools/e2e-mock/scripts/run-android-s1.sh
 #   SERIAL=emulator-5554 SKIP_INSTALL=1 ./tools/e2e-mock/scripts/run-android-s1.sh
+#   SKIP_GOOGLE=1 ./tools/e2e-mock/scripts/run-android-s1.sh   # link path only
+#   SKIP_SUB_LINK=1 ./tools/e2e-mock/scripts/run-android-s1.sh # Google path only
 #
 # Env:
 #   SERIAL / ANDROID_SERIAL   adb device (default: first `adb devices` entry)
 #   PACKAGE                  default pro.getline.vpn.alpha.e2e.debug
 #   APK                      optional path; auto-pick x86_64/universal e2e debug
+#   SUB_LINK_URL             default https://app.stage.getline.pro/sub/e2e
 #   SKIP_INSTALL=1           do not adb install
 #   SKIP_CLEAR=1             do not pm clear (dirty run)
-#   SKIP_PERSISTENCE=1       skip force-stop relaunch
+#   SKIP_SUB_LINK=1          skip manual subscription-link import path
+#   SKIP_GOOGLE=1            skip Google Auth Tab path (+ its persistence)
+#   SKIP_PERSISTENCE=1       skip force-stop relaunch (Google path only)
 #   SKIP_MARKERS=1           skip local docker log markers
 #   DOCKER_CONTAINER         default e2e-mock (local docker only)
 #   HOME_TIMEOUT_S           default 90
@@ -34,6 +43,7 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 PACKAGE="${PACKAGE:-pro.getline.vpn.alpha.e2e.debug}"
 DOCKER_CONTAINER="${DOCKER_CONTAINER:-e2e-mock}"
 HOME_TIMEOUT_S="${HOME_TIMEOUT_S:-90}"
+SUB_LINK_URL="${SUB_LINK_URL:-https://app.stage.getline.pro/sub/e2e}"
 ADB="${ADB:-adb}"
 
 FAIL=0
@@ -158,6 +168,53 @@ wait_ui_text() {
   return 1
 }
 
+# Tap first EditText (dialog field). Prefer focused=true when present.
+ui_tap_edit_text() {
+  ui_dump || return 1
+  E2E_ADB="${ADB}" E2E_SERIAL="${SERIAL}" python3 <<'PY'
+import re, subprocess, sys, os
+serial = os.environ["E2E_SERIAL"]
+adb_bin = os.environ.get("E2E_ADB") or "adb"
+xml = open("/tmp/e2e-ui.xml").read()
+nodes = re.findall(r"<node [^>]+/?>", xml)
+candidates = []
+for n in nodes:
+    if "EditText" not in n:
+        continue
+    bm = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', n)
+    if not bm:
+        continue
+    x1, y1, x2, y2 = map(int, bm.groups())
+    focused = 'focused="true"' in n
+    candidates.append((0 if focused else 1, (x1 + x2) // 2, (y1 + y2) // 2))
+if not candidates:
+    print("no EditText", flush=True)
+    sys.exit(1)
+candidates.sort()
+_, cx, cy = candidates[0]
+print(f"tap EditText @ {cx},{cy}", flush=True)
+subprocess.check_call(
+    [adb_bin, "-s", serial, "shell", "input", "tap", str(cx), str(cy)]
+)
+sys.exit(0)
+PY
+}
+
+# Type ASCII into the focused field. Spaces → %s (adb input text rule).
+ui_input_text() {
+  local raw="$1"
+  local encoded
+  encoded="${raw// /%s}"
+  adb_s shell input text "$encoded"
+}
+
+# True if package process logged a fatal ClassCast (Bug 4 regression).
+logcat_has_dialog_classcast() {
+  adb_s logcat -d 2>/dev/null \
+    | grep -E 'ClassCastException.*(DialogTextField|DialogGetLineTextField|dialog_text_field|dialog_get_line_text_field)' \
+    >/dev/null 2>&1
+}
+
 # --- steps -------------------------------------------------------------------
 
 pick_apk() {
@@ -218,6 +275,108 @@ install_fresh() {
 launch_app() {
   adb_s shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null
   sleep 2
+}
+
+clear_app_data() {
+  if ! adb_s shell pm clear "$PACKAGE" >/dev/null 2>&1; then
+    fail "pm clear $PACKAGE failed"
+    return 1
+  fi
+  ok "pm clear $PACKAGE"
+}
+
+# Manual URL import without OAuth — guards the databinding dialog crash (Bug 4)
+# and proves stage /sub/e2e YAML reaches Home.
+flow_subscription_link() {
+  bold "[C-link] Subscription link dialog → YAML import → Home"
+  if [[ "${SKIP_SUB_LINK:-0}" == "1" ]]; then
+    yellow "SKIP_SUB_LINK=1"
+    return 0
+  fi
+
+  launch_app
+
+  if ! wait_ui_text "I have a subscription link" 30; then
+    fail "onboarding: I have a subscription link not visible"
+    ui_texts || true
+    return 1
+  fi
+  ok "onboarding visible (link path)"
+
+  export E2E_SERIAL="$SERIAL"
+  export E2E_ADB="$ADB"
+  ui_tap_exact "I have a subscription link" || {
+    fail "tap I have a subscription link"
+    return 1
+  }
+  sleep 1
+
+  if logcat_has_dialog_classcast; then
+    fail "ClassCastException after opening subscription-link dialog (Bug 4 regression)"
+    return 1
+  fi
+
+  if ! wait_ui_text "URL" 10; then
+    fail "subscription URL dialog did not open (title URL missing)"
+    if logcat_has_dialog_classcast; then
+      fail "ClassCastException on dialog inflate"
+    fi
+    ui_texts || true
+    top_activity || true
+    return 1
+  fi
+  ok "subscription URL dialog open (no ClassCast crash)"
+
+  ui_tap_edit_text || {
+    fail "could not focus dialog EditText"
+    return 1
+  }
+  sleep 0.3
+  ui_input_text "$SUB_LINK_URL"
+  sleep 0.5
+
+  if ! ui_texts 2>/dev/null | grep -Fq "$SUB_LINK_URL"; then
+    # Some IME paths hide typed text from dump; still try OK if field accepted input.
+    yellow "NOTE typed URL not visible in accessibility dump; continuing"
+  else
+    ok "URL field contains stage subscription link"
+  fi
+
+  ui_tap_exact OK || {
+    fail "tap OK on subscription URL dialog"
+    return 1
+  }
+
+  if wait_activity_regex 'GetLineHomeActivity' "$HOME_TIMEOUT_S"; then
+    ok "GetLineHomeActivity after subscription link import"
+  else
+    fail "Home not reached via link import within ${HOME_TIMEOUT_S}s; last=$(top_activity || true)"
+    ui_texts || true
+    if logcat_has_dialog_classcast; then
+      fail "ClassCastException during link import"
+    fi
+    return 1
+  fi
+
+  sleep 2
+  local texts
+  texts="$(ui_texts || true)"
+  if echo "$texts" | grep -Fq "e2e-direct"; then
+    ok "UI shows e2e-direct (link path)"
+  else
+    yellow "NOTE e2e-direct not in UI text after link import"
+  fi
+  if echo "$texts" | grep -Eq 'Connected|Disconnected|Tap to connect'; then
+    ok "Home shell visible (link path)"
+  else
+    yellow "NOTE Home chrome unexpected after link: $(echo "$texts" | tr '\n' ' ' | head -c 200)"
+  fi
+
+  if logcat_has_dialog_classcast; then
+    fail "ClassCastException seen during subscription link flow"
+    return 1
+  fi
+  ok "no dialog ClassCastException in logcat"
 }
 
 flow_login() {
@@ -390,7 +549,7 @@ main() {
   resolve_serial
   export E2E_SERIAL="$SERIAL"
   export E2E_ADB="$ADB"
-  echo "SERIAL=$SERIAL PACKAGE=$PACKAGE ADB=$ADB"
+  echo "SERIAL=$SERIAL PACKAGE=$PACKAGE ADB=$ADB SUB_LINK_URL=$SUB_LINK_URL"
   chrome_note
 
   if ! install_fresh; then
@@ -402,14 +561,27 @@ main() {
   echo "SINCE=$SINCE"
   adb_s logcat -c 2>/dev/null || true
 
-  # Collect FAIL flags from each phase; do not abort mid-run after login starts,
-  # but never claim PASS if any phase failed.
-  flow_login || true
-  check_server_markers || true
-  if [[ "$FAIL" -eq 0 ]]; then
-    flow_persistence || true
+  # A) Manual subscription link — no Auth Tab; proves dialog inflate + YAML import.
+  flow_subscription_link || true
+
+  # B) Google Auth Tab S1 — needs a clean process/data so login is not skipped.
+  if [[ "${SKIP_GOOGLE:-0}" == "1" ]]; then
+    yellow "SKIP_GOOGLE=1"
   else
-    yellow "SKIP persistence — login/markers already failed"
+    if [[ "${SKIP_SUB_LINK:-0}" != "1" ]]; then
+      # Link path left a managed profile; clear so onboarding/Google is reachable.
+      clear_app_data || true
+      adb_s logcat -c 2>/dev/null || true
+      SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      echo "SINCE(google)=$SINCE"
+    fi
+    flow_login || true
+    check_server_markers || true
+    if [[ "$FAIL" -eq 0 ]]; then
+      flow_persistence || true
+    else
+      yellow "SKIP persistence — login/markers already failed"
+    fi
   fi
 
   bold "Summary"
