@@ -1,23 +1,52 @@
 name: Build Release
 
+# Production signing job. Fails closed if release key material is missing.
+# Does not publish to Google Play (manual Play Console / internal testing only).
+#
+# The version is a function of the tagged source, never of the build event:
+# F-Droid must be able to rebuild `metaProdRelease` from the public tag and
+# compare artifacts (see fdroid/README.md). A versionCode taken from
+# GITHUB_RUN_NUMBER would not be derivable from source and would break that.
+#
+# Policy: docs/release-policy.md
 on:
   workflow_dispatch:
     inputs:
-      release-tag:
-        description: 'Release Tag (v2.x.x)'
+      bump:
+        description: 'Version bump: patch or minor (major is refused while 0.x)'
         required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
 
-# Production signing job. Fails closed if release key secrets are missing.
-# Does not publish to Google Play (manual Play Console / internal testing only).
+# Two release runs must not both read the current version and both try to
+# publish the next one.
+concurrency:
+  group: getline-release
+  cancel-in-progress: false
+
 jobs:
   BuildRelease:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
+      - name: Refuse to release from anywhere but main
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "ERROR: releases run from main only (got $GITHUB_REF)"
+            exit 1
+          fi
+
       - name: Checkout Repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      
+
       - name: Checkout submodules
         run: git submodule update --init --recursive --force
 
@@ -52,47 +81,183 @@ jobs:
 
       - name: Verify Mihomo security gate
         run: ./scripts/verify-mihomo-gate.sh
-      
-      - name: Convert and set version env
-        id: process-version
-        run: |
-          VERSION_TAG=${{ inputs.release-tag }}
-          VERSION_TAG=${VERSION_TAG#v}                              # remove the 'v' prefix
-          IFS='.' read -ra VERSION_PARTS <<< "$VERSION_TAG"         # split into array
-          # Arithmetic, not printf: a 0.x tag would zero-pad to "001000", and Kotlin
-          # rejects integer literals with leading zeros ("Unsupported [literal
-          # prefixes and suffixes]"), so build.gradle.kts would stop compiling.
-          VERSION_CODE=$(( VERSION_PARTS[0] * 100000 + VERSION_PARTS[1] * 1000 + VERSION_PARTS[2] ))
 
-          echo "versonName=$VERSION_TAG" >> $GITHUB_OUTPUT          # "1.2.3"
-          echo "versonCode=$VERSION_CODE" >> $GITHUB_OUTPUT         # "102003"
-      
-      # Re-write version in build.gradle.kts
-      - name: Re-write version
-        uses: Devofure/advance-android-version-actions@v1.5
-        with:
-          gradlePath: build.gradle.kts
-          versionCode: ${{ steps.process-version.outputs.versonCode }}
-          versionName: ${{ steps.process-version.outputs.versonName }}
-      
-      # If any change found, commit it and push
-      - name: Commit and push if changes
+      # versionName: bump the value committed by the previous release.
+      # versionCode: previous + 1 — it numbers published releases, not builds,
+      # so rebuilding a tag legitimately yields the same code.
+      - name: Compute next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
         run: |
-          changes=$(git diff --name-only origin/main | wc -l)
-          if [ $changes -gt 0 ]
-          then
-            newVersionName=${{ steps.process-version.outputs.versonName }}
-            newVersionCode=${{ steps.process-version.outputs.versonCode }}
-            git config --global user.name 'GitHub Action'
-            git config --global user.email 'action@github.com'
-            git add build.gradle.kts
-            git commit -am "Bump version to $newVersionName ($newVersionCode)"
-            git tag "v$newVersionName"
-            git push --follow-tags
+          set -euo pipefail
+          CUR_NAME=$(grep -oP '^\s*versionName = "\K[^"]+' build.gradle.kts)
+          CUR_CODE=$(grep -oP '^\s*versionCode = \K[0-9]+' build.gradle.kts)
+          echo "current: $CUR_NAME ($CUR_CODE)"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CUR_NAME"
+          case "$BUMP" in
+            patch) PATCH=$((PATCH + 1)) ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            major)
+              if [ "$MAJOR" -eq 0 ]; then
+                echo "ERROR: refusing an automated 0.x -> 1.0.0 bump."
+                echo "Going 1.0 is a deliberate act: edit build.gradle.kts on main"
+                echo "in a reviewed PR, then release with bump=patch."
+                exit 1
+              fi
+              MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            *) echo "ERROR: unknown bump '$BUMP'"; exit 1 ;;
+          esac
+          NEW_NAME="$MAJOR.$MINOR.$PATCH"
+
+          # One-time floor: 2000 escaped to a device as an accidental 0.2.0
+          # build, and Android refuses a lower code on update.
+          NEW_CODE=$((CUR_CODE + 1))
+          if [ "$NEW_CODE" -lt 2001 ]; then
+            NEW_CODE=2001
           fi
+
+          echo "next: $NEW_NAME ($NEW_CODE)"
+          echo "name=$NEW_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$NEW_CODE" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # The PR gate only sees its own pull request, and several PRs land between
+      # releases, so the dispatch input must not understate what accumulated.
+      # Range start: the last commit that changed the version line — not
+      # `git describe`, which would find an inherited upstream tag (v2.11.32).
+      - name: Bump input covers the accumulated commits
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          base=$(git log -1 --format=%H -G'^\s*versionName = ' -- build.gradle.kts)
+          subjects=$(git log --format='%s' "$base..HEAD")
+          bodies=$(git log --format='%B' "$base..HEAD")
+          printf 'commits since %s:\n%s\n' "${base:0:8}" "$subjects"
+
+          breaking=0; feat=0; fix=0; product=0
+          if printf '%s' "$bodies" | grep -qE '^BREAKING[ -]CHANGE'; then breaking=1; fi
+          while IFS= read -r s; do
+            [ -n "$s" ] || continue
+            type=$(printf '%s' "$s" | grep -oE '^[a-z]+(\([^)]*\))?!?:' || true)
+            # Fail closed. A free-form subject cannot be classified, so skipping
+            # it would let "Add servers screen" hide a feat behind bump=patch.
+            # Merges are squash-only and the PR gate validates the squash title,
+            # so anything unclassifiable here arrived outside that path (a direct
+            # push or a local merge) and needs a human.
+            if [ -z "$type" ]; then
+              echo "ERROR: subject is not a Conventional Commit: $s"
+              echo "The required bump cannot be derived. Fix the subject on main"
+              echo "or release from a commit range that does not contain it."
+              exit 1
+            fi
+            case "$type" in *'!:') breaking=1 ;; esac
+            case "${type%%[(!:]*}" in
+              feat) feat=1 ;;
+              fix|perf) fix=1 ;;
+              refactor|build|revert) product=1 ;;
+              *) : ;;
+            esac
+          done <<< "$subjects"
+
+          if [ "$breaking" -eq 1 ] || [ "$feat" -eq 1 ]; then required=minor
+          elif [ "$fix" -eq 1 ] || [ "$product" -eq 1 ]; then required=patch
+          else required=none; fi
+
+          rank() { case "$1" in none) echo 0 ;; patch) echo 1 ;; minor) echo 2 ;; major) echo 3 ;; esac; }
+          if [ "$(rank "$BUMP")" -lt "$(rank "$required")" ]; then
+            echo "ERROR: commits since the last version change require at least '$required',"
+            echo "but this run was dispatched with bump='$BUMP'."
+            exit 1
+          fi
+          echo "OK: bump='$BUMP' covers required minimum '$required'"
+
+      - name: Tag must not exist yet
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version.outputs.name }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "ERROR: tag $TAG already exists — a release for this version was published."
+            exit 1
+          fi
+          echo "OK: $TAG is free"
+
+      # Local only. Nothing is published until every artifact exists and every
+      # signature check has passed — see "Publish release commit and tag" at the
+      # end. A wrong secret, a Gradle failure or a bad upload must not be able to
+      # leave a release commit and an immutable tag in main with no usable build.
+      - name: Write version and create the release commit locally
+        id: release_commit
+        run: |
+          set -euo pipefail
+          NEW_NAME="${{ steps.version.outputs.name }}"
+          NEW_CODE="${{ steps.version.outputs.code }}"
+          TAG="v$NEW_NAME"
+
+          sed -i -E "s/^([[:space:]]*)versionName = \".*\"/\1versionName = \"$NEW_NAME\"/" build.gradle.kts
+          sed -i -E "s/^([[:space:]]*)versionCode = [0-9]+/\1versionCode = $NEW_CODE/" build.gradle.kts
+          grep -q "versionName = \"$NEW_NAME\"" build.gradle.kts
+          grep -q "versionCode = $NEW_CODE" build.gradle.kts
+
+          git config user.name 'GitHub Action'
+          git config user.email 'action@github.com'
+          git add build.gradle.kts
+          git commit -m "chore(release): $NEW_NAME ($NEW_CODE)"
+          # Single owner of the tag: created here, on the release commit, and
+          # never moved. F-Droid resolves tag -> source, so a moved tag would
+          # silently change the source of a published release.
+          git tag "$TAG"
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set reproducible build timestamp
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      # release.keystore is git-ignored, so a hosted runner has no key unless it
+      # is restored from a secret here. Secrets are referenced only by this
+      # workflow_dispatch-only job — never by a pull_request workflow.
+      - name: Restore release keystore
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SIGNING_KEYSTORE_BASE64:-}" ]; then
+            echo "ERROR: secret SIGNING_KEYSTORE_BASE64 is empty"
+            exit 1
+          fi
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 -d > release.keystore
+          chmod 600 release.keystore
+
+      # Fail closed before anything is published: a wrong keystore must not be
+      # able to create a release tag. The expected value is a repository
+      # variable, not a secret — the fingerprint is published in Digital Asset
+      # Links anyway, and a signature that disagrees with the deployed
+      # assetlinks.json breaks Auth Tab sign-in (observed 2026-07-30).
+      - name: Signing certificate matches the deployed DAL
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          EXPECTED: ${{ vars.EXPECTED_SIGNING_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EXPECTED:-}" ]; then
+            echo "ERROR: repository variable EXPECTED_SIGNING_CERT_SHA256 is not set."
+            echo "Set it to the fingerprint published in .well-known/assetlinks.json."
+            exit 1
+          fi
+          norm() { tr -d ': \n' | tr 'a-f' 'A-F'; }
+          actual=$(keytool -list -keystore release.keystore \
+            -storepass "$SIGNING_STORE_PASSWORD" 2>/dev/null \
+            | grep -i 'SHA-256' | head -n1 | grep -oE '([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}')
+          if [ "$(printf '%s' "$actual" | norm)" != "$(printf '%s' "$EXPECTED" | norm)" ]; then
+            echo "ERROR: signing certificate does not match the expected fingerprint."
+            echo "  keystore: $actual"
+            echo "  expected: $EXPECTED"
+            exit 1
+          fi
+          echo "OK: signing certificate matches EXPECTED_SIGNING_CERT_SHA256"
 
       - name: Require production signing material
         env:
@@ -102,27 +267,27 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          if [ ! -f release.keystore ]; then
-            echo "ERROR: release.keystore is missing (owner-controlled production key)"
+          if [ ! -s release.keystore ]; then
+            echo "ERROR: release.keystore is missing or empty"
             missing=1
           fi
-          if [ -z "${SIGNING_STORE_PASSWORD:-}" ]; then
-            echo "ERROR: secret SIGNING_STORE_PASSWORD is empty"
-            missing=1
-          fi
-          if [ -z "${SIGNING_KEY_ALIAS:-}" ]; then
-            echo "ERROR: secret SIGNING_KEY_ALIAS is empty"
-            missing=1
-          fi
-          if [ -z "${SIGNING_KEY_PASSWORD:-}" ]; then
-            echo "ERROR: secret SIGNING_KEY_PASSWORD is empty"
-            missing=1
-          fi
+          for var in SIGNING_STORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD; do
+            if [ -z "${!var:-}" ]; then
+              echo "ERROR: secret $var is empty"
+              missing=1
+            fi
+          done
           if [ "$missing" -ne 0 ]; then
-            echo "Production release refuses to build without a complete release key."
             echo "Refusing silent debug signing."
             exit 1
           fi
+          # Fingerprint is public — it is published in Digital Asset Links — and
+          # this log is the only record of which key signed a given release.
+          keytool -list -keystore release.keystore \
+            -storepass "$SIGNING_STORE_PASSWORD" 2>/dev/null | grep -i "SHA-256" || {
+              echo "ERROR: release.keystore unreadable with SIGNING_STORE_PASSWORD"
+              exit 1
+            }
           echo "Production signing material is present (values not logged)."
 
       - name: Write signing.properties
@@ -141,50 +306,105 @@ jobs:
           chmod 600 signing.properties
           echo "signing.properties written (contents not logged)."
 
-      - name: Release Build (signed AAB)
-        if: success()
+      # Two invocations on purpose: build.gradle.kts disables ABI splits when a
+      # bundle task is in the same invocation, so combining them would silently
+      # produce a single universal APK instead of the per-ABI set.
+      - name: Release build — signed alpha APKs
+        run: ./gradlew --no-daemon app:assembleAlphaProdRelease
+
+      - name: Release build — signed meta AAB
         run: ./gradlew --no-daemon app:lintMetaProdRelease app:bundleMetaProdRelease
 
-      - name: Verify AAB is signed
-        if: success()
+      - name: Verify signatures and collect audit data
+        id: audit
         run: |
           set -euo pipefail
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n1)
           AAB=$(ls app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab | head -n1)
-          echo "Verifying signature on: $AAB"
-          jarsigner -verify -verbose -certs "$AAB" | tee /tmp/jarsigner-verify.txt
-          # jarsigner -verify succeeds only when a signature is present.
+          APK=$(ls app/build/outputs/apk/alphaProd/release/getline-vpn-*-universal-release.apk | head -n1)
+
+          jarsigner -verify -verbose -certs "$AAB" > /tmp/jarsigner-verify.txt
           if ! grep -q "jar verified" /tmp/jarsigner-verify.txt; then
             echo "ERROR: production AAB signature verification failed"
             exit 1
           fi
-          # Guard against accidental debug/AndroidDebugKey signing.
-          if grep -qi "Android Debug\|CN=Android Debug\|AndroidDebugKey" /tmp/jarsigner-verify.txt; then
+          if grep -qi "Android Debug\|AndroidDebugKey" /tmp/jarsigner-verify.txt; then
             echo "ERROR: production AAB appears to be debug-signed"
             exit 1
           fi
-          echo "OK: production AAB is signed (non-debug)."
 
-      - name: Tag Repo
-        uses: richardsimko/update-tag@v1
+          "$APKSIGNER" verify --print-certs "$APK" > /tmp/apksigner-verify.txt 2>/dev/null
+          if grep -qi "AndroidDebugKey" /tmp/apksigner-verify.txt; then
+            echo "ERROR: alpha APK appears to be debug-signed"
+            exit 1
+          fi
+          CERT_SHA=$(grep -oiP 'certificate SHA-256 digest:\s*\K[0-9a-f]+' /tmp/apksigner-verify.txt | head -n1 \
+            | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//')
+
+          # The artifact itself must carry the expected certificate, not just the
+          # keystore that was restored.
+          norm() { tr -d ': \n' | tr 'a-f' 'A-F'; }
+          if [ "$(printf '%s' "$CERT_SHA" | norm)" != "$(printf '%s' "${{ vars.EXPECTED_SIGNING_CERT_SHA256 }}" | norm)" ]; then
+            echo "ERROR: signed APK carries an unexpected certificate: $CERT_SHA"
+            exit 1
+          fi
+
+          APK_SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          AAB_SHA=$(sha256sum "$AAB" | cut -d' ' -f1)
+
+          {
+            echo "### Release audit"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| versionName | ${{ steps.version.outputs.name }} |"
+            echo "| versionCode | ${{ steps.version.outputs.code }} |"
+            echo "| tag | ${{ steps.release_commit.outputs.tag }} |"
+            echo "| commit | ${{ steps.release_commit.outputs.sha }} |"
+            echo "| certificate SHA-256 | \`$CERT_SHA\` |"
+            echo "| alpha APK (universal) SHA-256 | \`$APK_SHA\` |"
+            echo "| meta AAB SHA-256 | \`$AAB_SHA\` |"
+            echo ""
+            echo "The certificate fingerprint must match the deployed"
+            echo "\`.well-known/assetlinks.json\`, otherwise Auth Tab sign-in fails with"
+            echo "\`RESULT_VERIFICATION_FAILED\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "OK: artifacts signed with a non-debug key."
+
+      # Keep the artifacts even if publishing is refused below: a failed run then
+      # leaves nothing but a local commit and a downloadable build that claims
+      # nothing, instead of a released tag with no usable APK.
+      - name: Upload signed artifacts to the run
+        uses: actions/upload-artifact@v7
         with:
-          tag_name: ${{ inputs.release-tag }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: GetLineVPN signed ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
+          path: |
+            app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab
+            app/build/outputs/apk/alphaProd/release/getline-vpn-*-release.apk
+          if-no-files-found: error
+
+      # Everything above is local and reversible. This is the first irreversible
+      # step, and it runs only after every artifact exists and every signature
+      # check has passed.
+      - name: Publish release commit and tag
+        run: |
+          set -euo pipefail
+          # Serialization guard: fail rather than clobber a main that moved while
+          # this run was building.
+          git fetch --no-tags origin main
+          if [ "$(git rev-parse FETCH_HEAD)" != "${{ steps.version.outputs.base_sha }}" ]; then
+            echo "ERROR: main moved during the release run. Nothing was published;"
+            echo "re-run the workflow (artifacts of this run are downloadable)."
+            exit 1
+          fi
+          git push --atomic origin "HEAD:main" "refs/tags/${{ steps.release_commit.outputs.tag }}"
 
       - name: Upload Release
         uses: softprops/action-gh-release@v1
-        if: ${{ success() }}
         with:
-          tag_name: ${{ inputs.release-tag }}
-          files: app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab
+          tag_name: ${{ steps.release_commit.outputs.tag }}
+          files: |
+            app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab
+            app/build/outputs/apk/alphaProd/release/getline-vpn-*-release.apk
           generate_release_notes: true
-
-      - name: Release Changelog Builder
-        uses: mikepenz/release-changelog-builder-action@v4.1.1
-        with:
-          configurationJson: |
-            {
-              "ignore_labels": [
-                "Update"
-              ],
-            }

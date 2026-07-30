@@ -1,4 +1,4 @@
-name: Build Debug
+name: Build Alpha (unsigned)
 on:
   pull_request:
     types: [opened, reopened, synchronize]
@@ -8,7 +8,7 @@ on:
       - main
 
 jobs:
-  BuildDebug:
+  BuildAlphaUnsigned:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
@@ -52,19 +52,13 @@ jobs:
       - name: Verify Mihomo security gate
         run: ./scripts/verify-mihomo-gate.sh
 
-      # - name: Signing properties
-      #   env:
-      #     SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-      #     SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-      #     SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-      #   run: |
-      #     touch signing.properties
-      #     echo keystore.password="$SIGNING_STORE_PASSWORD" > signing.properties
-      #     echo key.alias="$SIGNING_KEY_ALIAS" >> signing.properties
-      #     echo key.password="$SIGNING_KEY_PASSWORD" >> signing.properties
-            
-      #     echo "cat signing.properties"
-      #     cat signing.properties
+      # This job builds the release build type without any signing material, so
+      # the artifacts are UNSIGNED and cannot be installed — they verify that the
+      # release configuration compiles. Do not add production signing here: the
+      # block that used to sit commented out at this spot also ran
+      # `cat signing.properties`, which would print release passwords into the
+      # job log, and pull requests from this repository do receive secrets.
+      # Signed artifacts come only from build-release.yaml.
 
       - name: Build
         if: success()
@@ -74,7 +68,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: ${{  success() }}
         with:
-          name: GetLineVPN Debug Unsigned APK (universal) 
+          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (universal) 
           path: |
             app/build/outputs/apk/alphaProd/release/*-universal-*.apk
       
@@ -82,7 +76,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: ${{  success() }}
         with:
-          name: GetLineVPN Debug Unsigned APK (arm64-v8a)
+          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (arm64-v8a)
           path: |
             app/build/outputs/apk/alphaProd/release/*-arm64-v8a-*.apk
       
@@ -90,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: ${{  success() }}
         with:
-          name: GetLineVPN Debug Unsigned APK (armeabi-v7a)
+          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (armeabi-v7a)
           path: |
             app/build/outputs/apk/alphaProd/release/*-armeabi-v7a-*.apk
       
@@ -98,7 +92,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: ${{  success() }}
         with:
-          name: GetLineVPN Debug Unsigned APK (x86_64)
+          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (x86_64)
           path: |
             app/build/outputs/apk/alphaProd/release/*-x86_64-*.apk
       
@@ -106,6 +100,6 @@ jobs:
         uses: actions/upload-artifact@v7
         if: ${{  success() }}
         with:
-          name: GetLineVPN Debug Unsigned APK (x86)
+          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (x86)
           path: |
             app/build/outputs/apk/alphaProd/release/*-x86-*.apk

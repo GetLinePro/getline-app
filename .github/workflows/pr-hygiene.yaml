@@ -1,0 +1,170 @@
+name: PR hygiene
+
+# Fast blocking gates. Unlike security-baseline (advisory, continue-on-error),
+# a failure here must stop the merge.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled]
+  workflow_dispatch:
+
+jobs:
+  hygiene:
+    name: Branch, base and tracked-secrets checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR head (not the merge commit)
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      # Prefixes mirror Conventional Commit types, so the branch name and the
+      # commit messages speak the same language. The version bump is derived
+      # from commits, never from the branch name: this repo already had a
+      # branch that started as feat/… and shipped only fixes.
+      - name: Branch name follows the convention
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          pattern='^(feat|fix|chore|ci|docs|refactor|perf|test|build|revert)/[a-z0-9][a-z0-9._-]*$'
+          if ! printf '%s' "$BRANCH" | grep -Eq "$pattern"; then
+            echo "ERROR: branch name '$BRANCH' does not match $pattern"
+            echo "Examples: fix/auth-callback-edge-shim, ci/pr-hygiene-gates"
+            exit 1
+          fi
+          echo "OK: branch name '$BRANCH'"
+
+      # GitHub's native "require branches to be up to date" lives in branch
+      # protection, which is not available for private repos on the free plan
+      # (API returns 403 here), so the check is done in CI instead.
+      - name: Branch contains current main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor refs/remotes/origin/main HEAD; then
+            behind=$(git rev-list --count HEAD..refs/remotes/origin/main)
+            echo "ERROR: branch is not based on current main ($behind commit(s) behind)."
+            echo "Rebase onto main and force-push:"
+            echo "  git fetch origin && git rebase origin/main"
+            exit 1
+          fi
+          echo "OK: branch contains origin/main"
+
+      # Signing material is git-ignored by policy; a gate makes the policy
+      # enforceable rather than aspirational.
+      - name: No signing material tracked
+        run: |
+          set -euo pipefail
+          hits=$(git ls-files \
+            | grep -Ei '(^|/)(signing\.properties|local\.properties)$|\.(keystore|jks|p12|pepk)$' \
+            || true)
+          if [ -n "$hits" ]; then
+            echo "ERROR: signing material is tracked in git:"
+            printf '%s\n' "$hits"
+            exit 1
+          fi
+          echo "OK: no keystore / signing.properties tracked"
+
+      # Branch protection and environment protection rules are unavailable for a
+      # private repo on the free plan, and same-repo pull requests DO receive
+      # secrets (only forks are restricted). So the boundary is enforced here:
+      # the release key may be referenced only by workflows that PRs cannot run.
+      - name: Release secrets are unreachable from pull_request workflows
+        run: |
+          set -euo pipefail
+          bad=0
+          for f in .github/workflows/*.y*ml; do
+            if grep -qE '^[[:space:]]*pull_request:' "$f" && grep -qE 'SIGNING_[A-Z_]+' "$f"; then
+              echo "ERROR: $f is pull_request-triggered and references SIGNING_*"
+              bad=1
+            fi
+          done
+          [ "$bad" -eq 0 ] || exit 1
+          echo "OK: no pull_request workflow references release signing secrets"
+
+      # Version is owned by the release workflow, which commits it on main.
+      # A hand-edited version is how 0.2.0 shipped for two fixes.
+      - name: Version is not hand-edited
+        run: |
+          set -euo pipefail
+          diff=$(git diff refs/remotes/origin/main...HEAD -- build.gradle.kts \
+            | grep -E '^[+-][^+-].*version(Name|Code)' || true)
+          if [ -n "$diff" ]; then
+            echo "ERROR: versionName / versionCode changed by hand:"
+            printf '%s\n' "$diff"
+            echo "Release the version with the Build Release workflow instead"
+            echo "(docs/release-policy.md)."
+            exit 1
+          fi
+          echo "OK: version untouched"
+
+      # Exactly one release:* label, cross-checked against the commit types in
+      # the PR. The label is the human intent; commit types are the cross-check,
+      # and a disagreement is a red gate rather than a silent wrong version.
+      - name: Release label matches commit types
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          intents=$(printf '%s' "$LABELS" | grep -oE 'release:(patch|minor|major|none)' | sort -u || true)
+          count=$(printf '%s' "$intents" | grep -c . || true)
+          if [ "$count" -ne 1 ]; then
+            echo "ERROR: expected exactly one release:* label, found ${count:-0}."
+            echo "Use release:patch, release:minor, release:major or release:none."
+            exit 1
+          fi
+          intent=${intents#release:}
+          echo "intent: $intent"
+
+          # Merges are squash-only in this repository, so the PR title becomes the
+          # only subject on main. It is validated here for the same reason the
+          # commits are: the release workflow reads subjects on main to re-derive
+          # the required bump, and a free-form subject there could hide a feat.
+          subjects=$(printf '%s\n%s\n' "$PR_TITLE" "$(git log --format='%s' refs/remotes/origin/main..HEAD)")
+          bodies=$(git log --format='%B' refs/remotes/origin/main..HEAD)
+          printf 'pr title:\n  %s\ncommits:\n%s\n' "$PR_TITLE" "$(git log --format='  %s' refs/remotes/origin/main..HEAD)"
+
+          breaking=0; feat=0; fix=0; product=0
+          if printf '%s' "$bodies" | grep -qE '^BREAKING[ -]CHANGE'; then breaking=1; fi
+          while IFS= read -r s; do
+            [ -n "$s" ] || continue
+            type=$(printf '%s' "$s" | grep -oE '^[a-z]+(\([^)]*\))?!?:' || true)
+            if [ -z "$type" ]; then
+              echo "ERROR: commit subject is not a Conventional Commit: $s"
+              exit 1
+            fi
+            case "$type" in
+              *'!:') breaking=1 ;;
+            esac
+            case "${type%%[(!:]*}" in
+              feat) feat=1 ;;
+              fix|perf) fix=1 ;;
+              refactor|build|revert) product=1 ;;
+              chore|docs|test|ci) : ;;
+              *) echo "ERROR: unknown commit type in: $s"; exit 1 ;;
+            esac
+          done <<< "$subjects"
+
+          # Required minimum, by policy (docs/release-policy.md):
+          #   breaking -> minor while 0.x (major must be deliberate, never automatic)
+          #   feat     -> minor
+          #   fix/perf -> patch
+          #   others   -> none
+          if [ "$breaking" -eq 1 ]; then required=minor
+          elif [ "$feat" -eq 1 ]; then required=minor
+          elif [ "$fix" -eq 1 ]; then required=patch
+          elif [ "$product" -eq 1 ]; then required=patch
+          else required=none; fi
+
+          rank() {
+            case "$1" in none) echo 0 ;; patch) echo 1 ;; minor) echo 2 ;; major) echo 3 ;; esac
+          }
+          if [ "$(rank "$intent")" -lt "$(rank "$required")" ]; then
+            echo "ERROR: commits require at least release:$required, label says release:$intent."
+            echo "Either raise the label or fix the commit type — a repair of a"
+            echo "promised flow is 'fix', regardless of how much new code it took."
+            exit 1
+          fi
+          echo "OK: release:$intent covers required minimum release:$required"

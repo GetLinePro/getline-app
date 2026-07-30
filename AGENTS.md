@@ -1,5 +1,18 @@
 # Agent notes
 
+## Versions and releases
+
+Do **not** hand-edit `versionName` / `versionCode` in `build.gradle.kts` — a PR
+gate rejects it. Both are written by the `Build Release` workflow, which commits
+and tags them. Every PR needs exactly one `release:patch|minor|major|none` label,
+and it must agree with the Conventional Commit types in the PR.
+
+The bump follows the **result for the user**, not the amount of new code: a repair
+of a promised flow is `fix` even when it adds new files.
+
+Full rules, including why `versionCode` is not a build counter (F-Droid
+reproducibility): `docs/release-policy.md`.
+
 ## Browser auth — read before touching it
 
 Auth spans the app, a Caddy edge we control, and a proprietary backend (RWP) we do
