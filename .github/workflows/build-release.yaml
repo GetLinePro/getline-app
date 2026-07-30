@@ -21,6 +21,11 @@ on:
           - patch
           - minor
           - major
+      build_aab:
+        description: 'Also build the signed Play AAB (only needed for a Play upload)'
+        required: false
+        type: boolean
+        default: false
 
 # Two release runs must not both read the current version and both try to
 # publish the next one.
@@ -46,6 +51,24 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      # A standard hosted runner has ~14 GB free on /, and one release build of
+      # this project (Go core + NDK + R8 + ABI splits) does not fit next to the
+      # preinstalled toolchains: the first attempt died with
+      # "R8: java.io.IOException: No space left on device".
+      # Explicit rm of things this build never uses — no third-party action gets
+      # to run inside the job that holds the signing key.
+      - name: Free runner disk space
+        run: |
+          set -euo pipefail
+          echo "before:"; df -h / | tail -1
+          # Deliberately not touching the Android SDK/NDK, Java or Go: the four
+          # paths below plus the docker images free well over 10 GB on their own.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      /opt/hostedtoolcache/CodeQL || true
+          sudo docker system prune --all --force >/dev/null 2>&1 || true
+          sudo apt-get clean
+          echo "after:"; df -h / | tail -1
 
       - name: Checkout submodules
         run: git submodule update --init --recursive --force
@@ -320,27 +343,45 @@ jobs:
       # bundle task is in the same invocation, so combining them would silently
       # produce a single universal APK instead of the per-ABI set.
       - name: Release build — signed alpha APKs
-        run: ./gradlew --no-daemon app:assembleAlphaProdRelease
+        run: |
+          df -h / | tail -1
+          ./gradlew --no-daemon app:assembleAlphaProdRelease
+          df -h / | tail -1
 
+      # Off by default. Nothing consumes this artifact yet: the app is not on
+      # Play, and F-Droid rebuilds metaProdRelease from the tag itself. The Play
+      # shape is already validated on every push to main by build-pre-release
+      # (unsigned bundleMetaProdRelease + lint), so building it again here only
+      # doubled the peak disk usage — which is what ran the runner out of space.
       - name: Release build — signed meta AAB
-        run: ./gradlew --no-daemon app:lintMetaProdRelease app:bundleMetaProdRelease
+        if: ${{ inputs.build_aab }}
+        run: |
+          df -h / | tail -1
+          du -xhd1 "$GITHUB_WORKSPACE" "$HOME/.gradle" 2>/dev/null | sort -h | tail -8
+          ./gradlew --no-daemon app:lintMetaProdRelease app:bundleMetaProdRelease
 
       - name: Verify signatures and collect audit data
         id: audit
         run: |
           set -euo pipefail
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n1)
-          AAB=$(ls app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab | head -n1)
           APK=$(ls app/build/outputs/apk/alphaProd/release/getline-vpn-*-universal-release.apk | head -n1)
 
-          jarsigner -verify -verbose -certs "$AAB" > /tmp/jarsigner-verify.txt
-          if ! grep -q "jar verified" /tmp/jarsigner-verify.txt; then
-            echo "ERROR: production AAB signature verification failed"
-            exit 1
-          fi
-          if grep -qi "Android Debug\|AndroidDebugKey" /tmp/jarsigner-verify.txt; then
-            echo "ERROR: production AAB appears to be debug-signed"
-            exit 1
+          # The AAB is optional (build_aab); verify it only when it was built.
+          AAB=$(ls app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab 2>/dev/null | head -n1 || true)
+          if [ -n "$AAB" ]; then
+            jarsigner -verify -verbose -certs "$AAB" > /tmp/jarsigner-verify.txt
+            if ! grep -q "jar verified" /tmp/jarsigner-verify.txt; then
+              echo "ERROR: production AAB signature verification failed"
+              exit 1
+            fi
+            if grep -qi "Android Debug\|AndroidDebugKey" /tmp/jarsigner-verify.txt; then
+              echo "ERROR: production AAB appears to be debug-signed"
+              exit 1
+            fi
+            AAB_SHA=$(sha256sum "$AAB" | cut -d' ' -f1)
+          else
+            AAB_SHA='not built (build_aab=false)'
           fi
 
           "$APKSIGNER" verify --print-certs "$APK" > /tmp/apksigner-verify.txt 2>/dev/null
@@ -360,7 +401,6 @@ jobs:
           fi
 
           APK_SHA=$(sha256sum "$APK" | cut -d' ' -f1)
-          AAB_SHA=$(sha256sum "$AAB" | cut -d' ' -f1)
 
           {
             echo "### Release audit"

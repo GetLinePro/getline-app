@@ -146,7 +146,23 @@ F-Droid resolves tag → source), pushes commit and tag atomically, then builds
 from that state:
 
 - signed alpha APKs (`assembleAlphaProdRelease`) — what testers install;
-- signed meta AAB (`bundleMetaProdRelease`) — Play / F-Droid shape.
+- signed meta AAB (`bundleMetaProdRelease`) — **only when `build_aab=true`**.
+
+The AAB is off by default because nothing consumes it yet: the app is not on
+Play, F-Droid rebuilds `metaProdRelease` from the tag itself, and
+`build-pre-release.yaml` already lints and bundles the Play shape (unsigned) on
+every push to `main`. Building it in the release job as well doubled the peak disk
+usage and ran a standard hosted runner out of space:
+`R8: java.io.IOException: No space left on device`. Turn it on for an actual Play
+upload; the job then reports the AAB hash in the audit table.
+
+A standard runner has ~14 GB free on `/`, which this project (Go core, NDK, R8,
+ABI splits) does not fit next to the preinstalled toolchains, so the job first
+removes dotnet, GHC, boost, the CodeQL cache and the docker images, and prints
+`df` around each build. Explicit `rm` rather than a third-party disk-cleanup
+action: nothing else gets to execute inside the job that holds the signing key.
+Larger runners are a separate paid class — a GitHub Pro subscription does not
+change this 14 GB.
 
 Two separate Gradle invocations: `build.gradle.kts` turns ABI splits off when a
 bundle task is in the same invocation, so combining them would quietly ship a
