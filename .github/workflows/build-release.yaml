@@ -281,6 +281,16 @@ jobs:
             echo "Refusing silent debug signing."
             exit 1
           fi
+          # Gradle only discovers a wrong alias when it signs, i.e. after a
+          # ~13-minute build (observed 2026-07-30: "No key with alias '***'
+          # found in keystore", caused by whitespace pasted into the secret).
+          if ! keytool -list -keystore release.keystore \
+               -alias "$SIGNING_KEY_ALIAS" \
+               -storepass "$SIGNING_STORE_PASSWORD" >/dev/null 2>&1; then
+            echo "ERROR: SIGNING_KEY_ALIAS does not name an entry in release.keystore."
+            echo "Check for a trailing space or newline in the secret value."
+            exit 1
+          fi
           # Fingerprint is public — it is published in Digital Asset Links — and
           # this log is the only record of which key signed a given release.
           keytool -list -keystore release.keystore \
@@ -408,3 +418,7 @@ jobs:
             app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab
             app/build/outputs/apk/alphaProd/release/getline-vpn-*-release.apk
           generate_release_notes: true
+          # Derived from the version, not a fixed flag: every 0.x build is a
+          # pre-release and must not become "Latest release"; this switches
+          # itself off at 1.0.0.
+          prerelease: ${{ startsWith(steps.version.outputs.name, '0.') }}

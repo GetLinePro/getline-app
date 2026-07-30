@@ -56,8 +56,10 @@ jobs:
       - name: No signing material tracked
         run: |
           set -euo pipefail
+          # Suffix-tolerant: a plain `\.keystore$` missed
+          # release.keystore.bak-2026-07-30, which .gitignore did not cover either.
           hits=$(git ls-files \
-            | grep -Ei '(^|/)(signing\.properties|local\.properties)$|\.(keystore|jks|p12|pepk)$' \
+            | grep -Ei '(^|/)\.?(signing|local)\.properties|\.(keystore|jks|p12|pepk|swp)(\.|$)' \
             || true)
           if [ -n "$hits" ]; then
             echo "ERROR: signing material is tracked in git:"

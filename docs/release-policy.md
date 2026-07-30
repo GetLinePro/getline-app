@@ -118,6 +118,18 @@ leaves **no** release commit and **no** tag — only a failed run with a
 downloadable build that claims nothing. `SOURCE_DATE_EPOCH` does not need the
 push: the local release commit already exists when it is read.
 
+Every `0.x` release is published as a **pre-release**, so none of them becomes
+"Latest release". The flag is derived from the version and switches itself off at
+`1.0.0`. Do not create releases or tags by hand: the tag must sit on the release
+commit that carries the matching version, or the F-Droid rebuild has nothing
+consistent to compare, and the workflow will refuse to reuse an occupied tag.
+
+Signing material is checked in three cheap steps before the ~13-minute build,
+because Gradle only reports a wrong key when it signs: the keystore must decode,
+its certificate must match the expected fingerprint, and `SIGNING_KEY_ALIAS` must
+name an entry in it. The alias check exists because a secret pasted with trailing
+whitespace failed the first release run after 13 minutes.
+
 `EXPECTED_SIGNING_CERT_SHA256` is a repository **variable**, not a secret — the
 fingerprint is published in Digital Asset Links. It is checked twice: against the
 restored keystore before building, and against the signed APK afterwards. An

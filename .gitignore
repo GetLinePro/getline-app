@@ -29,10 +29,18 @@ gradle-app.setting
 
 # Geodata is a pinned, checksummed release input. Do not ignore it.
 
-# KeyStore
-signing.properties
+# KeyStore. Patterns are prefix/suffix-tolerant on purpose: plain
+# `*.keystore` did not cover `release.keystore.bak-2026-07-30`, and
+# `signing.properties` did not cover an editor swap file next to it.
+signing.properties*
+.signing.properties*
 *.keystore
+*.keystore.*
 *.jks
+*.jks.*
+*.p12
+*.pepk
+*.swp
 
 # clion cmake build
 cmake-build-*
