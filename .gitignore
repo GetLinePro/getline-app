@@ -84,3 +84,7 @@ google-services.json
 # Local agent instructions. Kept out of the repo on purpose: working methods are
 # the author's own, not a project artifact. Agents read it from the checkout.
 /AGENTS.md
+
+# Local inputs for GitHub Actions runs via `act`; may contain secrets.
+/.act.secrets
+/.act.vars

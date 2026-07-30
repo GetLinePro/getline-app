@@ -1,0 +1,51 @@
+name: "Техническая задача"
+description: "Зафиксировать внутреннюю работу по приложению или инфраструктуре"
+title: "[Задача] "
+labels: ["needs-triage"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: "Контекст"
+      description: "Почему задача появилась и какую проблему она решает?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: result
+    attributes:
+      label: "Что требуется?"
+      description: "Опишите ожидаемый результат, не привязываясь без необходимости к способу реализации."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "Критерии готовности"
+      description: "По каким проверяемым признакам задача будет считаться выполненной?"
+      placeholder: |
+        - [ ] …
+        - [ ] …
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: "Ограничения и риски"
+      description: "Необязательно. Укажите важные контракты, зависимости, секреты, teardown/error paths или то, что нельзя менять."
+
+  - type: textarea
+    id: related
+    attributes:
+      label: "Связанные материалы"
+      description: "Необязательно. Issues, PR, документация, логи или внешние ссылки."
+
+  - type: checkboxes
+    id: sensitive-data
+    attributes:
+      label: "Проверка приватных данных"
+      options:
+        - label: "Я проверил текст и вложения: в них нет subscription URL, QR-кодов, токенов, паролей и других секретов."
+          required: true

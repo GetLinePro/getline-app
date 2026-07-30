@@ -1,0 +1,58 @@
+name: "Идея или неудобство"
+description: "Предложить улучшение или рассказать о неудобном сценарии"
+title: "[Идея] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Здесь не требуется готовое техническое решение. Важнее описать задачу и то, что сейчас мешает.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: "Что хотелось сделать?"
+      description: "Опишите пользовательскую задачу или ситуацию."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Что сейчас неудобно или невозможно?"
+      description: "Расскажите, как это работает сейчас и где возникает проблема."
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired
+    attributes:
+      label: "Какого результата хотелось бы?"
+      description: "Необязательно предлагать конкретную реализацию."
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: "Насколько это мешает?"
+      options:
+        - "Блокирует работу"
+        - "Сильно мешает"
+        - "Заметное неудобство"
+        - "Небольшая мелочь"
+        - "Идея на будущее"
+    validations:
+      required: true
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: "Примеры или скриншоты"
+      description: "Необязательно. Перед загрузкой удалите секреты и приватные данные."
+
+  - type: checkboxes
+    id: sensitive-data
+    attributes:
+      label: "Проверка приватных данных"
+      options:
+        - label: "Я проверил текст и вложения: в них нет subscription URL, QR-кодов, токенов, паролей и других секретов."
+          required: true

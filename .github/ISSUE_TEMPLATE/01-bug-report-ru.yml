@@ -1,0 +1,78 @@
+name: "Баг"
+description: "Сообщить о поломке или неправильном поведении приложения"
+title: "[Баг] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Если проблема критическая, сразу сообщите Михаилу, но всё равно создайте issue, чтобы она не потерялась.
+
+        Не прикладывайте subscription URL, QR-коды, токены, пароли и полные конфиги. Логи прикладывайте только после проверки.
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Что делали?"
+      description: "Опишите действия перед проблемой. Короткой последовательности шагов достаточно."
+      placeholder: |
+        1. Открыл…
+        2. Нажал…
+        3. Выбрал…
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: "Что произошло?"
+      description: "Что вы увидели и чем это помешало?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Что ожидалось?"
+      description: "Как приложение должно было повести себя?"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: "Получается повторить?"
+      options:
+        - "Да, каждый раз"
+        - "Иногда"
+        - "Произошло один раз"
+        - "Не проверял"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: "Устройство и версия"
+      description: "Укажите то, что знаете."
+      value: |
+        - Телефон:
+        - Android:
+        - Версия GetLine:
+    validations:
+      required: true
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: "Скриншоты, видео или проверенные логи"
+      description: "Необязательно. Перед загрузкой удалите секреты и приватные данные."
+      placeholder: "Перетащите файлы сюда или оставьте поле пустым."
+
+  - type: checkboxes
+    id: sensitive-data
+    attributes:
+      label: "Проверка приватных данных"
+      options:
+        - label: "Я проверил текст и вложения: в них нет subscription URL, QR-кодов, токенов, паролей и других секретов."
+          required: true
