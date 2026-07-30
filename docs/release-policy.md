@@ -168,6 +168,9 @@ Two separate Gradle invocations: `build.gradle.kts` turns ABI splits off when a
 bundle task is in the same invocation, so combining them would quietly ship a
 single universal APK.
 
+For a safe local preflight with a disposable signing key, see
+[`docs/act-release-preflight.md`](act-release-preflight.md).
+
 Pull-request builds stay **unsigned**. The release key is never available to a
 workflow a pull request can trigger.
 

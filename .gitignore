@@ -34,6 +34,8 @@ gradle-app.setting
 # `signing.properties` did not cover an editor swap file next to it.
 signing.properties*
 .signing.properties*
+.act.secrets
+.act.vars
 *.keystore
 *.keystore.*
 *.jks
@@ -78,3 +80,7 @@ google-services.json
 # Internal working notes: incident journals, priorities, vendor recon.
 # Only distilled contracts belong in docs/.
 /docs/internal/
+
+# Local agent instructions. Kept out of the repo on purpose: working methods are
+# the author's own, not a project artifact. Agents read it from the checkout.
+/AGENTS.md

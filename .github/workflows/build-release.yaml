@@ -59,6 +59,9 @@ jobs:
       # Explicit rm of things this build never uses — no third-party action gets
       # to run inside the job that holds the signing key.
       - name: Free runner disk space
+        # Under act this would prune the developer's Docker host through its
+        # socket. The full runner image is managed outside the local job.
+        if: ${{ !env.ACT }}
         run: |
           set -euo pipefail
           echo "before:"; df -h / | tail -1
@@ -198,6 +201,8 @@ jobs:
           echo "OK: bump='$BUMP' covers required minimum '$required'"
 
       - name: Tag must not exist yet
+        # Remote tag state and token semantics belong to the real GitHub gate.
+        if: ${{ !env.ACT }}
         run: |
           set -euo pipefail
           TAG="v${{ steps.version.outputs.name }}"
@@ -218,6 +223,22 @@ jobs:
           NEW_NAME="${{ steps.version.outputs.name }}"
           NEW_CODE="${{ steps.version.outputs.code }}"
           TAG="v$NEW_NAME"
+
+          # act may be invoked with --bind, which exposes the developer's real
+          # checkout. Validate the rewrite on a disposable copy and never edit,
+          # commit or tag that checkout during a local preflight.
+          if [ -n "${ACT:-}" ]; then
+            VERSION_FILE="$RUNNER_TEMP/build.gradle.kts"
+            cp build.gradle.kts "$VERSION_FILE"
+            sed -i -E "s/^([[:space:]]*)versionName = \".*\"/\1versionName = \"$NEW_NAME\"/" "$VERSION_FILE"
+            sed -i -E "s/^([[:space:]]*)versionCode = [0-9]+/\1versionCode = $NEW_CODE/" "$VERSION_FILE"
+            grep -q "versionName = \"$NEW_NAME\"" "$VERSION_FILE"
+            grep -q "versionCode = $NEW_CODE" "$VERSION_FILE"
+            echo "ACT preflight: version rewrite validated without modifying the checkout."
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           sed -i -E "s/^([[:space:]]*)versionName = \".*\"/\1versionName = \"$NEW_NAME\"/" build.gradle.kts
           sed -i -E "s/^([[:space:]]*)versionCode = [0-9]+/\1versionCode = $NEW_CODE/" build.gradle.kts
@@ -354,7 +375,10 @@ jobs:
       # (unsigned bundleMetaProdRelease + lint), so building it again here only
       # doubled the peak disk usage — which is what ran the runner out of space.
       - name: Release build — signed meta AAB
-        if: ${{ inputs.build_aab }}
+        # act 0.2.89 does not populate the typed inputs context for this boolean,
+        # but does preserve it in the event payload. Keep that compatibility
+        # path ACT-only; GitHub continues to use the typed workflow input.
+        if: ${{ inputs.build_aab == true || (env.ACT && (github.event.inputs.build_aab == true || github.event.inputs.build_aab == 'true')) }}
         run: |
           df -h / | tail -1
           du -xhd1 "$GITHUB_WORKSPACE" "$HOME/.gradle" 2>/dev/null | sort -h | tail -8
@@ -384,6 +408,16 @@ jobs:
             AAB_SHA='not built (build_aab=false)'
           fi
 
+          # ACT validates the version rewrite on a temporary file so even an
+          # accidental --bind cannot dirty the developer's checkout. Report the
+          # version actually embedded by Gradle, not the computed next version.
+          AUDIT_NAME="${{ steps.version.outputs.name }}"
+          AUDIT_CODE="${{ steps.version.outputs.code }}"
+          if [ -n "${ACT:-}" ]; then
+            AUDIT_NAME=$(grep -oP '^\s*versionName = "\K[^"]+' build.gradle.kts)
+            AUDIT_CODE=$(grep -oP '^\s*versionCode = \K[0-9]+' build.gradle.kts)
+          fi
+
           "$APKSIGNER" verify --print-certs "$APK" > /tmp/apksigner-verify.txt 2>/dev/null
           if grep -qi "AndroidDebugKey" /tmp/apksigner-verify.txt; then
             echo "ERROR: alpha APK appears to be debug-signed"
@@ -407,10 +441,16 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|---|---|"
-            echo "| versionName | ${{ steps.version.outputs.name }} |"
-            echo "| versionCode | ${{ steps.version.outputs.code }} |"
-            echo "| tag | ${{ steps.release_commit.outputs.tag }} |"
-            echo "| commit | ${{ steps.release_commit.outputs.sha }} |"
+            echo "| versionName | $AUDIT_NAME |"
+            echo "| versionCode | $AUDIT_CODE |"
+            if [ -n "${ACT:-}" ]; then
+              echo "| computed next version (ACT only) | ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }}) |"
+              echo "| computed tag (ACT only, not created) | ${{ steps.release_commit.outputs.tag }} |"
+              echo "| checkout HEAD (ACT only) | ${{ steps.release_commit.outputs.sha }} |"
+            else
+              echo "| tag | ${{ steps.release_commit.outputs.tag }} |"
+              echo "| commit | ${{ steps.release_commit.outputs.sha }} |"
+            fi
             echo "| certificate SHA-256 | \`$CERT_SHA\` |"
             echo "| alpha APK (universal) SHA-256 | \`$APK_SHA\` |"
             echo "| meta AAB SHA-256 | \`$AAB_SHA\` |"
@@ -426,6 +466,7 @@ jobs:
       # leaves nothing but a local commit and a downloadable build that claims
       # nothing, instead of a released tag with no usable APK.
       - name: Upload signed artifacts to the run
+        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v7
         with:
           name: GetLineVPN signed ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
@@ -438,6 +479,7 @@ jobs:
       # step, and it runs only after every artifact exists and every signature
       # check has passed.
       - name: Publish release commit and tag
+        if: ${{ !env.ACT }}
         run: |
           set -euo pipefail
           # Serialization guard: fail rather than clobber a main that moved while
@@ -451,6 +493,7 @@ jobs:
           git push --atomic origin "HEAD:main" "refs/tags/${{ steps.release_commit.outputs.tag }}"
 
       - name: Upload Release
+        if: ${{ !env.ACT }}
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.release_commit.outputs.tag }}
