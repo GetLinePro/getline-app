@@ -1,8 +1,7 @@
 name: Security baseline
 
 on:
-  pull_request:
-    types: [opened, reopened, synchronize]
+  workflow_call:
   push:
     branches:
       - main
@@ -17,12 +16,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Run OSV-Scanner (baseline-aware, non-blocking)
         run: ./scripts/security/run-sca.sh
 
       - name: Upload SCA raw + aggregated reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: security-sca-osv
@@ -39,6 +41,7 @@ jobs:
             security/reports/osv-core-scan-android-core.json
             security/reports/osv-core-scan-android-core.md
           if-no-files-found: warn
+          retention-days: 7
 
   sast-semgrep:
     name: SAST (Semgrep)
@@ -47,12 +50,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Run Semgrep (baseline-aware, non-blocking)
         run: ./scripts/security/run-sast.sh
 
       - name: Upload SAST raw + summary reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: security-sast-semgrep
@@ -60,3 +66,4 @@ jobs:
             security/reports/semgrep-raw.json
             security/reports/semgrep-summary.json
           if-no-files-found: warn
+          retention-days: 7

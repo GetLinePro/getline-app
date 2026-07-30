@@ -137,6 +137,17 @@ empty variable fails the run rather than passing silently. Update it, the deploy
 `assetlinks.json` and the three keystore secrets together whenever the release key
 changes.
 
+GitHub Actions secrets are a delivery path into CI, not a recoverable backup.
+Until signing ownership is formally transferred, the repository owner must keep one
+encrypted backup blob in two off-machine locations and its passphrase
+separately. Losing the key makes existing non-Play installs non-upgradable: the
+current users must reinstall and lose local app data, then the replacement key,
+the three signing secrets, `EXPECTED_SIGNING_CERT_SHA256` and the deployed
+`assetlinks.json` must change together. At the first Play release, enroll the
+existing signing key in Play App Signing and create a separate upload key; a
+separate APK channel still needs either a recoverable signing key or APKs signed
+and downloaded from Play.
+
 ## Release run
 
 `Build Release` is `workflow_dispatch` only, refuses any ref but `main`, and

@@ -1,17 +1,13 @@
 package com.github.kr328.clash
 
 import android.app.Activity
-import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import com.github.kr328.clash.common.constants.Intents
-import pro.getline.vpn.getline.GetLineSubscriptionType
-import pro.getline.vpn.GetLineOnboardingActivity
+import com.github.kr328.clash.design.R
 import com.github.kr328.clash.remote.Remote
 import com.github.kr328.clash.util.startClashService
 import com.github.kr328.clash.util.stopClashService
-import java.util.*
-import com.github.kr328.clash.design.R
 
 class ExternalControlActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,33 +16,6 @@ class ExternalControlActivity : Activity() {
         overridePendingTransition(0, 0)
 
         when(intent.action) {
-            Intent.ACTION_VIEW -> {
-                val uri = intent.data ?: return finish()
-                val url = uri.getQueryParameter("url") ?: return finish()
-
-                val type = when (uri.getQueryParameter("type")?.lowercase(Locale.getDefault())) {
-                    "url" -> GetLineSubscriptionType.Url
-                    "file" -> GetLineSubscriptionType.File
-                    else -> GetLineSubscriptionType.Url
-                }
-                val name = uri.getQueryParameter("name") ?: getString(R.string.new_profile)
-                val parsedInterval = uri.getQueryParameter("update-interval")?.toLongOrNull() ?: 0L
-                val updateInterval = if (parsedInterval > 0) parsedInterval.coerceAtLeast(15L) else 0L
-                val intervalMs = java.util.concurrent.TimeUnit.MINUTES.toMillis(updateInterval)
-
-                startActivity(
-                    GetLineOnboardingActivity.importIntent(
-                        context = this,
-                        type = type,
-                        name = name,
-                        source = url,
-                        interval = intervalMs,
-                    )
-                )
-                finish()
-                return
-            }
-
             Intents.ACTION_TOGGLE_CLASH -> if(Remote.broadcasts.clashRunning) {
                 stopClash()
             }

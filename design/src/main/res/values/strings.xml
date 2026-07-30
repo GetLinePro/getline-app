@@ -356,6 +356,10 @@
     <string name="external_control_activity">External Control</string>
     <string name="external_control_started">VPN service started</string>
     <string name="external_control_stopped">VPN service stopped</string>
+    <string name="external_import_activity">Import subscription</string>
+    <string name="external_import_invalid_link">This subscription link is invalid</string>
+    <string name="external_import_confirmation_title">Import subscription?</string>
+    <string name="external_import_confirmation_message">Allow an external link to import a subscription from %1$s?</string>
 
     <string name="hide_app_icon_title">Hide App Icon</string>
     <string name="hide_app_icon_desc">You can dial *#*#252746382#*#* to open this App</string>

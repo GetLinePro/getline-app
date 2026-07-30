@@ -67,18 +67,17 @@ GetLine VPN is a modified fork of [Clash Meta for Android (CMFA)](https://github
 
 Application id: `pro.getline.vpn` (alpha adds `.alpha`; e2e adds `.e2e`; debug adds `.debug`).
 
-### Automation
+### External import
 
 Package name: `pro.getline.vpn`
 
-- Toggle VPN service  
-  - Intent action: `${applicationId}.action.TOGGLE_CLASH` on `ExternalControlActivity`
-- Start VPN service  
-  - `${applicationId}.action.START_CLASH`
-- Stop VPN service  
-  - `${applicationId}.action.STOP_CLASH`
-- Import a profile  
-  - URL scheme `clash://install-config?url=<encoded URI>` or `clashmeta://install-config?url=<encoded URI>`
+- Import a GetLine subscription:
+  - URL scheme `getline://install-config?url=<encoded HTTPS URI>`
+  - the subscription host must be allowed for the build environment;
+  - the app shows the host and requires confirmation before importing.
+
+VPN start, stop and toggle actions are internal launcher shortcuts, not an
+external automation API.
 
 ### License and attribution
 

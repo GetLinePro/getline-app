@@ -1,6 +1,6 @@
 ## Privacy Policy — GetLine VPN (Android)
 
-**Last updated:** 2026-07-27
+**Last updated:** 2026-07-30
 
 This document describes how the **GetLine VPN** Android app handles information. It applies to the mobile client (`pro.getline.vpn`). The broader GetLine online service is also covered by the service policy at [https://getline.pro/privacy.html](https://getline.pro/privacy.html).
 
@@ -42,15 +42,13 @@ These items stay on the device unless you export them, share them, or trigger a 
    Opening Support, Privacy, or Account from the app loads third-party destinations you choose (Telegram support, GetLine web pages). Those services process data under their own policies.
 
 4. **QR import (optional)**  
-   Scanning a profile QR code uses the **quickie** library with **Google ML Kit** barcode scanning. That stack also registers Google ML Kit initialization and **Data Transport / CCT** components in the release manifest. Google’s libraries may process barcode-related usage or diagnostic telemetry according to Google’s policies for ML Kit and related Google Play services infrastructure. This path is only used if you use QR import; it is not required for URL paste import or core VPN operation.
+   Scanning a profile QR code uses Android CameraX and the ZXing C++ barcode reader. Camera frames are decoded locally on the device: the scanner does not save or transmit the images, and returns only the decoded QR content to the app's normal import flow. Camera access is optional and this path is not required for URL paste import or core VPN operation.
 
 ### What this app does **not** do (in this fork)
 
 - It does **not** embed a first-party App Center, Firebase Analytics, or Firebase Crashlytics product-analytics/crash-reporting integration for GetLine.
 - It does **not** require Google Play Services for core VPN connect/disconnect when you import a subscription URL without QR scanning.
 - It does **not** upload crash dumps or VPN log history to GetLine servers automatically. Local logs leave the device only if you export or share them.
-
-ML Kit / Data Transport components bundled for QR scanning (see above) are separate from a GetLine-operated analytics backend.
 
 If you install the app from Google Play or another store, that store may process install and update data under its own privacy policy.
 

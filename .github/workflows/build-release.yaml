@@ -462,19 +462,6 @@ jobs:
 
           echo "OK: artifacts signed with a non-debug key."
 
-      # Keep the artifacts even if publishing is refused below: a failed run then
-      # leaves nothing but a local commit and a downloadable build that claims
-      # nothing, instead of a released tag with no usable APK.
-      - name: Upload signed artifacts to the run
-        if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: GetLineVPN signed ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
-          path: |
-            app/build/outputs/bundle/metaProdRelease/getline-vpn-*.aab
-            app/build/outputs/apk/alphaProd/release/getline-vpn-*-release.apk
-          if-no-files-found: error
-
       # Everything above is local and reversible. This is the first irreversible
       # step, and it runs only after every artifact exists and every signature
       # check has passed.

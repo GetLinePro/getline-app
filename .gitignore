@@ -43,6 +43,7 @@ signing.properties*
 *.p12
 *.pepk
 *.swp
+/getline-signing-backup-*
 
 # clion cmake build
 cmake-build-*

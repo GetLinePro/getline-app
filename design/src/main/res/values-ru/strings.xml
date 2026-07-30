@@ -320,6 +320,10 @@
     <string name="external_control_activity">External Control</string>
     <string name="external_control_started">VPN-сервис запущен</string>
     <string name="external_control_stopped">VPN-сервис остановлен</string>
+    <string name="external_import_activity">Импорт подписки</string>
+    <string name="external_import_invalid_link">Некорректная ссылка на подписку</string>
+    <string name="external_import_confirmation_title">Импортировать подписку?</string>
+    <string name="external_import_confirmation_message">Разрешить внешней ссылке импортировать подписку с %1$s?</string>
     <string name="force_dns_mapping">Force DNS Mapping</string>
     <string name="parse_pure_ip">Parse Pure IP</string>
     <string name="override_destination">Override Destination</string>

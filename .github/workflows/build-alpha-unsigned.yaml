@@ -1,7 +1,6 @@
 name: Build Alpha (unsigned)
 on:
-  pull_request:
-    types: [opened, reopened, synchronize]
+  workflow_call:
   workflow_dispatch:
   push:
     branches:
@@ -52,9 +51,10 @@ jobs:
       - name: Verify Mihomo security gate
         run: ./scripts/verify-mihomo-gate.sh
 
-      # This job builds the release build type without any signing material, so
-      # the artifacts are UNSIGNED and cannot be installed — they verify that the
-      # release configuration compiles. Do not add production signing here: the
+      # This job builds the release build type without any signing material.
+      # Pull requests only need the build result, so they upload no binaries.
+      # Main/manual runs retain one universal APK briefly for diagnostics; it is
+      # UNSIGNED and cannot be installed. Do not add production signing here: the
       # block that used to sit commented out at this spot also ran
       # `cat signing.properties`, which would print release passwords into the
       # job log, and pull requests from this repository do receive secrets.
@@ -64,42 +64,11 @@ jobs:
         if: success()
         run: ./gradlew --no-daemon app:assembleAlphaProdRelease
           
-      - name: Upload Aritfact (universal)
+      - name: Upload unsigned universal APK
         uses: actions/upload-artifact@v7
-        if: ${{  success() }}
+        if: ${{ success() && github.event_name != 'pull_request' }}
         with:
-          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (universal) 
+          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (universal)
           path: |
             app/build/outputs/apk/alphaProd/release/*-universal-*.apk
-      
-      - name: Upload Aritfact (arm64-v8a)
-        uses: actions/upload-artifact@v7
-        if: ${{  success() }}
-        with:
-          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (arm64-v8a)
-          path: |
-            app/build/outputs/apk/alphaProd/release/*-arm64-v8a-*.apk
-      
-      - name: Upload Aritfact (armeabi-v7a)
-        uses: actions/upload-artifact@v7
-        if: ${{  success() }}
-        with:
-          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (armeabi-v7a)
-          path: |
-            app/build/outputs/apk/alphaProd/release/*-armeabi-v7a-*.apk
-      
-      - name: Upload Aritfact (x86_64)
-        uses: actions/upload-artifact@v7
-        if: ${{  success() }}
-        with:
-          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (x86_64)
-          path: |
-            app/build/outputs/apk/alphaProd/release/*-x86_64-*.apk
-      
-      - name: Upload Aritfact (x86)
-        uses: actions/upload-artifact@v7
-        if: ${{  success() }}
-        with:
-          name: GetLineVPN Alpha Prod unsigned APK ${{ github.sha }} (x86)
-          path: |
-            app/build/outputs/apk/alphaProd/release/*-x86-*.apk
+          retention-days: 1

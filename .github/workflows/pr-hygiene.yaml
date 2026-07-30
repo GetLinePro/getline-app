@@ -12,6 +12,27 @@ jobs:
     name: Branch, base and tracked-secrets checks
     runs-on: ubuntu-24.04
     steps:
+      # Fail before checkout or runner-heavy reusable workflows when the PR
+      # cannot satisfy release policy yet.
+      - name: Release intent is declared
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          intents=$(printf '%s' "$LABELS" | grep -oE 'release:(patch|minor|major|none)' | sort -u || true)
+          count=$(printf '%s' "$intents" | grep -c . || true)
+          if [ "$count" -ne 1 ]; then
+            echo "ERROR: expected exactly one release:* label, found ${count:-0}."
+            echo "Use release:patch, release:minor, release:major or release:none."
+            exit 1
+          fi
+          if ! printf '%s' "$PR_TITLE" | grep -Eq '^[a-z]+(\([^)]*\))?!?: .+'; then
+            echo "ERROR: PR title is not a Conventional Commit: $PR_TITLE"
+            exit 1
+          fi
+          echo "OK: release intent and PR title declared"
+
       - name: Checkout PR head (not the merge commit)
         uses: actions/checkout@v6
         with:
@@ -59,7 +80,7 @@ jobs:
           # Suffix-tolerant: a plain `\.keystore$` missed
           # release.keystore.bak-2026-07-30, which .gitignore did not cover either.
           hits=$(git ls-files \
-            | grep -Ei '(^|/)\.?(signing|local)\.properties|\.(keystore|jks|p12|pepk|swp)(\.|$)' \
+            | grep -Ei '(^|/)\.?(signing|local)\.properties|(^|/)getline-signing-backup-|\.(keystore|jks|p12|pepk|swp)(\.|$)' \
             || true)
           if [ -n "$hits" ]; then
             echo "ERROR: signing material is tracked in git:"
@@ -67,6 +88,23 @@ jobs:
             exit 1
           fi
           echo "OK: no keystore / signing.properties tracked"
+
+      # Release Java networking must not trust user-installed CAs. Check every
+      # source set so a future release resource override cannot reopen it.
+      - name: Release network config rejects user certificates
+        run: |
+          set -euo pipefail
+          hits=$(grep -RInE \
+            --include='network_security_config.xml' \
+            "src[[:space:]]*=[[:space:]]*['\"]user['\"]" \
+            app/src \
+            || true)
+          if [ -n "$hits" ]; then
+            echo "ERROR: network security config trusts user-installed certificates:"
+            printf '%s\n' "$hits"
+            exit 1
+          fi
+          echo "OK: network security config trusts no user-installed certificates"
 
       # Branch protection and environment protection rules are unavailable for a
       # private repo on the free plan, and same-repo pull requests DO receive
@@ -111,12 +149,6 @@ jobs:
         run: |
           set -euo pipefail
           intents=$(printf '%s' "$LABELS" | grep -oE 'release:(patch|minor|major|none)' | sort -u || true)
-          count=$(printf '%s' "$intents" | grep -c . || true)
-          if [ "$count" -ne 1 ]; then
-            echo "ERROR: expected exactly one release:* label, found ${count:-0}."
-            echo "Use release:patch, release:minor, release:major or release:none."
-            exit 1
-          fi
           intent=${intents#release:}
           echo "intent: $intent"
 
@@ -170,3 +202,33 @@ jobs:
             exit 1
           fi
           echo "OK: release:$intent covers required minimum release:$required"
+
+  security:
+    name: Security baseline
+    needs: hygiene
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.action == 'opened' ||
+      github.event.action == 'reopened' ||
+      github.event.action == 'synchronize' ||
+      (github.event.action == 'labeled' && startsWith(github.event.label.name, 'release:')) ||
+      (github.event.action == 'edited' && github.event.changes.title != null)
+    concurrency:
+      group: pr-security-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/security-baseline.yaml
+
+  build:
+    name: Build Alpha (unsigned)
+    needs: hygiene
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.action == 'opened' ||
+      github.event.action == 'reopened' ||
+      github.event.action == 'synchronize' ||
+      (github.event.action == 'labeled' && startsWith(github.event.label.name, 'release:')) ||
+      (github.event.action == 'edited' && github.event.changes.title != null)
+    concurrency:
+      group: pr-build-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/build-alpha-unsigned.yaml

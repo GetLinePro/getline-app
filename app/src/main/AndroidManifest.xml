@@ -97,11 +97,20 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Dynamic shortcuts are launched as their publisher and can target an
+             unexported Activity. Do not expose these VPN control actions. -->
         <activity
             android:name=".ExternalControlActivity"
             android:excludeFromRecents="true"
-            android:exported="true"
+            android:exported="false"
             android:label="@string/external_control_activity"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen" />
+        <activity
+            android:name=".ExternalImportActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/external_import_activity"
             android:noHistory="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen">
             <intent-filter>
@@ -112,18 +121,6 @@
 
                 <data android:scheme="getline"/>
                 <data android:host="install-config"/>
-            </intent-filter>
-            <intent-filter>
-                <action android:name="${applicationId}.action.START_CLASH" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="${applicationId}.action.STOP_CLASH" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="${applicationId}.action.TOGGLE_CLASH" />
-                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
         <activity
