@@ -86,9 +86,8 @@ class ControlPlaneIsolationIntegrationTest {
     fun subscriptionUrl_policyRejectsProductionInE2e() {
         if (!isE2e) return
         try {
-            GetLineControlPlaneHostPolicy.requireProductHttpsUrl(
+            GetLineControlPlaneHostPolicy.requireSubscriptionUrl(
                 "https://app.getline.pro/sub/paid",
-                "subscription_link",
             )
             fail("e2e must reject production subscription_link")
         } catch (e: GetLineAuthException.Protocol) {

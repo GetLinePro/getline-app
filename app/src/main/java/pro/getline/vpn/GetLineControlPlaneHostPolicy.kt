@@ -27,6 +27,9 @@ object GetLineControlPlaneHostPolicy {
 
     val prodAllowedHosts: Set<String> = setOf(
         "app.getline.pro",
+        // Callback-only host: serves Digital Asset Links and a static completion
+        // page, never the SPA or a web manifest, so no WebAPK can claim it.
+        "auth.getline.pro",
     )
 
     /** True when the app was built with environment flavor `e2e`. */
@@ -50,8 +53,10 @@ object GetLineControlPlaneHostPolicy {
     }
 
     /**
-     * Strict product-host check for API origin, portal, callback, and
-     * subscription_link from the control-plane API.
+     * Strict product-host check for API origin, portal and callback.
+     *
+     * Not for `subscription_link` — that host belongs to RWP and is not in this
+     * allowlist; see [isAllowedSubscriptionHost].
      */
     fun isAllowedProductHost(host: String?): Boolean {
         val canonical = canonicalizeHost(host) ?: return false
@@ -116,10 +121,51 @@ object GetLineControlPlaneHostPolicy {
         requireProductHttpsUrl(origin, "API origin")
     }
 
+    /**
+     * Subscription import URL returned by the control-plane API.
+     *
+     * The point of this check is **environment isolation**, not a narrow
+     * allowlist: RWP hands out its own host, which is not one of the two
+     * control-plane hosts, so [isAllowedProductHost] rejected every real
+     * production link (observed 2026-07-30: import failed with
+     * `subscription_link not allowed for this environment` right after a
+     * successful session).
+     *
+     * - **e2e:** strict [e2eAllowedHosts] — a misconfigured mock must never be
+     *   able to hand out a production URL.
+     * - **prod:** any GetLine-family host except stage.
+     */
+    fun isAllowedSubscriptionHost(host: String?): Boolean {
+        val canonical = canonicalizeHost(host) ?: return false
+        if (isE2e) {
+            return isAllowedProductHost(canonical)
+        }
+        return isGetLineFamilyHost(canonical) && !isStageHost(canonical)
+    }
+
+    fun requireSubscriptionUrl(url: String?) {
+        val uri = parseHttpsUri(url)
+            ?: throw GetLineAuthException.Protocol(
+                "subscription_link must be https with a host",
+            )
+        if (!isAllowedSubscriptionHost(uri.host)) {
+            throw GetLineAuthException.Protocol(
+                "subscription_link host not allowed for this environment",
+            )
+        }
+    }
+
     /** Hostname is under getline.pro (including the apex). */
     fun isGetLineFamilyHost(host: String?): Boolean {
         val normalized = canonicalizeHost(host) ?: return false
         return normalized == "getline.pro" || normalized.endsWith(".getline.pro")
+    }
+
+    /** Hostname is a stage host of the GetLine family. */
+    fun isStageHost(host: String?): Boolean {
+        val normalized = canonicalizeHost(host) ?: return false
+        return normalized == "stage.getline.pro" ||
+            normalized.endsWith(".stage.getline.pro")
     }
 
     private fun parseHttpsUri(url: String?): Uri? {

@@ -38,6 +38,12 @@
         if (!payload || !payload.auth_url) {
           throw new Error("auth_url missing");
         }
+        // The app process never validates auth_url on this path, so validate
+        // here: a compromised or misconfigured start response must not be able
+        // to send the Auth Tab to an arbitrary origin.
+        if (new URL(payload.auth_url).origin !== "https://oauth.telegram.org") {
+          throw new Error("unexpected provider origin");
+        }
         window.location.replace(payload.auth_url);
       } catch (e) {
         document.body.textContent =

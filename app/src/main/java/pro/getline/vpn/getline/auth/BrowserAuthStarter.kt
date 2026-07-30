@@ -3,31 +3,28 @@ package pro.getline.vpn.getline.auth
 /**
  * Resolves the URL to open in [BrowserAuthLauncher] for a browser auth method.
  *
- * Google: app calls `GET /api/auth/google/start`, then launches returned `auth_url`.
- * Telegram: launches the same-origin trampoline so the browser itself calls
- * `GET /api/auth/telegram-oidc/start` and stores PKCE cookies in the Auth Tab jar.
- * Calling Telegram start from the app process would set cookies outside the browser
- * and break the OAuth callback.
+ * Both providers launch a same-origin trampoline on the portal host, which calls
+ * the provider start endpoint from inside the browser:
+ *
+ * - Telegram: `GET /api/auth/telegram-oidc/start` must run in the browser so its
+ *   HttpOnly PKCE cookies land in the Auth Tab jar.
+ * - Google: `GET /api/auth/google/start` works from any client, but the browser
+ *   must visit the portal origin first so the edge can set the marker cookie that
+ *   scopes the callback-host rewrite to app logins (web logins keep landing on
+ *   the SPA).
+ *
+ * Neither start endpoint is called from the app process any more.
  *
  * [AuthMethod.Email] is rejected — email uses OTP, not Auth Tab.
  */
-class BrowserAuthStarter(
-    private val api: GetLineAuthApi,
-) {
-    suspend fun resolveAuthUrl(method: AuthMethod): String {
+object BrowserAuthStarter {
+    fun resolveAuthUrl(method: AuthMethod): String {
         require(method.requiresBrowser()) {
             "AuthMethod.$method does not use browser auth"
         }
         return when (method) {
-            AuthMethod.Google -> {
-                val response = api.startBrowserAuth(AuthMethod.Google)
-                val authUrl = response.authUrl
-                BrowserAuthLauncher.parseAndValidateLaunchUrl(authUrl)
-                authUrl
-            }
-            AuthMethod.Telegram -> {
-                BrowserAuthLauncher.TELEGRAM_TRAMPOLINE_URL
-            }
+            AuthMethod.Google -> BrowserAuthLauncher.GOOGLE_TRAMPOLINE_URL
+            AuthMethod.Telegram -> BrowserAuthLauncher.TELEGRAM_TRAMPOLINE_URL
             AuthMethod.Email -> error("unreachable: Email requiresBrowser is false")
         }
     }

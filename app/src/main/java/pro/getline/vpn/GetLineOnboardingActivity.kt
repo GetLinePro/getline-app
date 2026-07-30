@@ -46,7 +46,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         )
     }
     private val browserAuthLauncher = BrowserAuthLauncher()
-    private val browserAuthStarter by lazy { BrowserAuthStarter(authApi) }
     private val imports = Channel<GetLineSubscriptionDraft>(Channel.UNLIMITED)
     private var busy = false
     private var retryTarget: RetryTarget = RetryTarget.Refresh
@@ -359,12 +358,12 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             retryTarget = RetryTarget.CompleteFromWebToken(webToken)
             try {
                 completeLoginFromWebToken(design, webToken)
-            } catch (_: GetLineAuthException) {
+            } catch (e: GetLineAuthException) {
                 design.showProviders()
-                design.setProductState(authFailureState())
-            } catch (_: Exception) {
+                applyLoginFailure(design, RetryTarget.CompleteFromWebToken(webToken), e)
+            } catch (e: Exception) {
                 design.showProviders()
-                design.setProductState(authFailureState())
+                applyLoginFailure(design, RetryTarget.CompleteFromWebToken(webToken), e)
             }
         } finally {
             busy = false
@@ -387,13 +386,80 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         design.setProductState(GetLineProductState.Loading)
         try {
             completeLoginFromWebToken(design, webToken)
-        } catch (_: GetLineAuthException) {
-            design.setProductState(authFailureState())
-        } catch (_: Exception) {
-            design.setProductState(authFailureState())
+        } catch (e: GetLineAuthException) {
+            applyLoginFailure(design, RetryTarget.CompleteFromWebToken(webToken), e)
+        } catch (e: Exception) {
+            applyLoginFailure(design, RetryTarget.CompleteFromWebToken(webToken), e)
         } finally {
             busy = false
         }
+    }
+
+    /**
+     * Retry entry point for [RetryTarget.ImportPreferredSubscription]: the native
+     * session already exists, so this must not re-run auth or re-mint a device key.
+     */
+    private suspend fun resumePreferredSubscription(design: GetLineOnboardingDesign) {
+        if (busy) return
+        if (!sessionRepository.hasSession()) {
+            // Session died meanwhile (e.g. 401 recovery logged us out).
+            refreshEntryState(design)
+            return
+        }
+        if (!hasValidatedInternetConnection()) {
+            design.setProductState(GetLineProductState.Offline)
+            return
+        }
+
+        busy = true
+        design.setProductState(GetLineProductState.Loading)
+        try {
+            importPreferredSubscription(design)
+        } catch (e: GetLineAuthException) {
+            applyLoginFailure(design, RetryTarget.ImportPreferredSubscription, e)
+        } catch (e: Exception) {
+            applyLoginFailure(design, RetryTarget.ImportPreferredSubscription, e)
+        } finally {
+            busy = false
+        }
+    }
+
+    /**
+     * Failure after the browser / OTP leg.
+     *
+     * With a persisted native session only the subscription step failed: keep the
+     * session and offer a retry of that step, not of sign-in. Without one, fall
+     * back to [preSessionTarget].
+     */
+    private suspend fun applyLoginFailure(
+        design: GetLineOnboardingDesign,
+        preSessionTarget: RetryTarget,
+        error: Exception?,
+    ) {
+        if (!sessionRepository.hasSession()) {
+            retryTarget = preSessionTarget
+            design.setProductState(authFailureState())
+            return
+        }
+
+        // Class name plus a non-secret discriminator. HttpFailure/RateLimited
+        // messages hold raw response bodies, so only the status code is logged;
+        // Protocol messages are authored constants (labels only, no URLs/tokens).
+        val kind = error?.javaClass?.simpleName ?: "unknown"
+        val detail = when (error) {
+            is GetLineAuthException.HttpFailure -> " code=${error.code}"
+            is GetLineAuthException.Protocol -> " reason=${error.message}"
+            else -> ""
+        }
+        Log.w("post_session_subscription_failed kind=$kind$detail")
+        retryTarget = RetryTarget.ImportPreferredSubscription
+        design.setProductState(
+            if (hasValidatedInternetConnection()) {
+                GetLineProductState.ImportFailed
+            } else {
+                GetLineProductState.Offline
+            },
+        )
     }
 
     private suspend fun signInWithBrowserProvider(
@@ -415,7 +481,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         design.setProductState(GetLineProductState.Loading)
 
         try {
-            val authUrl = browserAuthStarter.resolveAuthUrl(method)
+            val authUrl = BrowserAuthStarter.resolveAuthUrl(method)
             val launchResult = browserAuthLauncher.launch(this, authUrl)
 
             val callbackUri = when (launchResult) {
@@ -438,12 +504,10 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         } catch (_: GetLineAuthException.InvalidCallback) {
             retryTarget = RetryTarget.BrowserLogin(method)
             design.setProductState(GetLineProductState.AuthFailed)
-        } catch (_: GetLineAuthException) {
-            retryTarget = RetryTarget.BrowserLogin(method)
-            design.setProductState(authFailureState())
-        } catch (_: Exception) {
-            retryTarget = RetryTarget.BrowserLogin(method)
-            design.setProductState(authFailureState())
+        } catch (e: GetLineAuthException) {
+            applyLoginFailure(design, RetryTarget.BrowserLogin(method), e)
+        } catch (e: Exception) {
+            applyLoginFailure(design, RetryTarget.BrowserLogin(method), e)
         } finally {
             busy = false
         }
@@ -460,7 +524,19 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         webToken: String,
     ) {
         sessionRepository.establishFromWebToken(webToken)
+        // Session is persisted from here on: a later failure must retry only the
+        // subscription step. Re-running auth mints another device key and adds
+        // more RWP calls, which is how a single 429 turned into a loop.
+        retryTarget = RetryTarget.ImportPreferredSubscription
+        importPreferredSubscription(design)
+    }
 
+    /**
+     * Subscription half of the post-login path: pick the preferred subscription
+     * for the current native session and import it. Requires an established
+     * session; does not touch tokens.
+     */
+    private suspend fun importPreferredSubscription(design: GetLineOnboardingDesign) {
         // Capture prior selection before loading; loadPreferredSubscription does not
         // overwrite store, so account/subscription changes create a new profile.
         val previousSubscriptionId = sessionRepository.rememberedSubscriptionId()
@@ -701,6 +777,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 verifyEmailOtp(design, target.email, target.code)
             is RetryTarget.CompleteFromWebToken ->
                 completeFromWebToken(design, target.webToken)
+            RetryTarget.ImportPreferredSubscription ->
+                resumePreferredSubscription(design)
             is RetryTarget.ImportSubscription ->
                 importSubscription(
                     design = design,
@@ -898,6 +976,11 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
          * [webToken] is memory-only — resume device-key/import without re-verify.
          */
         data class CompleteFromWebToken(val webToken: String) : RetryTarget()
+        /**
+         * Native session exists; the preferred-subscription load or import failed.
+         * Retry resumes from the session — no browser auth, no new device key.
+         */
+        object ImportPreferredSubscription : RetryTarget()
         data class ImportSubscription(
             val request: GetLineSubscriptionDraft,
             val reuseId: GetLineSubscriptionId? = null,

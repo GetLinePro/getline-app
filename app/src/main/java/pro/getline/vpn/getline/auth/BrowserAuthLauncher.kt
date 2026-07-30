@@ -99,12 +99,16 @@ class BrowserAuthLauncher {
 
     companion object {
         /**
-         * Same-origin trampoline for Telegram. The trampoline HTML calls
-         * `/api/auth/telegram-oidc/start` inside the browser so PKCE cookies
-         * land in the Auth Tab jar. See `docs/spikes/android-auth/`.
+         * Same-origin trampolines. The HTML calls the provider start endpoint
+         * inside the browser: Telegram so PKCE cookies land in the Auth Tab jar,
+         * Google so the edge can mark the request and rewrite the callback host.
+         * See `docs/spikes/android-auth/`.
          */
         val TELEGRAM_TRAMPOLINE_URL: String
             get() = AppEnvironment.telegramTrampolineUrl
+
+        val GOOGLE_TRAMPOLINE_URL: String
+            get() = AppEnvironment.googleTrampolineUrl
 
         const val REDIRECT_PATH = "/"
 

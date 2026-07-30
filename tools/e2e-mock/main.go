@@ -55,6 +55,7 @@ func main() {
 	// S0 surface (Auth Tab handoff).
 	mux.HandleFunc("GET /__health", handleHealth)
 	mux.HandleFunc("GET /api/auth/google/start", handleGoogleStart)
+	mux.HandleFunc("GET /android-auth/google", handleGoogleTrampoline)
 	mux.HandleFunc("GET /__mock__/google", handleMockGoogle)
 	mux.HandleFunc("GET /", handleCompletionRoot)
 
@@ -123,6 +124,16 @@ func handleGoogleStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"auth_url": mockGoogleURL,
 	})
+}
+
+// Same-origin trampoline the app launches instead of calling google/start from
+// its own process. Production needs it so the edge can mark the browser before
+// the provider leg; stage mirrors it so both flavors exercise one client path.
+func handleGoogleTrampoline(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(googleTrampolineHTML))
 }
 
 func handleMockGoogle(w http.ResponseWriter, r *http.Request) {
@@ -490,6 +501,48 @@ const mockGoogleHTML = `<!DOCTYPE html>
   <h1>S1 mock Google sign-in</h1>
   <p>Not a real OAuth provider. Success completes Auth Tab via HTTPS callback.</p>
   <p><a class="button" href="` + successCallback + `">Success</a></p>
+</body>
+</html>
+`
+
+// Mirrors docs/spikes/android-auth/google-trampoline.html, with the provider
+// origin check pointed at the stage mock instead of accounts.google.com.
+const googleTrampolineHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>S1 Google Trampoline</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #1a1b1e; color: #e8e8e8; }
+  </style>
+</head>
+<body>
+  <p>Starting Google sign-in…</p>
+  <script>
+    (async () => {
+      try {
+        const response = await fetch("/api/auth/google/start", {
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          throw new Error("start failed");
+        }
+        const payload = await response.json();
+        if (!payload || !payload.auth_url) {
+          throw new Error("auth_url missing");
+        }
+        if (new URL(payload.auth_url).origin !== "` + authStageOrigin + `") {
+          throw new Error("unexpected provider origin");
+        }
+        window.location.replace(payload.auth_url);
+      } catch (e) {
+        document.body.textContent =
+          "Could not start Google sign-in. Close this tab and retry in the app.";
+      }
+    })();
+  </script>
 </body>
 </html>
 `

@@ -32,10 +32,14 @@ android {
                 "GETLINE_AUTH_ORIGIN",
                 "\"https://app.getline.pro\"",
             )
+            // Dedicated callback host, outside the PWA scope of app.getline.pro.
+            // The portal manifest declares "scope": "/", so a WebAPK installed
+            // from it is a verified handler for that whole domain and steals the
+            // completion redirect. See docs/spikes/android-auth/README.md.
             buildConfigField(
                 "String",
                 "GETLINE_CALLBACK_HOST",
-                "\"app.getline.pro\"",
+                "\"auth.getline.pro\"",
             )
             buildConfigField(
                 "String",

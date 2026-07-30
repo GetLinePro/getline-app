@@ -84,17 +84,16 @@ class GetLineSessionRepository(
      * [rememberedSubscriptionId] before deciding profile reuse.
      *
      * [SubscriptionItem.subscriptionLink] must pass
-     * [GetLineControlPlaneHostPolicy] so e2e never imports a production URL.
+     * [GetLineControlPlaneHostPolicy.requireSubscriptionUrl] so e2e never imports
+     * a production URL. That check is environment-scoped, not the control-plane
+     * allowlist: the link host is RWP's, not ours.
      * Does not restrict manual user-entered import URLs outside this path.
      */
     suspend fun loadPreferredSubscription(): SubscriptionItem {
         val response = getSubscriptionsAuthenticated()
         val preferred = response.selectPreferred()
             ?: throw GetLineAuthException.Protocol("No subscription with import URL")
-        GetLineControlPlaneHostPolicy.requireProductHttpsUrl(
-            preferred.subscriptionLink,
-            "subscription_link",
-        )
+        GetLineControlPlaneHostPolicy.requireSubscriptionUrl(preferred.subscriptionLink)
         return preferred
     }
 

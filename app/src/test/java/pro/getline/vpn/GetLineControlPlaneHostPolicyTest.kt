@@ -127,6 +127,29 @@ class GetLineControlPlaneHostPolicyTest {
     }
 
     @Test
+    fun prod_acceptsDedicatedCallbackHost() {
+        if (isE2e) return
+        assertTrue(
+            GetLineControlPlaneHostPolicy.isAllowedProductHost("auth.getline.pro"),
+        )
+        assertEquals(
+            AppEnvironment.callbackHost,
+            "auth.getline.pro",
+        )
+        // Trampolines stay on the portal host; only completion moves.
+        assertTrue(
+            GetLineControlPlaneHostPolicy.isAllowedBrowserLaunchUrl(
+                AppEnvironment.googleTrampolineUrl,
+            ),
+        )
+        assertTrue(
+            GetLineControlPlaneHostPolicy.isAllowedBrowserLaunchUrl(
+                AppEnvironment.telegramTrampolineUrl,
+            ),
+        )
+    }
+
+    @Test
     fun prod_rejectsStageAndBotHosts() {
         if (isE2e) return
         assertFalse(
@@ -159,9 +182,8 @@ class GetLineControlPlaneHostPolicyTest {
     fun subscriptionUrl_policyRejectsWrongEnvironment() {
         if (isE2e) {
             try {
-                GetLineControlPlaneHostPolicy.requireProductHttpsUrl(
+                GetLineControlPlaneHostPolicy.requireSubscriptionUrl(
                     "https://app.getline.pro/sub/real",
-                    "subscription_link",
                 )
                 fail("e2e must reject production subscription URL")
             } catch (_: GetLineAuthException.Protocol) {
@@ -169,14 +191,66 @@ class GetLineControlPlaneHostPolicyTest {
             }
         } else {
             try {
-                GetLineControlPlaneHostPolicy.requireProductHttpsUrl(
+                GetLineControlPlaneHostPolicy.requireSubscriptionUrl(
                     "https://app.stage.getline.pro/sub/e2e",
-                    "subscription_link",
                 )
                 fail("prod must reject stage subscription URL")
             } catch (_: GetLineAuthException.Protocol) {
                 // expected
             }
+        }
+    }
+
+    /**
+     * The import link host is RWP's, not one of our two control-plane hosts —
+     * pinning it to [GetLineControlPlaneHostPolicy.prodAllowedHosts] broke every
+     * production import.
+     */
+    @Test
+    fun prod_acceptsSubscriptionHostOutsideControlPlaneAllowlist() {
+        if (isE2e) return
+        assertFalse(
+            GetLineControlPlaneHostPolicy.isAllowedProductHost("sub.getline.pro"),
+        )
+        assertTrue(
+            GetLineControlPlaneHostPolicy.isAllowedSubscriptionHost("sub.getline.pro"),
+        )
+        assertTrue(
+            GetLineControlPlaneHostPolicy.isAllowedSubscriptionHost("bot.getline.pro"),
+        )
+        assertTrue(
+            GetLineControlPlaneHostPolicy.isAllowedSubscriptionHost("getline.pro"),
+        )
+    }
+
+    @Test
+    fun subscriptionHost_rejectsForeignAndStageForms() {
+        assertFalse(GetLineControlPlaneHostPolicy.isAllowedSubscriptionHost(null))
+        assertFalse(GetLineControlPlaneHostPolicy.isAllowedSubscriptionHost("evil.com"))
+        assertFalse(
+            GetLineControlPlaneHostPolicy.isAllowedSubscriptionHost(
+                "getline.pro.evil.com",
+            ),
+        )
+        if (!isE2e) {
+            // Trailing-dot FQDN must not slip past the stage exclusion.
+            assertFalse(
+                GetLineControlPlaneHostPolicy.isAllowedSubscriptionHost(
+                    "sub.stage.getline.pro.",
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun subscriptionUrl_requiresHttps() {
+        try {
+            GetLineControlPlaneHostPolicy.requireSubscriptionUrl(
+                "http://sub.getline.pro/sub/x",
+            )
+            fail("plain http subscription URL must be rejected")
+        } catch (_: GetLineAuthException.Protocol) {
+            // expected
         }
     }
 
@@ -205,7 +279,9 @@ class GetLineControlPlaneHostPolicyTest {
         } else {
             assertEquals("https://app.getline.pro", AppEnvironment.apiOrigin)
             assertEquals("https://app.getline.pro", AppEnvironment.authOrigin)
-            assertEquals("app.getline.pro", AppEnvironment.callbackHost)
+            // Callback host is deliberately not the portal host: the portal
+            // manifest scope "/" lets a WebAPK claim that whole domain.
+            assertEquals("auth.getline.pro", AppEnvironment.callbackHost)
             assertEquals("https://app.getline.pro", AppEnvironment.portalOrigin)
         }
         assertTrue(

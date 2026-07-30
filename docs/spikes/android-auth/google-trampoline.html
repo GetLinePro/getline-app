@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GetLine Sign-in</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem;
+      color: #e8e8e8;
+      background: #1a1b1e;
+    }
+  </style>
+</head>
+<body>
+  <p>Starting Google sign-in…</p>
+  <script>
+    // Same-origin trampoline only. No credentials are stored here.
+    // Its purpose is to make the browser visit this origin before Google, so the
+    // edge can set the native marker cookie that scopes the callback rewrite.
+    //
+    // Deploy at a path that is NOT "/" so Auth Tab completion does not match the
+    // initial load. Example: /android-auth/google
+    (async () => {
+      try {
+        const response = await fetch("/api/auth/google/start", {
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          throw new Error("start failed");
+        }
+        const payload = await response.json();
+        if (!payload || !payload.auth_url) {
+          throw new Error("auth_url missing");
+        }
+        // The app process no longer validates auth_url, so validate here: a
+        // compromised or misconfigured start response must not be able to send
+        // the Auth Tab to an arbitrary origin.
+        if (new URL(payload.auth_url).origin !== "https://accounts.google.com") {
+          throw new Error("unexpected provider origin");
+        }
+        window.location.replace(payload.auth_url);
+      } catch (e) {
+        document.body.textContent =
+          "Could not start Google sign-in. Close this tab and retry in the app.";
+      }
+    })();
+  </script>
+</body>
+</html>

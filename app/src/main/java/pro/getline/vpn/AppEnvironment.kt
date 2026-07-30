@@ -23,9 +23,19 @@ object AppEnvironment {
     val portalOrigin: String
         get() = BuildConfig.GETLINE_PORTAL_ORIGIN
 
-    /** Same-origin Telegram trampoline on the portal host. */
+    /**
+     * Same-origin provider trampolines on the portal host.
+     *
+     * Both exist so the browser visits the portal origin *before* the provider:
+     * Telegram needs its PKCE cookies in the Auth Tab jar, and Google needs the
+     * edge to set the marker cookie that scopes the callback-host rewrite to app
+     * logins. Neither may live on `/` — that is the completion path.
+     */
     val telegramTrampolineUrl: String
         get() = portalOrigin.trimEnd('/') + "/android-auth/telegram"
+
+    val googleTrampolineUrl: String
+        get() = portalOrigin.trimEnd('/') + "/android-auth/google"
 
     /** `return_to` for Telegram OIDC start (portal root). */
     val telegramReturnTo: String
