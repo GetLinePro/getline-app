@@ -1,0 +1,131 @@
+From: GetLine maintainers
+Subject: [PATCH] discard logrus output under cmfa (GL-04)
+
+Parent-tracked patch for the clash-foss (Mihomo) submodule.
+Applied after `git submodule update` by scripts/apply-mihomo-patches.sh
+(and core Gradle Golang build). Do not rely on a dirty submodule working tree.
+
+Upstream gitlink remains MetaCubeX/mihomo @ recorded SHA; this product
+change is intentionally not pushed to upstream.
+
+GL-04: product (CMFA/Android) builds must not emit raw Mihomo logrus
+lines to stdout (which Android surfaces in system logcat). Covers print(),
+Fatalln() (log.Fatalf bypasses print), and future direct logrus calls.
+
+Event bus (logCh / Subscribe) is unchanged so the in-app journal still
+follows log.Level().
+
+Selects logrus writer via productLogOutput() in log.go init, implemented
+by build-tag files (cmfa → io.Discard, !cmfa → os.Stdout). No reliance on
+secondary init() ordering.
+
+Applies with: git -C core/src/foss/golang/clash apply -p1 < this file
+(or via scripts/apply-mihomo-patches.sh)
+
+---
+diff --git a/log/log.go b/log/log.go
+index f1c68b42..dd57a982 100644
+--- a/log/log.go
++++ b/log/log.go
+@@ -2,7 +2,6 @@ package log
+ 
+ import (
+ 	"fmt"
+-	"os"
+ 
+ 	"github.com/metacubex/mihomo/common/observable"
+ 
+@@ -16,7 +15,8 @@ var (
+ )
+ 
+ func init() {
+-	log.SetOutput(os.Stdout)
++	// productLogOutput is build-tag selected (cmfa → io.Discard, else os.Stdout).
++	log.SetOutput(productLogOutput())
+ 	log.SetLevel(log.DebugLevel)
+ 	log.SetFormatter(&log.TextFormatter{
+ 		FullTimestamp:             true,
+diff --git a/log/output_cmfa.go b/log/output_cmfa.go
+new file mode 100644
+index 00000000..42114d20
+--- /dev/null
++++ b/log/output_cmfa.go
+@@ -0,0 +1,12 @@
++//go:build cmfa
++
++package log
++
++import "io"
++
++// Product (CMFA/Android): suppress all logrus sinks (print, Fatalln, future
++// direct calls). Event bus (logCh / Subscribe) is unchanged so the in-app
++// journal can still follow log.Level().
++func productLogOutput() io.Writer {
++	return io.Discard
++}
+diff --git a/log/output_cmfa_test.go b/log/output_cmfa_test.go
+new file mode 100644
+index 00000000..0d58e0b8
+--- /dev/null
++++ b/log/output_cmfa_test.go
+@@ -0,0 +1,42 @@
++//go:build cmfa
++
++package log
++
++import (
++	"io"
++	"testing"
++	"time"
++
++	log "github.com/sirupsen/logrus"
++)
++
++func TestLogrusOutputDiscardedUnderCMFA(t *testing.T) {
++	if log.StandardLogger().Out != io.Discard {
++		t.Fatalf("cmfa product build: logrus Out want io.Discard, got %T %#v",
++			log.StandardLogger().Out, log.StandardLogger().Out)
++	}
++}
++
++func TestEventBusStillDeliversUnderCMFA(t *testing.T) {
++	sub := Subscribe()
++	defer UnSubscribe(sub)
++
++	done := make(chan Event, 1)
++	go func() {
++		for msg := range sub {
++			done <- msg
++			return
++		}
++	}()
++
++	Infoln("gl04-event-bus-probe")
++
++	select {
++	case msg := <-done:
++		if msg.Payload != "gl04-event-bus-probe" {
++			t.Fatalf("payload = %q, want gl04-event-bus-probe", msg.Payload)
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("event bus did not deliver under cmfa")
++	}
++}
+diff --git a/log/output_default.go b/log/output_default.go
+new file mode 100644
+index 00000000..9fa12338
+--- /dev/null
++++ b/log/output_default.go
+@@ -0,0 +1,12 @@
++//go:build !cmfa
++
++package log
++
++import (
++	"io"
++	"os"
++)
++
++func productLogOutput() io.Writer {
++	return os.Stdout
++}

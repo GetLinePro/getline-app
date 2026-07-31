@@ -63,9 +63,22 @@ jobs:
       # job log, and pull requests from this repository do receive secrets.
       # Signed artifacts come only from build-release.yaml.
 
+      # Cheap before expensive: unit tests need no native core, so a logic
+      # regression fails here in about a minute instead of after the ABI builds.
+      - name: Unit tests
+        if: success()
+        run: ./gradlew --no-daemon app:testAlphaProdReleaseUnitTest
+
       - name: Build
         if: success()
-        run: ./gradlew --no-daemon app:assembleAlphaProdRelease
+        env:
+          # Pull requests build the primary ABI only: every extra ABI is a full
+          # native core compile, and CI runs no emulator, so x86/x86_64 verify
+          # nothing a PR consumes. Running this workflow manually builds the
+          # whole matrix — that is the escalation path for ABI-sensitive changes
+          # (submodule bumps, cgo, build tags). docs/release-policy.md.
+          ABI_ARGS: ${{ github.event_name == 'pull_request' && '-Pgetline.abis=arm64-v8a' || '' }}
+        run: ./gradlew --no-daemon $ABI_ARGS app:assembleAlphaProdRelease
           
       - name: Upload unsigned universal APK
         uses: actions/upload-artifact@v7

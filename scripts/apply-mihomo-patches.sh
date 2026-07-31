@@ -65,14 +65,26 @@ REDIRECT_NEW_FILES=(
   "component/http/http_redirect_test.go"
 )
 
+# Paths from 0003-discard-logrus-output-under-cmfa.patch
+LOGRUS_CMFA_TRACKED=(
+  "log/log.go"
+)
+LOGRUS_CMFA_NEW_FILES=(
+  "log/output_cmfa.go"
+  "log/output_default.go"
+  "log/output_cmfa_test.go"
+)
+
 # Full product patch footprint (exact-tree verify + leftover recovery).
 PRODUCT_TRACKED=(
   "${SSH_GATE_TRACKED[@]}"
   "${REDIRECT_TRACKED[@]}"
+  "${LOGRUS_CMFA_TRACKED[@]}"
 )
 PRODUCT_NEW_FILES=(
   "${SSH_GATE_NEW_FILES[@]}"
   "${REDIRECT_NEW_FILES[@]}"
+  "${LOGRUS_CMFA_NEW_FILES[@]}"
 )
 
 fail_apply() {
@@ -298,6 +310,16 @@ apply_one() {
 
   if [[ "$name" == *restrict-subscription-redirects* ]]; then
     if try_recover_patch_new_files "$patch" "${REDIRECT_NEW_FILES[@]}"; then
+      if git -C "$CLASH" apply --check "$patch" >/dev/null 2>&1; then
+        git -C "$CLASH" apply "$patch"
+        echo "applied: $name"
+        return 0
+      fi
+    fi
+  fi
+
+  if [[ "$name" == *discard-logrus-output-under-cmfa* ]]; then
+    if try_recover_patch_new_files "$patch" "${LOGRUS_CMFA_NEW_FILES[@]}"; then
       if git -C "$CLASH" apply --check "$patch" >/dev/null 2>&1; then
         git -C "$CLASH" apply "$patch"
         echo "applied: $name"

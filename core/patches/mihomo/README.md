@@ -7,6 +7,7 @@ git submodule (`MetaCubeX/mihomo`).
 | --- | --- |
 | `0001-disable-ssh-outbound-no_ssh.patch` | Security gate: build tag `no_ssh` + stub; unlink product SSH outbound |
 | `0002-restrict-subscription-redirects.patch` | Subscription/HTTP fetch: same-host redirects only; reject HTTPS→HTTP; trailing-dot host canonicalize + tests |
+| `0003-discard-logrus-output-under-cmfa.patch` | GL-04: under `cmfa`, logrus `Out` → `io.Discard` via `productLogOutput()` build tags; event bus kept for in-app log |
 
 ## Why not a submodule commit?
 
@@ -87,12 +88,12 @@ git submodule update --remote --force
 from the patches (tracked mods + untracked new files). That is the product
 working tree, not an accidental fork commit.
 
-Expected footprint after both patches:
+Expected footprint after all product patches:
 
 | Kind | Paths |
 | --- | --- |
-| dirty tracked | `adapter/outbound/ssh.go`, `constant/features/tags.go`, `component/http/http.go` |
-| untracked | `adapter/outbound/ssh_stub.go`, `ssh_stub_test.go`, `constant/features/no_ssh.go`, `no_ssh_stub.go`, `component/http/http_redirect_test.go` |
+| dirty tracked | `adapter/outbound/ssh.go`, `constant/features/tags.go`, `component/http/http.go`, `log/log.go` |
+| untracked | `adapter/outbound/ssh_stub.go`, `ssh_stub_test.go`, `constant/features/no_ssh.go`, `no_ssh_stub.go`, `component/http/http_redirect_test.go`, `log/output_cmfa.go`, `log/output_default.go`, `log/output_cmfa_test.go` |
 
 Do **not** commit those paths inside the Mihomo submodule. Refresh
 `core/patches/mihomo/*.patch` in the parent repo instead.

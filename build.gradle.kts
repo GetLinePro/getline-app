@@ -19,6 +19,26 @@ buildscript {
     }
 }
 
+// ABI matrix of the published APK. Every ABI costs a separate native build of
+// the mihomo core (~2 min each in CI), so a build that does not need the whole
+// matrix can narrow it with -Pgetline.abis=arm64-v8a.
+//
+// Only PR checks pass the property. Release and pre-release builds must not:
+// the published APK has to carry every supported ABI. See docs/release-policy.md.
+val allSupportedAbis = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+val supportedAbis: List<String> = (findProperty("getline.abis") as String?)
+    ?.split(',')
+    ?.map(String::trim)
+    ?.filter(String::isNotEmpty)
+    ?.also { requested ->
+        // A typo would otherwise produce an APK with no native core at all.
+        val unknown = requested - allSupportedAbis.toSet()
+        require(unknown.isEmpty()) {
+            "Unknown ABI in -Pgetline.abis: $unknown. Supported: $allSupportedAbis"
+        }
+    }
+    ?: allSupportedAbis
+
 subprojects {
     repositories {
         mavenCentral()
@@ -62,12 +82,12 @@ subprojects {
             resValue("integer", "release_code", "$versionCode")
 
             ndk {
-                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+                abiFilters += supportedAbis
             }
 
             externalNativeBuild {
                 cmake {
-                    abiFilters("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+                    abiFilters(*supportedAbis.toTypedArray())
                 }
             }
 
@@ -194,7 +214,7 @@ subprojects {
                     isEnable = !isBundleInvocation
                     isUniversalApk = true
                     reset()
-                    include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+                    include(*supportedAbis.toTypedArray())
                 }
             }
         }

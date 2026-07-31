@@ -98,6 +98,33 @@ a dedicated release PR and per-PR labels become inputs to it.
 **Documented exception:** PR #9 (`0.1.3`, code `1003`) carried a hand-edited
 version, merged before these gates existed.
 
+## ABI matrix
+
+The published APK carries `arm64-v8a`, `armeabi-v7a`, `x86` and `x86_64`. Each
+one is a separate native build of the mihomo core, together about eight of the
+seventeen minutes of a build, so they are not all built on every check.
+
+- **Pull request:** primary ABI (`arm64-v8a`) plus unit tests. CI runs no
+  emulator and holds no instrumented tests, so `x86`/`x86_64` verify nothing a
+  pull request consumes — only that the core still compiles for them.
+- **ABI-sensitive change** — mihomo submodule bump, cgo, build tags, NDK or
+  CMake configuration, anything under `core/src/main/golang`: full matrix. This
+  is escalated by the author, by running `build-alpha-unsigned.yaml` manually
+  (`workflow_dispatch` builds all four). Deliberately a human decision: a
+  path-based rule cannot tell an architecture-independent edit to Go code from
+  one that changes the compiled result, and would escalate on every Go commit.
+- **Release:** full matrix, always. `build-release.yaml` never passes
+  `-Pgetline.abis`, so it builds the default list.
+
+Narrowing is available to any build through `-Pgetline.abis=arm64-v8a`
+(`build.gradle.kts`). An unknown value fails configuration rather than quietly
+producing an APK without a native core.
+
+Consequence, accepted deliberately: an `x86`-only compile failure surfaces in
+the manual release run rather than on the pull request. `build-release.yaml` and
+`build-pre-release.yaml` are `workflow_dispatch`, so the full-matrix gate is a
+button someone presses before publishing, not an automatic barrier on `main`.
+
 Versions do not have to be published contiguously. `0.1.3` exists only as a local
 build; the first artifact of this pipeline is `0.1.4` (code 2001). That is not a
 claim that a CI change earned a patch bump — it is the first properly signed
