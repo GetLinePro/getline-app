@@ -3,7 +3,7 @@
     <string name="url">URL</string>
     <string name="profile_url">URL профиля</string>
     <string name="accept_http_content">Принимать только http(s)</string>
-    <string name="get_line_onboarding_value_prop">Простой и безопасный доступ с вашей подпиской GetLine</string>
+    <string name="get_line_onboarding_value_prop">Простой и безопасный доступ с вашей подпиской GetLine Pro</string>
     <string name="get_line_login">Войти через Telegram</string>
     <string name="get_line_login_google">Войти через Google</string>
     <string name="get_line_login_email">Войти через Email</string>
@@ -14,7 +14,7 @@
     <string name="get_line_otp_hint">Код подтверждения</string>
     <string name="get_line_otp_verify">Подтвердить</string>
     <string name="get_line_email_back">Назад</string>
-    <string name="get_line_subscription_profile_name">GetLine</string>
+    <string name="get_line_subscription_profile_name">GetLine Pro</string>
     <string name="get_line_add_existing_subscription">У меня есть ссылка</string>
     <string name="get_line_open_advanced">Расширенный интерфейс</string>
     <string name="get_line_import_not_completed">Импорт подписки не был завершён</string>
@@ -30,6 +30,7 @@
     <string name="get_line_shell_subscription">Подписка</string>
     <string name="get_line_shell_location_label">Локация</string>
     <string name="get_line_shell_location_unknown">Не выбрана</string>
+    <string name="get_line_home_location_action">Локация: %1$s. Сменить сервер</string>
     <string name="get_line_shell_servers_title">Серверы</string>
     <string name="get_line_shell_servers_explanation">Выберите локацию для VPN. Переключение вкладок не отключает соединение.</string>
     <string name="get_line_shell_select_server">Выбрать сервер</string>
@@ -86,7 +87,7 @@
     <string name="get_line_subscription_empty_title">Подписка не найдена</string>
     <string name="get_line_subscription_empty_explanation">Обновите данные или обратитесь в поддержку.</string>
     <string name="get_line_subscription_signed_out_title">Управление подпиской недоступно</string>
-    <string name="get_line_subscription_signed_out_explanation">Войдите в GetLine, чтобы просматривать данные подписки и управлять ей.</string>
+    <string name="get_line_subscription_signed_out_explanation">Войдите в GetLine Pro, чтобы просматривать данные подписки и управлять ей.</string>
     <string name="get_line_subscription_transient_error">Не удалось обновить. Показаны последние данные.</string>
     <string name="get_line_account_portal_title">Личный кабинет</string>
     <string name="get_line_account_portal_explanation">Тарифы, оплата и управление устройствами</string>
@@ -98,7 +99,7 @@
     <string name="get_line_action_help">Помощь</string>
     <string name="get_line_action_logout">Выйти из аккаунта</string>
     <string name="get_line_logout_confirm_title">Выйти из аккаунта?</string>
-    <string name="get_line_logout_confirm_message">VPN будет отключён, а конфигурация GetLine удалена с устройства.</string>
+    <string name="get_line_logout_confirm_message">VPN будет отключён, а конфигурация GetLine Pro удалена с устройства.</string>
     <string name="get_line_fetch_activating_trial">Активируем пробный период</string>
     <string name="get_line_fetch_loading_config">Получаем конфигурацию</string>
     <string name="get_line_fetch_checking">Проверяем настройки</string>
@@ -115,7 +116,7 @@
     <string name="get_line_state_backend_unavailable_title">VPN-сервис временно недоступен</string>
     <string name="get_line_state_backend_unavailable_explanation">Не удалось загрузить данные профиля. Проверьте подключение и повторите попытку.</string>
     <string name="get_line_state_no_profile_title">Профиль VPN ещё не добавлен</string>
-    <string name="get_line_state_no_profile_explanation">Войдите в GetLine или добавьте ссылку на подписку, чтобы продолжить.</string>
+    <string name="get_line_state_no_profile_explanation">Войдите в GetLine Pro или добавьте ссылку на подписку, чтобы продолжить.</string>
     <string name="get_line_state_connection_repair_failed_title">Не удалось подготовить VPN</string>
     <string name="get_line_state_connection_repair_failed_explanation">Не удалось восстановить конфигурацию VPN. Повторите попытку или войдите снова, если проблема останется.</string>
     <string name="get_line_state_connection_restore_failed_title">Не удалось восстановить подключение</string>
@@ -125,7 +126,7 @@
     <string name="get_line_state_auth_failed_title">Не удалось войти</string>
     <string name="get_line_state_auth_failed_explanation">Вход не завершён. Повторите попытку или добавьте ссылку на подписку.</string>
     <string name="get_line_state_auth_email_entry_title">Вход по email</string>
-    <string name="get_line_state_auth_email_entry_explanation">Введите email аккаунта GetLine. Мы отправим одноразовый код для входа.</string>
+    <string name="get_line_state_auth_email_entry_explanation">Введите email аккаунта GetLine Pro. Мы отправим одноразовый код для входа.</string>
     <string name="get_line_state_auth_email_otp_sent_title">Введите код из письма</string>
     <string name="get_line_state_auth_email_otp_sent_explanation">Мы отправили код подтверждения. Введите его ниже и нажмите «Подтвердить», чтобы завершить вход.</string>
     <string name="get_line_state_auth_invalid_otp_title">Неверный код</string>
@@ -135,14 +136,14 @@
     <string name="get_line_state_auth_email_domain_title">Домен email не разрешён</string>
     <string name="get_line_state_auth_email_domain_explanation">Используйте разрешённый рабочий или личный домен и попробуйте снова.</string>
     <string name="get_line_state_auth_no_account_title">Нет аккаунта для этого email</string>
-    <string name="get_line_state_auth_no_account_explanation">Этот email не зарегистрирован для входа в GetLine. Войдите через Telegram или Google, если аккаунт уже есть, либо обратитесь в поддержку.</string>
+    <string name="get_line_state_auth_no_account_explanation">Этот email не зарегистрирован для входа в GetLine Pro. Войдите через Telegram или Google, если аккаунт уже есть, либо обратитесь в поддержку.</string>
     <string name="get_line_state_auth_rate_limited_title">Подождите</string>
     <string name="get_line_state_auth_rate_limited_explanation">Слишком много попыток. Подождите около минуты перед повторной отправкой кода.</string>
     <string name="get_line_state_expired_title">Подписка истекла</string>
-    <string name="get_line_state_expired_explanation">Продлите подписку в кабинете GetLine и повторите подключение.</string>
+    <string name="get_line_state_expired_explanation">Продлите подписку в кабинете GetLine Pro и повторите подключение.</string>
     <string name="get_line_action_retry">Повторить</string>
     <string name="get_line_action_choose_profile">Выбрать профиль</string>
-    <string name="get_line_action_open_account">Открыть кабинет GetLine</string>
+    <string name="get_line_action_open_account">Открыть кабинет GetLine Pro</string>
     <string name="get_line_vpn_stopped">VPN остановлен. Повторите подключение.</string>
     <string name="get_line_vpn_start_timeout">VPN не запустился. Повторите попытку.</string>
 </resources>

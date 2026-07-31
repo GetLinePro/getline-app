@@ -196,6 +196,12 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     private var lastServerGroups: List<ServerGroupRow> = emptyList()
     private var lastServersSelectable: Boolean = false
 
+    /**
+     * Servers was opened from the Home location card, not from the shell bar.
+     * Only then does a confirmed pick send the user back to Home.
+     */
+    private var serversOpenedFromHome = false
+
     val selectedTab: Tab
         get() = currentTab
 
@@ -269,9 +275,27 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         )
     }
 
-    /** Home location row — switch to Servers without touching VPN. */
+    /** Home location card — switch to Servers without touching VPN. */
     fun openServers() {
         onTabClicked(Tab.Servers)
+        // applyTab() clears the origin, so record it after the switch happened.
+        serversOpenedFromHome = currentTab == Tab.Servers
+    }
+
+    /**
+     * A pick the core confirmed. Goes back to Home only for a user who arrived
+     * from the Home location card — picking a country was the whole errand, and
+     * before this they were left standing on the list (issue #44). Someone who
+     * opened Servers from the shell bar is browsing, and must not have the
+     * screen pulled out from under them.
+     *
+     * Emits [Request.SelectHome] so the host persists the tab, exactly as if
+     * Home had been tapped in the shell bar. Main thread only, like [setTab].
+     */
+    fun returnToHomeAfterServerSelection() {
+        if (!serversOpenedFromHome || currentTab != Tab.Servers) return
+        applyTab(Tab.Home)
+        request(Request.SelectHome)
     }
 
     suspend fun setVpnStatus(status: VpnStatus) {
@@ -406,6 +430,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
 
     private fun applyTab(tab: Tab) {
         currentTab = tab
+        // Any other way into Servers (shell bar, restored tab) is not the card.
+        serversOpenedFromHome = false
         binding.homeVisible = tab == Tab.Home
         binding.serversVisible = tab == Tab.Servers
         binding.subscriptionVisible = tab == Tab.Subscription
@@ -612,9 +638,14 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             )
             if (selectable) {
                 selectArea.setOnClickListener {
-                    // Tapping the active country is a no-op: primaryName is already it.
+                    // Tapping the active country selects nothing: primaryName is
+                    // already it. It is still an answer to "which one?", so a
+                    // user who came from Home goes back rather than seeing the
+                    // tap do nothing at all.
                     if (group.primaryName != currentSelectedServerName) {
                         requestSelectServer(group.primaryName)
+                    } else {
+                        returnToHomeAfterServerSelection()
                     }
                 }
             } else {
@@ -710,6 +741,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             row.setOnClickListener {
                 if (!variant.selected) {
                     requestSelectServer(variant.name)
+                } else {
+                    returnToHomeAfterServerSelection()
                 }
             }
         } else {

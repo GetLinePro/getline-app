@@ -181,7 +181,7 @@
     <string name="google_play">Google Play</string>
     <string name="clash_meta_core">Mihomo 코어 (업스트림)</string>
     <string name="tips_properties"><![CDATA[<strong>Clash 구성 파일</strong>(<strong>프록시</strong>/<strong>규칙</strong> 포함)만 추가할 수 있습니다.]]></string>
-    <string name="tips_help"><![CDATA[GetLine VPN 도움말 및 문서입니다. 구독 및 계정 문제는 지원 채널 또는 GetLine 계정을 이용하세요.]]></string>
+    <string name="tips_help"><![CDATA[GetLine Pro 도움말 및 문서입니다. 구독 및 계정 문제는 지원 채널 또는 GetLine 계정을 이용하세요.]]></string>
     <string name="app">앱</string>
     <string name="service">서비스</string>
     <string name="show_traffic">트래픽 차트</string>

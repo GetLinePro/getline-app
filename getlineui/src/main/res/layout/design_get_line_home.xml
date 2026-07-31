@@ -104,10 +104,26 @@
                 android:paddingTop="@{self.surface.insets.top + (int) @dimen/get_line_home_section_gap}"
                 android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_shell_content_bottom}">
 
+                <!--
+                  Decorative: the wordmark says which app this is to someone
+                  looking at the screen, and TalkBack already gets that from the
+                  activity label. Announcing it again on every visit to Home
+                  would be noise ahead of the state view.
+                -->
+                <ImageView
+                    android:id="@+id/home_brand"
+                    android:layout_width="wrap_content"
+                    android:layout_height="@dimen/get_line_home_wordmark_height"
+                    android:adjustViewBounds="true"
+                    android:contentDescription="@null"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_getline_wordmark" />
+
                 <pro.getline.vpn.getlineui.view.GetLineStateView
                     android:id="@+id/state_view"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_section_gap"
                     tools:visibility="visible" />
 
                 <!--
@@ -122,9 +138,12 @@
 
                 <!--
                   Connect ring: the whole thing is the VPN toggle, replacing the
-                  logo, the status line and the primary button. The logo stays on
-                  splash and onboarding, where it identifies the app; here it only
-                  occupied the best part of the screen without saying anything.
+                  status line and the primary button.
+
+                  The brand used to live here as a large mark and was dropped for
+                  eating the best part of the screen. It is back as the wordmark
+                  above, in header size — the screen was unbranded, which the
+                  service owner raised in issue #44. The centre stays the ring.
                 -->
                 <FrameLayout
                     android:id="@+id/connect_ring"
@@ -191,40 +210,80 @@
                     </LinearLayout>
                 </FrameLayout>
 
-                <!-- Entire location row opens Servers (does not touch VPN). -->
-                <LinearLayout
+                <!--
+                  Entire card opens Servers (does not touch VPN). A card with a
+                  trailing chevron, not centred text: as a bare label nobody read
+                  the current location as something you could tap (issue #44).
+                -->
+                <com.google.android.material.card.MaterialCardView
                     android:id="@+id/home_location"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/get_line_home_card_margin_top"
-                    android:background="?attr/selectableItemBackground"
                     android:clickable="true"
-                    android:contentDescription="@string/get_line_shell_servers"
+                    android:contentDescription="@{@string/get_line_home_location_action(locationText)}"
                     android:focusable="true"
-                    android:gravity="center_horizontal"
                     android:onClick="@{() -> self.openServers()}"
-                    android:orientation="vertical"
-                    android:paddingVertical="8dp"
-                    android:visibility="@{locationVisible ? View.VISIBLE : View.GONE}">
+                    android:visibility="@{locationVisible ? View.VISIBLE : View.GONE}"
+                    app:cardBackgroundColor="@color/getline_brand_surface"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="0dp"
+                    app:rippleColor="@color/getline_brand_primary"
+                    app:strokeColor="@color/getline_hairline"
+                    app:strokeWidth="1dp">
 
-                    <TextView
-                        style="@style/Widget.GetLine.Text.Caption"
+                    <!--
+                      The card is the single focus stop, so its own description
+                      carries the whole row; the labels inside must not be read
+                      again as loose text.
+                    -->
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:gravity="center"
-                        android:text="@string/get_line_shell_location_label"
-                        android:textColor="@color/getline_text_secondary" />
+                        android:baselineAligned="false"
+                        android:gravity="center_vertical"
+                        android:importantForAccessibility="noHideDescendants"
+                        android:minHeight="64dp"
+                        android:orientation="horizontal"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="8dp"
+                        android:paddingVertical="10dp">
 
-                    <TextView
-                        style="@style/Widget.GetLine.Text.Location"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:gravity="center"
-                        android:text="@{locationText}"
-                        android:textColor="@color/getline_text_primary"
-                        tools:text="Amsterdam" />
-                </LinearLayout>
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/Widget.GetLine.Text.Caption"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/get_line_shell_location_label"
+                                android:textColor="@color/getline_text_secondary" />
+
+                            <TextView
+                                style="@style/Widget.GetLine.Text.Location"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:text="@{locationText}"
+                                android:textColor="@color/getline_text_primary"
+                                tools:text="Amsterdam" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginStart="8dp"
+                            android:contentDescription="@null"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_getline_chevron_right"
+                            app:tint="@color/getline_text_secondary" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
                 <Space
                     android:layout_width="match_parent"

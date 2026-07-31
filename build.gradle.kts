@@ -126,8 +126,8 @@ subprojects {
 
                 // Use literal generated values: androidTest resource linking does not
                 // include the :design resource that previously supplied these aliases.
-                resValue("string", "launch_name", "GetLine VPN Alpha")
-                resValue("string", "application_name", "GetLine VPN Alpha")
+                resValue("string", "launch_name", "GetLine Pro Alpha")
+                resValue("string", "application_name", "GetLine Pro Alpha")
 
                 if (isApp) {
                     applicationIdSuffix = ".alpha"
@@ -140,8 +140,8 @@ subprojects {
                 buildConfigField("boolean", "PREMIUM", "Boolean.parseBoolean(\"false\")")
 
                 // Production channel: clean product name, no .Meta suffix.
-                resValue("string", "launch_name", "GetLine VPN")
-                resValue("string", "application_name", "GetLine VPN")
+                resValue("string", "launch_name", "GetLine Pro")
+                resValue("string", "application_name", "GetLine Pro")
             }
         }
 

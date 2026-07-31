@@ -222,7 +222,7 @@
     <string name="clash_meta_core_url" translatable="false">https://github.com/MetaCubeX/mihomo</string>
 
     <string name="tips_properties"><![CDATA[Принимается только <strong>конфиг Clash</strong> (включая <strong>Прокси</strong>/<strong>Правила</strong>)]]></string>
-    <string name="tips_help"><![CDATA[Справка и документация GetLine VPN. По вопросам подписки и аккаунта откройте Поддержку или кабинет GetLine.]]></string>
+    <string name="tips_help"><![CDATA[Справка и документация GetLine Pro. По вопросам подписки и аккаунта откройте Поддержку или кабинет GetLine.]]></string>
 
     <string name="google_play_url" translatable="false">https://play.google.com/store/apps/details?id=pro.getline.vpn</string>
 

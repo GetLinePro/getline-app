@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="clash_service_status_channel">GetLine VPN 狀態</string>
+    <string name="clash_service_status_channel">GetLine Pro 狀態</string>
     <string name="running">正在運作</string>
     <string name="format_update_complete">更新 %s 成功</string>
     <string name="format_update_failure">"更新 %1$s: %2$s "</string>

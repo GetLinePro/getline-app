@@ -713,6 +713,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         launch { setLocation(name) }
 
         launch {
+            // Set only by the pass that settled the newest tap. Read outside the
+            // lock, so it cannot be recomputed there: a tap landing during the
+            // suspending paint below would flip the answer after the fact.
+            var settledLatest = false
             val ok = serversIoMutex.withLock {
                 val current = serverState.state as? VpnServerUiState.Ready
                     ?: return@withLock false
@@ -726,6 +730,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     // Align Ready only if no newer tap is pending.
                     if (userSelectIntent == null) {
                         serverState.applySelected(target)
+                        settledLatest = true
                     }
                 }
                 success
@@ -738,6 +743,14 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             } else {
                 paintServersState()
                 applyServerLocationFromState()
+                // Only after the core acknowledged the patch, and only when this
+                // was the last pick: a tap that lands mid-request leaves a newer
+                // one in flight, and leaving early would hide its failure on a
+                // screen the user can no longer see. The failure branch above
+                // stays on Servers for the same reason.
+                if (settledLatest) {
+                    returnToHomeAfterServerSelection()
+                }
             }
         }
     }

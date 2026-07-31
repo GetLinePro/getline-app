@@ -97,7 +97,7 @@
     <string name="github_issues">Github Issues</string>
     <string name="tips_properties"><![CDATA[仅接受 <strong>Clash 配置文件</strong>(包含<strong>代理</strong>/<strong>规则</strong>)]]></string>
     <string name="loading">载入中</string>
-    <string name="tips_help"><![CDATA[GetLine VPN 帮助与文档。订阅和账户问题请使用支持渠道或打开 GetLine 账户。]]></string>
+    <string name="tips_help"><![CDATA[GetLine Pro 帮助与文档。订阅和账户问题请使用支持渠道或打开 GetLine 账户。]]></string>
     <string name="donate">捐赠</string>
     <string name="allow_all_apps">允许所有应用</string>
     <string name="allow_selected_apps">仅允许已选择的应用</string>

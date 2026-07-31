@@ -1,9 +1,4 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="PluralsCandidate">
-    <string name="launch_name_meta" translatable="false">GetLine VPN</string>
-    <string name="launch_name_alpha" translatable="false">GetLine VPN Alpha</string>
-    <string name="application_name_meta" translatable="false">GetLine VPN</string>
-    <string name="application_name_alpha" translatable="false">GetLine VPN Alpha</string>
-
     <string name="stopped">Stopped</string>
     <string name="tap_to_start">Tap to start</string>
     <string name="running">Running</string>
@@ -245,7 +240,7 @@
     <string name="getline_account_url" translatable="false">https://app.getline.pro/</string>
 
     <string name="tips_properties"><![CDATA[Accept Only <strong>Clash Config</strong>(including <strong>Proxy</strong>/<strong>Rules</strong>)]]></string>
-    <string name="tips_help"><![CDATA[GetLine VPN help and documentation. For subscription and account issues use Support or open your GetLine account.]]></string>
+    <string name="tips_help"><![CDATA[GetLine Pro help and documentation. For subscription and account issues use Support or open your GetLine account.]]></string>
 
     <string name="google_play_url" translatable="false">https://play.google.com/store/apps/details?id=pro.getline.vpn</string>
 
@@ -379,7 +374,7 @@
     <string name="about_license_gplv3">Licensed under GNU GPLv3</string>
     <string name="about_upstream_ack">Upstream: MetaCubeX Clash Meta for Android and Mihomo</string>
     <!-- Must be a public HTTPS location before release (GPL source disclosure). -->
-    <string name="getline_sources_title" translatable="false">GetLine VPN</string>
+    <string name="getline_sources_title" translatable="false">GetLine Pro</string>
     <string name="getline_sources_url" translatable="false">https://github.com/momai/getline-app</string>
     <string name="sources_open_failed">No browser found. Source URL copied to clipboard.</string>
 </resources>

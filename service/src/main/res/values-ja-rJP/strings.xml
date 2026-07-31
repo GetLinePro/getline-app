@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="clash_service_status_channel">GetLine VPNステータス</string>
+    <string name="clash_service_status_channel">GetLine Proステータス</string>
     <string name="profile_service_status">プロファイルサービスのステータス</string>
     <string name="profile_process_status">プロファイルの処理状況</string>
     <string name="profile_process_result">プロファイルプロセスの結果</string>

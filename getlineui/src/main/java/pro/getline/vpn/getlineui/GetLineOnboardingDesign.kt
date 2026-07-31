@@ -2,7 +2,11 @@ package pro.getline.vpn.getlineui
 
 import android.content.Context
 import android.os.SystemClock
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.View
+import androidx.core.content.ContextCompat
 import pro.getline.vpn.getlineui.databinding.DesignGetLineOnboardingBinding
 import pro.getline.vpn.getlineui.dialog.requestModelTextInput
 import pro.getline.vpn.getlineui.model.GetLineImportStage
@@ -53,6 +57,7 @@ class GetLineOnboardingDesign(context: Context) :
 
     init {
         binding.self = this
+        binding.brandTitle.text = brandLockup()
         // OTP must not enter hierarchy SavedState (rotation / process death).
         binding.otpField.isSaveEnabled = false
         binding.resendEnabled = true
@@ -266,6 +271,34 @@ class GetLineOnboardingDesign(context: Context) :
             brandTapWindowStartMs = 0L
             request(Request.OpenAdvanced)
         }
+    }
+
+    /**
+     * The entry-screen title as the brand lockup: accent "Get", plain "Line",
+     * soft accent "Pro" — the same split as ic_getline_wordmark, drawn as text
+     * so it stays one line at any font scale.
+     *
+     * The string resource remains the only place the name is spelled; a part
+     * that is not found there is simply left in the default colour rather than
+     * coloured at the wrong offsets.
+     */
+    private fun brandLockup(): CharSequence {
+        val name = context.getString(R.string.get_line_brand_name)
+        val lockup = SpannableString(name)
+        lockup.tint(name, "Get", R.color.getline_brand_wordmark_accent)
+        lockup.tint(name, "Pro", R.color.getline_brand_wordmark_suffix)
+        return lockup
+    }
+
+    private fun SpannableString.tint(source: String, part: String, colorRes: Int) {
+        val start = source.indexOf(part)
+        if (start < 0) return
+        setSpan(
+            ForegroundColorSpan(ContextCompat.getColor(context, colorRes)),
+            start,
+            start + part.length,
+            Spanned.SPAN_INCLUSIVE_EXCLUSIVE,
+        )
     }
 
     private var brandTapCount: Int = 0

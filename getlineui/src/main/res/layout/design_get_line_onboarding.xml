@@ -70,6 +70,12 @@
                         android:src="@drawable/ic_getline_logo"
                         tools:src="@drawable/ic_getline_logo" />
 
+                    <!--
+                      Text is set in code, not bound here: it is a two-tone
+                      lockup built with spans, and android:text would overwrite
+                      it on the first binding pass. Keep the id and the onClick
+                      — this view is also the hidden multi-tap into Advanced.
+                    -->
                     <TextView
                         android:id="@+id/brand_title"
                         style="@style/Widget.GetLine.Text.Title"
@@ -79,7 +85,6 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:onClick="@{() -> self.onBrandTitleClicked()}"
-                        android:text="@string/get_line_brand_name"
                         android:textColor="@color/getline_text_primary"
                         tools:text="GetLine" />
 
