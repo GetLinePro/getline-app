@@ -4,9 +4,6 @@
         <variable
             name="versionName"
             type="String" />
-        <variable
-            name="self"
-            type="com.github.kr328.clash.design.MainDesign" />
     </data>
 
     <LinearLayout
@@ -65,10 +62,10 @@
                 android:textAppearance="?attr/textAppearanceCaption" />
 
             <TextView
+                android:id="@+id/sources_link"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/item_text_margin"
-                android:onClick="@{() -> self.openSources()}"
                 android:text="@string/sources"
                 android:textAppearance="?attr/textAppearanceBody2"
                 android:textColor="?attr/colorPrimary" />

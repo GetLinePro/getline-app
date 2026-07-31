@@ -95,6 +95,7 @@
     <string name="get_line_account_portal_open_failed_title">Не удалось открыть личный кабинет</string>
     <string name="get_line_account_portal_no_browser">На устройстве не найден подходящий браузер.</string>
     <string name="get_line_action_sign_in">Войти</string>
+    <string name="get_line_action_help">Помощь</string>
     <string name="get_line_action_logout">Выйти из аккаунта</string>
     <string name="get_line_logout_confirm_title">Выйти из аккаунта?</string>
     <string name="get_line_logout_confirm_message">VPN будет отключён, а конфигурация GetLine удалена с устройства.</string>

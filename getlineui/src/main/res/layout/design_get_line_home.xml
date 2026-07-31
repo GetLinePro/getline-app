@@ -644,13 +644,24 @@
                     </LinearLayout>
                 </LinearLayout>
 
+                <!-- Help: always on Subscription; above logout so destructive stays last. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/open_help"
+                    style="@style/Widget.GetLine.SecondaryTextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_section_gap"
+                    android:contentDescription="@string/get_line_action_help"
+                    android:onClick="@{() -> self.request(Request.OpenHelp)}"
+                    android:text="@string/get_line_action_help" />
+
                 <!-- Account logout: bottom of Subscription, red text — not a filled danger block. -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/logout_account"
                     style="@style/Widget.GetLine.LogoutTextButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/get_line_home_section_gap"
+                    android:layout_marginTop="4dp"
                     android:contentDescription="@string/get_line_action_logout"
                     android:onClick="@{() -> self.request(Request.Logout)}"
                     android:text="@string/get_line_action_logout"

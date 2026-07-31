@@ -30,6 +30,8 @@ class GetLineOnboardingDesign(context: Context) :
          * Not a release product surface — debug button or brand multi-tap only.
          */
         object OpenAdvanced : Request()
+        /** Open existing HelpActivity (support links, about). */
+        object OpenHelp : Request()
         object Retry : Request()
     }
 
@@ -235,6 +237,10 @@ class GetLineOnboardingDesign(context: Context) :
         request(Request.OpenAdvanced)
     }
 
+    fun onOpenHelp() {
+        request(Request.OpenHelp)
+    }
+
     /**
      * Show/hide the explicit Advanced button.
      * Release product navigation keeps this gone; debug builds may show it.
@@ -277,6 +283,8 @@ class GetLineOnboardingDesign(context: Context) :
         val action = recoveryActionFor(state)
         binding.stateView.render(state, action)
         binding.actionsEnabled = state != GetLineProductState.Loading
+        // Idle auth + errors only — no Help during Loading/PreparingVpn or on Content exit.
+        binding.helpVisible = !state.loading && state != GetLineProductState.Content
         applyAuthStepVisibility(state)
         applyResendBinding()
     }

@@ -175,6 +175,20 @@
     </style>
 
     <!--
+      Neutral text-only footer action (Help, etc.): 48dp hit target, button type.
+      Not AdvancedButton (40dp caption) and not Logout (error color).
+    -->
+    <style name="Widget.GetLine.SecondaryTextButton" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.GetLine.Button</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/getline_text_secondary</item>
+        <item name="rippleColor">@color/getline_brand_primary</item>
+    </style>
+
+    <!--
       Calm text-only logout: not a filled destructive pill.
       Uses the dark-surface error token — color_error (#B00020) is only 2.5:1 here.
     -->

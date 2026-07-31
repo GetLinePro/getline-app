@@ -1,18 +1,10 @@
 package com.github.kr328.clash.design
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.view.View
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
-import androidx.core.content.getSystemService
 import com.github.kr328.clash.common.compat.getColorCompat
 import com.github.kr328.clash.core.model.TunnelState
 import com.github.kr328.clash.core.util.trafficTotal
-import com.github.kr328.clash.design.databinding.DesignAboutBinding
 import com.github.kr328.clash.design.databinding.DesignMainBinding
 import com.github.kr328.clash.design.util.layoutInflater
 import com.github.kr328.clash.design.util.resolveThemedColor
@@ -29,7 +21,6 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
         OpenLogs,
         OpenSettings,
         OpenHelp,
-        OpenAbout,
     }
 
     private val binding = DesignMainBinding
@@ -71,37 +62,6 @@ class MainDesign(context: Context) : Design<MainDesign.Request>(context) {
         withContext(Dispatchers.Main) {
             binding.hasProviders = has
         }
-    }
-
-    suspend fun showAbout(versionName: String) {
-        withContext(Dispatchers.Main) {
-            val aboutBinding = DesignAboutBinding.inflate(context.layoutInflater).apply {
-                this.versionName = versionName
-                this.self = this@MainDesign
-            }
-
-            AlertDialog.Builder(context)
-                .setView(aboutBinding.root)
-                .show()
-        }
-    }
-
-    fun openSources() {
-        val url = context.getString(R.string.getline_sources_url)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val canOpen = intent.resolveActivity(context.packageManager) != null
-        if (canOpen) {
-            runCatching { context.startActivity(intent) }
-                .onFailure { copySourcesUrl(url) }
-        } else {
-            copySourcesUrl(url)
-        }
-    }
-
-    private fun copySourcesUrl(url: String) {
-        context.getSystemService<ClipboardManager>()
-            ?.setPrimaryClip(ClipData.newPlainText("sources", url))
-        Toast.makeText(context, R.string.sources_open_failed, Toast.LENGTH_LONG).show()
     }
 
     init {

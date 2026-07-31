@@ -58,6 +58,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
          * Stops VPN and removes managed GetLine config — not app settings.
          */
         Logout,
+        /** Open existing HelpActivity (support links, about). */
+        OpenHelp,
     }
 
     /** Payload for [Request.SelectServer]; cleared when the request is consumed. */

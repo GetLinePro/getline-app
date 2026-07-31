@@ -16,6 +16,7 @@ import com.github.kr328.clash.design.util.root
 class HelpDesign(
     context: Context,
     openLink: (Uri) -> Unit,
+    openAbout: () -> Unit,
     /**
      * Account portal origin for this app environment (prod/e2e). Prefer an
      * app-level override of [R.string.getline_account_url]; this parameter is
@@ -98,6 +99,16 @@ class HelpDesign(
             ) {
                 clicked {
                     openLink(Uri.parse(context.getString(R.string.clash_meta_core_url)))
+                }
+            }
+
+            category(R.string.about)
+
+            clickable(
+                title = R.string.about,
+            ) {
+                clicked {
+                    openAbout()
                 }
             }
         }

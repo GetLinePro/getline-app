@@ -6,6 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import androidx.activity.result.contract.ActivityResultContracts
+import com.github.kr328.clash.HelpActivity
+import com.github.kr328.clash.common.log.Log
+import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.design.R as DesignR
 import pro.getline.vpn.getlineui.GetLineOnboardingDesign
 import pro.getline.vpn.getlineui.R as GetLineUiR
@@ -28,7 +31,6 @@ import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
 import pro.getline.vpn.util.hasValidatedInternetConnection
-import com.github.kr328.clash.common.log.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -136,6 +138,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             addExistingSubscription(design)
                         GetLineOnboardingDesign.Request.OpenAdvanced ->
                             openAdvanced()
+                        GetLineOnboardingDesign.Request.OpenHelp ->
+                            startActivity(HelpActivity::class.intent)
                         GetLineOnboardingDesign.Request.Retry ->
                             retry(design)
                     }

@@ -19,6 +19,9 @@
             name="actionsEnabled"
             type="boolean" />
         <variable
+            name="helpVisible"
+            type="boolean" />
+        <variable
             name="resendEnabled"
             type="boolean" />
         <variable
@@ -242,6 +245,22 @@
                         android:visibility="@{otpStepVisible ? View.VISIBLE : View.GONE}"
                         tools:text="Back" />
 
+                    <!--
+                      Help on idle auth chrome / errors only.
+                      Hidden while loading (auth/import) and on Content (leaving).
+                    -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/open_help"
+                        style="@style/Widget.GetLine.SecondaryTextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_advanced_margin_top"
+                        android:contentDescription="@string/get_line_action_help"
+                        android:onClick="@{() -> self.onOpenHelp()}"
+                        android:text="@string/get_line_action_help"
+                        android:visibility="@{helpVisible ? View.VISIBLE : View.GONE}"
+                        tools:visibility="visible" />
+
                     <!-- Release product nav: hidden. Debug or multi-tap brand title hatch. -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/open_advanced"
@@ -249,7 +268,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center_horizontal"
-                        android:layout_marginTop="@dimen/get_line_onboarding_advanced_margin_top"
+                        android:layout_marginTop="4dp"
                         android:alpha="0.72"
                         android:enabled="@{actionsEnabled}"
                         android:onClick="@{() -> self.onOpenAdvanced()}"

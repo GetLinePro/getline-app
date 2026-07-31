@@ -95,6 +95,7 @@
     <string name="get_line_account_portal_open_failed_title">Couldn’t open personal account</string>
     <string name="get_line_account_portal_no_browser">No suitable browser found on this device.</string>
     <string name="get_line_action_sign_in">Sign in</string>
+    <string name="get_line_action_help">Help</string>
     <string name="get_line_action_logout">Sign out</string>
     <string name="get_line_logout_confirm_title">Sign out of your account?</string>
     <string name="get_line_logout_confirm_message">VPN will be disconnected and the GetLine configuration will be removed from this device.</string>

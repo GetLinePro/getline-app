@@ -33,14 +33,16 @@ import pro.getline.vpn.getline.auth.SubscriptionLoadResult
 import pro.getline.vpn.getline.auth.SubscriptionPresentation
 import pro.getline.vpn.getline.auth.SubscriptionStateHolder
 import pro.getline.vpn.getline.auth.SubscriptionUiState
+import com.github.kr328.clash.HelpActivity
 import com.github.kr328.clash.common.log.Log
+import com.github.kr328.clash.common.util.intent
+import com.github.kr328.clash.common.util.ticker
 import java.util.concurrent.atomic.AtomicBoolean
 import pro.getline.vpn.getline.servers.ServerGroupingPolicy
 import pro.getline.vpn.getline.servers.ServerNameParser
 import pro.getline.vpn.getline.servers.VpnServerLoadResult
 import pro.getline.vpn.getline.servers.VpnServerStateHolder
 import pro.getline.vpn.getline.servers.VpnServerUiState
-import com.github.kr328.clash.common.util.ticker
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
@@ -253,6 +255,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         }
                         GetLineHomeDesign.Request.Logout ->
                             design.performLogout()
+                        GetLineHomeDesign.Request.OpenHelp ->
+                            startActivity(HelpActivity::class.intent)
                     }
                 }
                 trafficTicker.onReceive {

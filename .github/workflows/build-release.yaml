@@ -524,3 +524,43 @@ jobs:
           # pre-release and must not become "Latest release"; this switches
           # itself off at 1.0.0.
           prerelease: ${{ startsWith(steps.version.outputs.name, '0.') }}
+
+      - name: Notify Telegram
+        if: ${{ !env.ACT }}
+        continue-on-error: true
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.release_commit.outputs.tag }}"
+          RELEASE_URL="${{ github.server_url }}/${{ github.repository }}/releases/tag/${TAG}"
+
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+            echo "ERROR: Telegram release secrets are missing"
+            exit 1
+          fi
+
+          PAYLOAD="$(
+            jq -n \
+              --arg chat_id "$TG_CHAT_ID" \
+              --arg text "🚀 GetLine VPN ${TAG} опубликован
+
+          Скачать и посмотреть изменения:
+          ${RELEASE_URL}" \
+              '{
+                chat_id: $chat_id,
+                text: $text
+              }'
+          )"
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            --header "Content-Type: application/json" \
+            --data "$PAYLOAD" \
+            --output /dev/null

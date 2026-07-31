@@ -150,14 +150,6 @@
                     android:onClick="@{() -> self.request(Request.OpenHelp)}"
                     app:icon="@drawable/ic_baseline_help_center"
                     app:text="@string/help" />
-
-                <com.github.kr328.clash.design.view.LargeActionLabel
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginVertical="@dimen/main_label_margin_vertical"
-                    android:onClick="@{() -> self.request(Request.OpenAbout)}"
-                    app:icon="@drawable/ic_baseline_info"
-                    app:text="@string/about" />
             </LinearLayout>
         </ScrollView>
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
