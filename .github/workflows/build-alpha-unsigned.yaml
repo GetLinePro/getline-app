@@ -1,10 +1,13 @@
 name: Build Alpha (unsigned)
+
+# No `push: main` trigger on purpose. pr-hygiene already requires the branch to
+# contain current main before it calls this workflow, so the post-merge rebuild
+# compiled the same tree a second time and produced an APK that is unsigned and
+# cannot be installed. On a private repo that duplicate is billed Actions
+# minutes for no new information.
 on:
   workflow_call:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   BuildAlphaUnsigned:

@@ -1,5 +1,10 @@
 package pro.getline.vpn.getline.auth
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import com.github.kr328.clash.common.Global
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -14,6 +19,11 @@ import java.nio.charset.StandardCharsets
 
 class RwpGetLineAuthApi(
     private val origin: String = AppEnvironment.apiOrigin,
+    /**
+     * Optional ConnectivityManager for tests / injection.
+     * When null, resolves from [Global.application] at request time.
+     */
+    private val connectivityManager: ConnectivityManager? = null,
 ) : GetLineAuthApi {
     init {
         // Fail closed before any network I/O if origin is wrong for this flavor.
@@ -150,7 +160,11 @@ class RwpGetLineAuthApi(
         allowEmptyBody: Boolean = false,
         errorContext: AuthErrorContext = AuthErrorContext.Default,
     ): JSONObject = withContext(Dispatchers.IO) {
-        val connection = (URL("$origin$path").openConnection() as HttpURLConnection).apply {
+        val url = URL("$origin$path")
+        // Prefer the underlying (non-VPN) network. When TunService is up with a
+        // broken/expired outbound, default routing goes through fake-ip + proxy
+        // and control-plane GETs fail even though the account/subscription is fine.
+        val connection = openControlPlaneConnection(url).apply {
             requestMethod = method
             connectTimeout = TIMEOUT_MS
             readTimeout = TIMEOUT_MS
@@ -222,6 +236,30 @@ class RwpGetLineAuthApi(
         }
     }
 
+    private fun openControlPlaneConnection(url: URL): HttpURLConnection {
+        val network = resolveUnderlyingNetwork()
+        return if (network != null) {
+            network.openConnection(url) as HttpURLConnection
+        } else {
+            url.openConnection() as HttpURLConnection
+        }
+    }
+
+    /**
+     * Best non-VPN internet [Network] for control-plane HTTP.
+     * Returns null when none is available or ConnectivityManager is missing
+     * (caller falls back to default routing).
+     */
+    internal fun resolveUnderlyingNetwork(): Network? {
+        val cm = connectivityManager ?: connectivityManagerFromGlobal() ?: return null
+        return pickUnderlyingNetwork(cm)
+    }
+
+    private fun connectivityManagerFromGlobal(): ConnectivityManager? {
+        val app = runCatching { Global.application }.getOrNull() ?: return null
+        return app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+    }
+
     private fun JSONObject.toNativeSession(): NativeSession {
         val access = optStringOrNull("access_token")
             ?: throw GetLineAuthException.Protocol("access_token missing")
@@ -263,6 +301,66 @@ class RwpGetLineAuthApi(
         private const val EMAIL_LOGIN_INTENT = "login"
         private const val TIMEOUT_MS = 30_000
         private const val DEFAULT_EXPIRES_IN_SECONDS = 86_400L
+
+        /**
+         * Whether [NetworkCapabilities] are safe for control-plane HTTP
+         * (must not re-enter the app VPN tunnel).
+         *
+         * Requires [NetworkCapabilities.NET_CAPABILITY_VALIDATED]: INTERNET alone
+         * means the network is *configured* for internet, not that it currently
+         * works (captive portal / unvalidated Wi‑Fi can rank ahead of working cell).
+         */
+        internal fun isUsableUnderlying(caps: NetworkCapabilities?): Boolean {
+            if (caps == null) return false
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                return false
+            }
+            // Configured-for-internet is not enough; skip captive / unvalidated.
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                return false
+            }
+            // VPN transport: app traffic would re-enter the tunnel.
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                return false
+            }
+            // Prefer NOT_VPN when the platform sets it (API 21+ on underlying).
+            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
+                return false
+            }
+            return true
+        }
+
+        /**
+         * Pure selection: prefer [active] when usable, else first usable in [all].
+         */
+        internal fun <T> pickUnderlying(
+            active: T?,
+            activeUsable: Boolean,
+            all: List<T>,
+            isUsable: (T) -> Boolean,
+        ): T? {
+            if (active != null && activeUsable) return active
+            return all.firstOrNull(isUsable)
+        }
+
+        /**
+         * Pick a validated non-VPN network with INTERNET.
+         * Prefer the active network when it itself is not a VPN; otherwise scan.
+         */
+        internal fun pickUnderlyingNetwork(cm: ConnectivityManager): Network? {
+            fun usable(network: Network): Boolean =
+                isUsableUnderlying(cm.getNetworkCapabilities(network))
+
+            val active = cm.activeNetwork
+            @Suppress("DEPRECATION")
+            val all = cm.allNetworks.toList()
+            return pickUnderlying(
+                active = active,
+                activeUsable = active != null && usable(active),
+                all = all,
+                isUsable = ::usable,
+            )
+        }
 
         fun startPath(method: AuthMethod): String {
             require(method.requiresBrowser()) {

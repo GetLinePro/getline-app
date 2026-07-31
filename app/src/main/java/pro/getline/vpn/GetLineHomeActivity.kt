@@ -915,6 +915,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             )
                         }
                         subscriptionState.applyLoadResult(result, presentation)
+                        Log.i(
+                            "subscription_ui load ok preferred=${preferred != null} " +
+                                "active=${presentation?.isActive}",
+                        )
                         // API card can show renewed while Clash still has expire placeholders.
                         if (presentation?.isActive == true) {
                             refreshManagedProfileConfigAfterActiveSubscription()
@@ -925,9 +929,14 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         subscriptionState.applySignedOut(
                             hasImportedProfile = hasKnownImportedProfile,
                         )
+                        Log.i("subscription_ui load signed_out")
                     }
                     SubscriptionLoadResult.TransientFailure -> {
                         subscriptionState.applyLoadResult(result, presentation = null)
+                        Log.w(
+                            "subscription_ui load failed " +
+                                "state=${subscriptionState.state::class.simpleName}",
+                        )
                     }
                 }
                 paintSubscriptionState()

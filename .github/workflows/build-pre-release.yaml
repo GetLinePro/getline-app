@@ -1,9 +1,12 @@
 name: Build Pre-Release
+
+# Manual only while nothing is published to Play. build-release.yaml runs the
+# same lint + bundle targets on every release, so running them again after each
+# merge only re-verified an AAB that nobody consumes. Run this by hand before a
+# release, or after a change to Play-shaped packaging (flavor, lint baseline,
+# manifest, R8). Restore a regular trigger once Play publishing is real.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 # Verification path: unsigned Play-shaped AAB. No production signing secrets.
 # Production signing lives only in build-release.yaml.

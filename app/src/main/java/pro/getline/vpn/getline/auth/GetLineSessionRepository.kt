@@ -132,19 +132,26 @@ class GetLineSessionRepository(
                 logout()
                 SubscriptionLoadResult.SignedOut
             } else {
+                Log.w("subscription_ui http_failure code=${e.code}")
                 SubscriptionLoadResult.TransientFailure
             }
-        } catch (_: GetLineAuthException) {
+        } catch (e: GetLineAuthException) {
             // e.g. Protocol/malformed refresh after 401 recovery logged the user out.
             if (!hasSession()) {
                 SubscriptionLoadResult.SignedOut
             } else {
+                Log.w("subscription_ui auth_failure kind=${e::class.simpleName} msg=${e.message}")
                 SubscriptionLoadResult.TransientFailure
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             if (!hasSession()) {
                 SubscriptionLoadResult.SignedOut
             } else {
+                // Common when VPN is up and control-plane is routed via broken tunnel.
+                Log.w(
+                    "subscription_ui network_failure " +
+                        "kind=${e::class.simpleName} msg=${e.message}",
+                )
                 SubscriptionLoadResult.TransientFailure
             }
         }
