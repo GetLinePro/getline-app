@@ -89,14 +89,14 @@ Build tags match `core/build.gradle.kts`: `foss`, `with_gvisor`, `cmfa`, `no_ssh
 | CVE-2026-46597 | HIGH | x/crypto@0.33 | absent | client panic (underflow) | unavailable | `not_affected_by_reported_package`; `enforcement_disabled_surface` |
 | CVE-2025-22868 | HIGH | oauth2@0.24 | jws **absent** | jws token parse | unavailable | `not_affected_by_shipped_operation` |
 | CVE-2026-39827 | MEDIUM | x/crypto@0.33 | absent | channel reject / leak | unavailable | `not_affected_by_reported_package`; `enforcement_disabled_surface` |
-| CVE-2026-25680 | MEDIUM | x/net@0.35 | html **absent** | HTML parse DoS | unavailable | `not_affected_by_shipped_operation` |
+| CVE-2026-25680 | MEDIUM | x/net (was @0.35) | html **absent** | HTML parse DoS | unavailable | `not_affected_by_shipped_operation`; product graph now `x/net@0.55.0` |
 | CVE-2026-39828 | MEDIUM | x/crypto@0.33 | absent | SSH cert restriction bypass | unavailable | `not_affected_by_reported_package`; `enforcement_disabled_surface` |
 | CVE-2025-47914 | MEDIUM | x/crypto@0.33 | absent | agent | unavailable | `not_affected_by_reported_package`; `not_affected_by_shipped_operation` |
 | CVE-2025-58181 | MEDIUM | x/crypto@0.33 | absent | unbounded memory (ssh) | unavailable | `not_affected_by_reported_package`; `enforcement_disabled_surface` |
 | CVE-2026-39835 | MEDIUM | x/crypto@0.33 | absent | server panic (CheckHostKey/Authenticate) | unavailable | `not_affected_by_reported_package`; `not_affected_by_shipped_operation` |
 | CVE-2026-46598 | MEDIUM | x/crypto@0.33 | absent | agent client panic | unavailable | `not_affected_by_reported_package`; `not_affected_by_shipped_operation` |
-| CVE-2025-22872 | MEDIUM | x/net@0.35 | html **absent** | HTML tokenizer / DOM | unavailable | `not_affected_by_shipped_operation` |
-| CVE-2025-22870 | MEDIUM | x/net@0.35 | httpproxy **linked** | NO_PROXY / IPv6 zone matching | optional (env proxy; not core VPN UX) | `needs_investigation` (low practical exposure; still open) |
+| CVE-2025-22872 | MEDIUM | x/net (was @0.35) | html **absent** | HTML tokenizer / DOM | unavailable | `not_affected_by_shipped_operation`; product graph now `x/net@0.55.0` |
+| CVE-2025-22870 | MEDIUM | x/net (was @0.35) | httpproxy **linked** | NO_PROXY / IPv6 zone matching | optional (env proxy; not core VPN UX) | `fixed_upstream_in_current_tree` — product modules pin `golang.org/x/net v0.55.0` (≥0.36.0) |
 
 ---
 
@@ -133,9 +133,9 @@ Build tags match `core/build.gradle.kts`: `foss`, `with_gvisor`, `cmfa`, `no_ssh
 | `not_affected_by_shipped_package_or_operation` / `enforcement_disabled_surface` | **19** | Includes former SSH residual rows now hard-disabled |
 | SSH residual still open in product build | **0** | Enforcement landed; re-open if `no_ssh` removed |
 | Historical 4 exact / 6 conservative | archived above | Pre-enforcement fork-lineage set |
-| `needs_investigation` (non-SSH) | **1** | CVE-2025-22870 httpproxy |
+| `needs_investigation` (non-SSH) | **0** | CVE-2025-22870 closed by `x/net` bump |
 | `confirmed_affected_default_product_path` | **0** | Do not shorten to bare `affected: 0` |
-| `fixed_upstream_in_current_tree` | **0** | |
+| `fixed_upstream_in_current_tree` | **1** | CVE-2025-22870 (`x/net` ≥0.36.0; product pin 0.55.0) |
 
 ---
 
@@ -168,7 +168,7 @@ manifest. Production gate should confirm the shipped artifact matches (no
 | Stage | Stance |
 | --- | --- |
 | **Spike** | Bulk acceptance of baselined SCA remains acceptable; this table replaces informal “all android-core OK”. |
-| **Play / production** | Gate base: SSH enforcement done; remaining open items are R3 artifact check and non-SSH residual (CVE-2025-22870). |
+| **Play / production** | Gate base: SSH enforcement done; CVE-2025-22870 fixed by `x/net` pin. Remaining open item: R3 artifact check. |
 
 ### Minimum production gate
 
@@ -176,9 +176,9 @@ manifest. Production gate should confirm the shipped artifact matches (no
 2. **Enforcement (done):** `no_ssh` build tag on Android flavors; stub rejects config; fork not linked under product tags.  
 3. **If SSH re-enabled:** patch-parity review of the historical 4 (+ optional 2) against **`metacubex/ssh`**, plus host-key trust model (R2).  
 4. Confirm analysis against final **`libclash.so` / build manifest** (R3).  
-5. Decide residual on **CVE-2025-22870** or accept with owner+expiry.
+5. **CVE-2025-22870 (done):** product modules `core/src/main/golang` and `core/src/foss/golang` pin `golang.org/x/net v0.55.0` (fix ≥0.36.0). Verified: `go list -tags foss,with_gvisor,cmfa,no_ssh -deps` resolves `golang.org/x/net/http/httpproxy` to `v0.55.0`. The mihomo submodule `clash/go.mod` may still *declare* `v0.35.0` for upstream mergeability; MVS from the product modules selects `0.55.0`. Do not treat the submodule floor alone as the shipped version.
 
-**Most important remaining work is not another OSV run for SSH** — confirm R3 on the shipped `.so`, then handle CVE-2025-22870.
+**Most important remaining work is not another OSV run for SSH** — confirm R3 on the shipped `.so`.
 
 ---
 

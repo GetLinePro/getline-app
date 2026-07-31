@@ -95,18 +95,34 @@ a dedicated release PR and per-PR labels become inputs to it.
 - exactly one `release:*` label, consistent with the commit types **and the PR
   title** — with squash merges the title is the only subject that reaches main.
 
+Alongside `pr-hygiene`, every pull request runs `build-alpha-unsigned.yaml`:
+unit tests first (`app:testAlphaProdReleaseUnitTest`), then the native build.
+Tests run **only** there — the release job builds and lints but does not test.
+That is safe only because merges are squash-only and nothing reaches `main`
+without passing this gate; if a direct push to `main` ever becomes possible,
+the release job needs its own test step.
+
+Dependency-update pull requests opened by Dependabot cannot pass these gates at
+all: the branch name (`dependabot/go_modules/...`) fails the naming rule, the
+branch is not kept current with `main`, and no `release:*` label is applied.
+Take the bump onto a conforming branch and close the bot's pull request.
+
 **Documented exception:** PR #9 (`0.1.3`, code `1003`) carried a hand-edited
 version, merged before these gates existed.
 
 ## ABI matrix
 
 The published APK carries `arm64-v8a`, `armeabi-v7a`, `x86` and `x86_64`. Each
-one is a separate native build of the mihomo core, together about eight of the
-seventeen minutes of a build, so they are not all built on every check.
+one is a separate native build of the mihomo core, and they dominate the build:
+measured on the same tree, the full matrix spends 16m48s in the Gradle build
+step against 6m05s for `arm64-v8a` alone. So they are not all built on every
+check.
 
 - **Pull request:** primary ABI (`arm64-v8a`) plus unit tests. CI runs no
-  emulator and holds no instrumented tests, so `x86`/`x86_64` verify nothing a
+  emulator and holds no instrumented tests, so the other three verify nothing a
   pull request consumes — only that the core still compiles for them.
+  `armeabi-v7a` is the one worth naming: it is the only 32-bit target in the
+  matrix, and 32-bit assumptions are where Go code actually breaks.
 - **ABI-sensitive change** — mihomo submodule bump, cgo, build tags, NDK or
   CMake configuration, anything under `core/src/main/golang`: full matrix. This
   is escalated by the author, by running `build-alpha-unsigned.yaml` manually
@@ -120,10 +136,13 @@ Narrowing is available to any build through `-Pgetline.abis=arm64-v8a`
 (`build.gradle.kts`). An unknown value fails configuration rather than quietly
 producing an APK without a native core.
 
-Consequence, accepted deliberately: an `x86`-only compile failure surfaces in
-the manual release run rather than on the pull request. `build-release.yaml` and
-`build-pre-release.yaml` are `workflow_dispatch`, so the full-matrix gate is a
-button someone presses before publishing, not an automatic barrier on `main`.
+Consequence, accepted deliberately: a compile failure specific to any ABI but
+`arm64-v8a` — 32-bit `armeabi-v7a` included — surfaces in the manual release run
+rather than on the pull request. `build-release.yaml` and `build-pre-release.yaml`
+are `workflow_dispatch`, so the full-matrix gate is a button someone presses
+before publishing, not an automatic barrier on `main`. A release run is the
+wrong place to discover a broken build, so escalate on the pull request whenever
+the change touches the native core.
 
 Versions do not have to be published contiguously. `0.1.3` exists only as a local
 build; the first artifact of this pipeline is `0.1.4` (code 2001). That is not a
@@ -195,8 +214,10 @@ then pushes the commit and tag atomically:
 
 The AAB is off by default because nothing consumes it yet: the app is not on
 Play, F-Droid rebuilds `metaProdRelease` from the tag itself, and
-`build-pre-release.yaml` already lints and bundles the Play shape (unsigned) on
-every push to `main`. Building it in the release job as well doubled the peak disk
+`build-pre-release.yaml` lints and bundles the Play shape (unsigned) on demand —
+it is `workflow_dispatch` only, so run it by hand before a release or after a
+change to Play-shaped packaging. Building the AAB in the release job as well
+doubled the peak disk
 usage and ran a standard hosted runner out of space:
 `R8: java.io.IOException: No space left on device`. Turn it on for an actual Play
 upload; the job then reports the AAB hash in the audit table.

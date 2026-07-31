@@ -40,6 +40,7 @@ SSH outbound is tracked as **three separate layers** (see applicability doc):
 
 Residual after enforcement: confirm shipped `libclash.so` (R3); re-open fork parity /
 host-key trust only if SSH is re-enabled. Keep patch applying on every clean submodule update.
+CVE-2025-22870 is closed in the product module graph (`x/net` ≥0.36.0).
 
 Without that table (or an updated successor), this risk acceptance is **void for
 production/Play**.
@@ -81,7 +82,7 @@ Approximate picture from the first aggregated Android-core report
 | --- | --- |
 | SCA findings listed in `osv-baseline.json` | Accepted as **known upstream risk** until dependency upgrade or replacement |
 | SAST findings in `semgrep-baseline.json` (strcpy in JNI bridge, `unsafe` in native Go, debug pprof/http in native debug helpers) | Accepted as **known native/upstream patterns** for this spike; not expanded without review |
-| Android-core subset of SCA | **Spike-only** bulk accept; track via `osv-android-core.md` + **`ANDROID-CORE-SCA-APPLICABILITY.md`**. SSH enforcement landed (`no_ssh`); remaining production gate items: R3 artifact check + CVE-2025-22870. |
+| Android-core subset of SCA | **Spike-only** bulk accept; track via `osv-android-core.md` + **`ANDROID-CORE-SCA-APPLICABILITY.md`**. SSH enforcement landed (`no_ssh`); CVE-2025-22870 fixed by product `x/net` pin (≥0.36.0, currently 0.55.0). Remaining production gate item: R3 artifact check. |
 
 ## What is **not** accepted
 
