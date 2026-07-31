@@ -84,9 +84,13 @@ a dedicated release PR and per-PR labels become inputs to it.
 - the branch contains current `main` (GitHub's native "up to date" requirement is
   a paid branch-protection feature for private repos, so it is done in CI);
 - no keystore / `signing.properties` tracked in git;
-- no `pull_request`-triggered workflow references `SIGNING_*` — same-repo pull
-  requests do receive secrets, only forks are restricted, so this boundary needs
-  a gate rather than a convention;
+- no `pull_request`, `pull_request_target` or `workflow_call` workflow uses the
+  `secrets` context or delegates with `secrets: inherit` — same-repo pull requests
+  do receive secrets, only forks are restricted, so this boundary needs a gate
+  rather than a convention;
+- every external action in the release path is pinned to a full commit SHA;
+- release signing files are created only under `$RUNNER_TEMP`, removed by an
+  `always()` step and gone before the next external action;
 - `versionName` / `versionCode` are not hand-edited;
 - exactly one `release:*` label, consistent with the commit types **and the PR
   title** — with squash merges the title is the only subject that reaches main.
@@ -108,15 +112,17 @@ compute bump → verify it covers accumulated commits → tag is free
 → write version, commit and tag LOCALLY
 → restore keystore → certificate must match EXPECTED_SIGNING_CERT_SHA256
 → build APK + AAB → verify signatures, artifact certificate and hashes
-→ upload artifacts to the run
+→ remove keystore and signing properties
 → confirm main has not moved → git push --atomic commit + tag
 → publish the GitHub release
 ```
 
-A wrong secret, a bad base64 blob, a Gradle failure or a failed upload therefore
-leaves **no** release commit and **no** tag — only a failed run with a
-downloadable build that claims nothing. `SOURCE_DATE_EPOCH` does not need the
-push: the local release commit already exists when it is read.
+A wrong secret, a bad base64 blob, a Gradle failure or a failed signature check
+therefore leaves **no** published release commit and **no** tag. A failure in
+GitHub Release creation happens after the atomic push and leaves the release
+commit and tag published without release assets; that state requires explicit
+operator recovery. `SOURCE_DATE_EPOCH` does not need the push: the local release
+commit already exists when it is read.
 
 Every `0.x` release is published as a **pre-release**, so none of them becomes
 "Latest release". The flag is derived from the version and switches itself off at
@@ -126,9 +132,10 @@ consistent to compare, and the workflow will refuse to reuse an occupied tag.
 
 Signing material is checked in three cheap steps before the ~13-minute build,
 because Gradle only reports a wrong key when it signs: the keystore must decode,
-its certificate must match the expected fingerprint, and `SIGNING_KEY_ALIAS` must
-name an entry in it. The alias check exists because a secret pasted with trailing
-whitespace failed the first release run after 13 minutes.
+`SIGNING_KEY_ALIAS` must name an entry in it, and that selected entry's
+certificate must match the expected fingerprint. The alias check exists because
+a secret pasted with trailing whitespace failed the first release run after 13
+minutes.
 
 `EXPECTED_SIGNING_CERT_SHA256` is a repository **variable**, not a secret — the
 fingerprint is published in Digital Asset Links. It is checked twice: against the
@@ -152,9 +159,9 @@ and downloaded from Play.
 
 `Build Release` is `workflow_dispatch` only, refuses any ref but `main`, and
 serializes on `concurrency: getline-release`. It computes the next version,
-checks the tag is free, commits, creates the tag (never moves an existing one —
-F-Droid resolves tag → source), pushes commit and tag atomically, then builds
-from that state:
+checks the tag is free, commits and creates the tag locally (never moves an
+existing one — F-Droid resolves tag → source), builds and verifies artifacts,
+then pushes the commit and tag atomically:
 
 - signed alpha APKs (`assembleAlphaProdRelease`) — what testers install;
 - signed meta AAB (`bundleMetaProdRelease`) — **only when `build_aab=true`**.
@@ -171,7 +178,9 @@ A standard runner has ~14 GB free on `/`, which this project (Go core, NDK, R8,
 ABI splits) does not fit next to the preinstalled toolchains, so the job first
 removes dotnet, GHC, boost, the CodeQL cache and the docker images, and prints
 `df` around each build. Explicit `rm` rather than a third-party disk-cleanup
-action: nothing else gets to execute inside the job that holds the signing key.
+action. External actions run only before the key is restored or after the
+`always()` teardown has removed both signing files. All external actions in this
+path are pinned to full commit SHAs.
 Larger runners are a separate paid class — a GitHub Pro subscription does not
 change this 14 GB.
 
@@ -182,8 +191,30 @@ single universal APK.
 For a safe local preflight with a disposable signing key, see
 [`docs/act-release-preflight.md`](act-release-preflight.md).
 
-Pull-request builds stay **unsigned**. The release key is never available to a
-workflow a pull request can trigger.
+Current pull-request builds stay **unsigned** and do not reference release
+signing secrets.
+
+### Private repository limitation
+
+The repository is private on a plan that does not provide approval-gated
+environments or native branch protection. Signing secrets therefore cannot be
+held behind a required environment reviewer today. The compensating controls
+are a `workflow_dispatch`-only release job that refuses non-`main` refs, no
+`secrets` context or `secrets: inherit` in PR-triggered/reusable workflows,
+full-SHA action pins, signing files outside the workspace and teardown before
+publication.
+
+This does not eliminate the GL-06 insider/account-compromise case: a malicious
+same-repository pull request can add a secret reference and run before the
+post-factum hygiene gate reports the violation. Maintainers must treat workflow
+changes as security-sensitive and must not merge them without review. If the
+repository becomes public or moves to a plan with protected environments, move
+the signing secrets into a release environment with required reviewers; that is
+the preventative control, and it replaces this documented residual acceptance.
+
+Signing teardown is deliberately fail-closed: if either temporary file cannot be
+removed, publication is cancelled even after a successful build. Because signed
+artifacts are not uploaded before teardown, that run must be rebuilt.
 
 The job summary records `versionName`, `versionCode`, tag, commit SHA, the
 signing certificate SHA-256 and artifact SHA-256. The certificate fingerprint

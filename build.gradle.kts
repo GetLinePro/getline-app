@@ -135,14 +135,23 @@ subprojects {
         }
 
         signingConfigs {
-            val keystore = rootProject.file("signing.properties")
-            if (keystore.exists()) {
+            val signingProperties = rootProject.file(
+                System.getenv("GETLINE_SIGNING_PROPERTIES")
+                    ?.takeIf(String::isNotBlank)
+                    ?: "signing.properties"
+            )
+            val signingKeystore = rootProject.file(
+                System.getenv("GETLINE_SIGNING_KEYSTORE")
+                    ?.takeIf(String::isNotBlank)
+                    ?: "release.keystore"
+            )
+            if (signingProperties.exists()) {
                 create("release") {
                     val prop = Properties().apply {
-                        keystore.inputStream().use(this::load)
+                        signingProperties.inputStream().use(this::load)
                     }
 
-                    storeFile = rootProject.file("release.keystore")
+                    storeFile = signingKeystore
                     storePassword = prop.getProperty("keystore.password")!!
                     keyAlias = prop.getProperty("key.alias")!!
                     keyPassword = prop.getProperty("key.password")!!
@@ -154,8 +163,8 @@ subprojects {
             named("release") {
                 isMinifyEnabled = isApp
                 isShrinkResources = isApp
-                // Never fall back to the debug key. Without signing.properties the
-                // release artifact is unsigned; production CI must fail if keys are missing.
+                // Never fall back to the debug key. Without signing configuration
+                // the artifact is unsigned; production CI must fail if keys are missing.
                 signingConfig = signingConfigs.findByName("release")
                 proguardFiles(
                     getDefaultProguardFile("proguard-android-optimize.txt"),

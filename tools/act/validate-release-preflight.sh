@@ -48,10 +48,19 @@ if ! grep -Fq "$aab_step" <<<"$aab_output"; then
     exit 1
 fi
 
+teardown_step='Run Main Remove signing material'
+if ! grep -Fq "$teardown_step" <<<"$normal_output"; then
+    echo "ERROR: normal release plan does not include signing teardown." >&2
+    exit 1
+fi
+if ! grep -Fq "$teardown_step" <<<"$aab_output"; then
+    echo "ERROR: AAB release plan does not include signing teardown." >&2
+    exit 1
+fi
+
 dangerous_steps=(
     'Free runner disk space'
     'Tag must not exist yet'
-    'Upload signed artifacts to the run'
     'Publish release commit and tag'
     'Upload Release'
 )

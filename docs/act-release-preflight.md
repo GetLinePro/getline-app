@@ -45,9 +45,10 @@ Run the strict plan checks before a full preflight:
 tools/act/validate-release-preflight.sh
 ```
 
-This validates both event payloads, checks APK/AAB routing and asserts that the
-ACT plan contains none of the cleanup, upload, push or release steps. It does
-not start a runner container or run Gradle.
+This validates both event payloads, checks APK/AAB routing, requires signing
+teardown and asserts that the ACT plan contains none of the hosted-runner
+cleanup, push or release steps. It does not start a runner container or run
+Gradle.
 
 ## Full preflight
 

@@ -108,20 +108,132 @@ jobs:
 
       # Branch protection and environment protection rules are unavailable for a
       # private repo on the free plan, and same-repo pull requests DO receive
-      # secrets (only forks are restricted). So the boundary is enforced here:
-      # the release key may be referenced only by workflows that PRs cannot run.
+      # secrets (only forks are restricted). This compensating gate rejects key
+      # references from PR-triggered and transitively callable workflows.
       - name: Release secrets are unreachable from pull_request workflows
         run: |
           set -euo pipefail
-          bad=0
-          for f in .github/workflows/*.y*ml; do
-            if grep -qE '^[[:space:]]*pull_request:' "$f" && grep -qE 'SIGNING_[A-Z_]+' "$f"; then
-              echo "ERROR: $f is pull_request-triggered and references SIGNING_*"
-              bad=1
-            fi
-          done
-          [ "$bad" -eq 0 ] || exit 1
-          echo "OK: no pull_request workflow references release signing secrets"
+          ruby <<'RUBY'
+          require "yaml"
+
+          guarded_events = %w[pull_request pull_request_target workflow_call]
+          violations = []
+
+          Dir[".github/workflows/*.{yaml,yml}"].sort.each do |path|
+            source = File.read(path)
+            begin
+              workflow = YAML.safe_load(source, aliases: true)
+            rescue Psych::SyntaxError => error
+              abort "ERROR: invalid workflow YAML in #{path}: #{error.problem} " \
+                    "(line #{error.line}, column #{error.column})"
+            end
+            configured = workflow["on"] || workflow[true]
+            events = case configured
+                     when String then [configured]
+                     when Array then configured
+                     when Hash then configured.keys.map(&:to_s)
+                     else []
+                     end
+            exposed = events & guarded_events
+            next if exposed.empty?
+
+            reasons = []
+            strings = []
+            visit = lambda do |value|
+              case value
+              when Hash then value.each { |key, child| visit.call(key); visit.call(child) }
+              when Array then value.each { |child| visit.call(child) }
+              when String then strings << value
+              end
+            end
+            visit.call(workflow)
+            secret_context = strings.any? do |value|
+              value.scan(/[$][{][{](.*?)[}][}]/m).any? do |expression|
+                expression.first.match?(/\bsecrets\b/)
+              end
+            end
+            reasons << "secrets context reference" if secret_context
+            jobs = workflow.fetch("jobs", {}).values
+            reasons << "secrets: inherit" if jobs.any? { |job| job["secrets"] == "inherit" }
+            violations << "#{path}: #{exposed.join(', ')} (#{reasons.join(', ')})" unless reasons.empty?
+          end
+
+          unless violations.empty?
+            warn "ERROR: repository secrets may be reachable from PR-triggered or reusable workflows:"
+            violations.each { |violation| warn "  #{violation}" }
+            exit 1
+          end
+          RUBY
+          echo "OK: PR-triggered and reusable workflows use no secrets context"
+
+      - name: Release actions are pinned and signing files are torn down
+        run: |
+          set -euo pipefail
+          ruby <<'RUBY'
+          require "yaml"
+
+          path = ".github/workflows/build-release.yaml"
+          begin
+            workflow = YAML.safe_load_file(path, aliases: true)
+          rescue Psych::SyntaxError => error
+            abort "ERROR: invalid workflow YAML in #{path}: #{error.problem} " \
+                  "(line #{error.line}, column #{error.column})"
+          end
+          steps = workflow.fetch("jobs").fetch("BuildRelease").fetch("steps")
+          external = steps.filter_map do |step|
+            reference = step["uses"]
+            [path, step["name"] || reference, reference] if reference && !reference.start_with?("./")
+          end
+          Dir[".github/actions/**/action.{yaml,yml}"].sort.each do |action_path|
+            begin
+              action = YAML.safe_load_file(action_path, aliases: true)
+            rescue Psych::SyntaxError => error
+              abort "ERROR: invalid action YAML in #{action_path}: #{error.problem} " \
+                    "(line #{error.line}, column #{error.column})"
+            end
+            action.fetch("runs", {}).fetch("steps", []).each do |step|
+              reference = step["uses"]
+              if reference && !reference.start_with?("./")
+                external << [action_path, step["name"] || reference, reference]
+              end
+            end
+          end
+          unpinned = external.reject { |_, _, reference| reference.match?(/@\h{40}\z/) }
+          unless unpinned.empty?
+            abort "ERROR: release actions must use full commit SHAs: #{unpinned.inspect}"
+          end
+
+          restore = steps.index { |step| step["name"] == "Restore release keystore" }
+          cleanup = steps.index { |step| step["name"] == "Remove signing material" }
+          abort "ERROR: signing restore/teardown steps are missing or misordered" \
+            unless restore && cleanup && restore < cleanup
+
+          exposed_actions = steps[(restore + 1)...cleanup].filter_map { |step| step["uses"] }
+          abort "ERROR: external action runs while signing files exist: #{exposed_actions.inspect}" \
+            unless exposed_actions.empty?
+
+          cleanup_step = steps.fetch(cleanup)
+          always_expression = "$" + "{{ always() }}"
+          abort "ERROR: signing teardown must use always()" \
+            unless cleanup_step["if"] == always_expression
+          cleanup_run = cleanup_step.fetch("run", "")
+          signing_paths = %w[
+            $RUNNER_TEMP/getline-release.keystore
+            $RUNNER_TEMP/getline-signing.properties
+          ]
+          abort "ERROR: signing teardown must remove both RUNNER_TEMP files" \
+            unless signing_paths.all? { |signing_path| cleanup_run.include?(signing_path) }
+
+          restore_run = steps.fetch(restore).fetch("run", "")
+          gradle = File.read("build.gradle.kts")
+          required_contract = %w[GETLINE_SIGNING_KEYSTORE GETLINE_SIGNING_PROPERTIES]
+          abort "ERROR: release workflow must export RUNNER_TEMP signing paths" \
+            unless signing_paths.all? { |signing_path| restore_run.include?(signing_path) } &&
+                   required_contract.all? { |name| restore_run.include?(name) }
+          abort "ERROR: Gradle must consume the release signing path contract" \
+            unless required_contract.all? { |name| gradle.include?(name) }
+          RUBY
+          echo "OK: release actions are pinned and RUNNER_TEMP signing files are torn down"
 
       # Version is owned by the release workflow, which commits it on main.
       # A hand-edited version is how 0.2.0 shipped for two fixes.

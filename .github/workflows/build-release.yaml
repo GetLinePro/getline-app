@@ -48,7 +48,7 @@ jobs:
           fi
 
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
 
@@ -56,8 +56,8 @@ jobs:
       # this project (Go core + NDK + R8 + ABI splits) does not fit next to the
       # preinstalled toolchains: the first attempt died with
       # "R8: java.io.IOException: No space left on device".
-      # Explicit rm of things this build never uses — no third-party action gets
-      # to run inside the job that holds the signing key.
+      # Explicit rm avoids another third-party action. External actions run only
+      # before key restoration or after signing teardown.
       - name: Free runner disk space
         # Under act this would prune the developer's Docker host through its
         # socket. The full runner image is managed outside the local job.
@@ -80,13 +80,13 @@ jobs:
         run: ./scripts/apply-mihomo-patches.sh
 
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: "temurin"
           java-version: "21.0.10+7.0.LTS"
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
       - name: Setup Go
         uses: ./.github/actions/setup-pinned-go
@@ -96,7 +96,7 @@ jobs:
           cd $(go env GOROOT)
           for p in $GITHUB_WORKSPACE/.github/patch/*.patch; do patch --verbose -p 1 < "$p"; done
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             ~/.cache/go-build
@@ -212,10 +212,9 @@ jobs:
           fi
           echo "OK: $TAG is free"
 
-      # Local only. Nothing is published until every artifact exists and every
-      # signature check has passed — see "Publish release commit and tag" at the
-      # end. A wrong secret, a Gradle failure or a bad upload must not be able to
-      # leave a release commit and an immutable tag in main with no usable build.
+      # Local only. Pre-push failures publish neither the release commit nor tag.
+      # GitHub Release creation happens after the atomic push; failure there
+      # requires the operator recovery documented in docs/release-policy.md.
       - name: Write version and create the release commit locally
         id: release_commit
         run: |
@@ -260,9 +259,9 @@ jobs:
       - name: Set reproducible build timestamp
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
 
-      # release.keystore is git-ignored, so a hosted runner has no key unless it
-      # is restored from a secret here. Secrets are referenced only by this
-      # workflow_dispatch-only job — never by a pull_request workflow.
+      # Signing files live in RUNNER_TEMP, outside the checked-out workspace.
+      # Secrets are referenced only by this workflow_dispatch-only job — never
+      # by a pull_request workflow.
       - name: Restore release keystore
         env:
           SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
@@ -272,31 +271,48 @@ jobs:
             echo "ERROR: secret SIGNING_KEYSTORE_BASE64 is empty"
             exit 1
           fi
-          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 -d > release.keystore
-          chmod 600 release.keystore
+          keystore="$RUNNER_TEMP/getline-release.keystore"
+          properties="$RUNNER_TEMP/getline-signing.properties"
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$keystore"
+          chmod 600 "$keystore"
+          {
+            echo "GETLINE_SIGNING_KEYSTORE=$keystore"
+            echo "GETLINE_SIGNING_PROPERTIES=$properties"
+          } >> "$GITHUB_ENV"
 
       # Fail closed before anything is published: a wrong keystore must not be
       # able to create a release tag. The expected value is a repository
       # variable, not a secret — the fingerprint is published in Digital Asset
       # Links anyway, and a signature that disagrees with the deployed
       # assetlinks.json breaks Auth Tab sign-in (observed 2026-07-30).
-      - name: Signing certificate matches the deployed DAL
+      - name: Selected signing certificate matches the deployed DAL
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           EXPECTED: ${{ vars.EXPECTED_SIGNING_CERT_SHA256 }}
         run: |
           set -euo pipefail
+          if [ -z "${SIGNING_KEY_ALIAS:-}" ]; then
+            echo "ERROR: secret SIGNING_KEY_ALIAS is empty"
+            exit 1
+          fi
           if [ -z "${EXPECTED:-}" ]; then
             echo "ERROR: repository variable EXPECTED_SIGNING_CERT_SHA256 is not set."
             echo "Set it to the fingerprint published in .well-known/assetlinks.json."
             exit 1
           fi
           norm() { tr -d ': \n' | tr 'a-f' 'A-F'; }
-          actual=$(keytool -list -keystore release.keystore \
-            -storepass "$SIGNING_STORE_PASSWORD" 2>/dev/null \
-            | grep -i 'SHA-256' | head -n1 | grep -oE '([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}')
+          if ! actual=$(keytool -list -keystore "$GETLINE_SIGNING_KEYSTORE" \
+               -alias "$SIGNING_KEY_ALIAS" \
+               -storepass "$SIGNING_STORE_PASSWORD" 2>/dev/null \
+               | grep -i 'SHA-256' | head -n1 \
+               | grep -oE '([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}'); then
+            echo "ERROR: cannot read the selected alias certificate from the release keystore."
+            echo "Check SIGNING_KEY_ALIAS and SIGNING_STORE_PASSWORD."
+            exit 1
+          fi
           if [ "$(printf '%s' "$actual" | norm)" != "$(printf '%s' "$EXPECTED" | norm)" ]; then
-            echo "ERROR: signing certificate does not match the expected fingerprint."
+            echo "ERROR: selected signing certificate does not match the expected fingerprint."
             echo "  keystore: $actual"
             echo "  expected: $EXPECTED"
             exit 1
@@ -311,8 +327,8 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          if [ ! -s release.keystore ]; then
-            echo "ERROR: release.keystore is missing or empty"
+          if [ ! -s "$GETLINE_SIGNING_KEYSTORE" ]; then
+            echo "ERROR: release keystore is missing or empty"
             missing=1
           fi
           for var in SIGNING_STORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD; do
@@ -328,23 +344,24 @@ jobs:
           # Gradle only discovers a wrong alias when it signs, i.e. after a
           # ~13-minute build (observed 2026-07-30: "No key with alias '***'
           # found in keystore", caused by whitespace pasted into the secret).
-          if ! keytool -list -keystore release.keystore \
+          if ! keytool -list -keystore "$GETLINE_SIGNING_KEYSTORE" \
                -alias "$SIGNING_KEY_ALIAS" \
                -storepass "$SIGNING_STORE_PASSWORD" >/dev/null 2>&1; then
-            echo "ERROR: SIGNING_KEY_ALIAS does not name an entry in release.keystore."
+            echo "ERROR: SIGNING_KEY_ALIAS does not name an entry in the release keystore."
             echo "Check for a trailing space or newline in the secret value."
             exit 1
           fi
           # Fingerprint is public — it is published in Digital Asset Links — and
           # this log is the only record of which key signed a given release.
-          keytool -list -keystore release.keystore \
+          keytool -list -keystore "$GETLINE_SIGNING_KEYSTORE" \
+            -alias "$SIGNING_KEY_ALIAS" \
             -storepass "$SIGNING_STORE_PASSWORD" 2>/dev/null | grep -i "SHA-256" || {
-              echo "ERROR: release.keystore unreadable with SIGNING_STORE_PASSWORD"
+              echo "ERROR: release keystore unreadable with SIGNING_STORE_PASSWORD"
               exit 1
             }
           echo "Production signing material is present (values not logged)."
 
-      - name: Write signing.properties
+      - name: Write signing properties
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
@@ -356,9 +373,9 @@ jobs:
             echo "keystore.password=${SIGNING_STORE_PASSWORD}"
             echo "key.alias=${SIGNING_KEY_ALIAS}"
             echo "key.password=${SIGNING_KEY_PASSWORD}"
-          } > signing.properties
-          chmod 600 signing.properties
-          echo "signing.properties written (contents not logged)."
+          } > "$GETLINE_SIGNING_PROPERTIES"
+          chmod 600 "$GETLINE_SIGNING_PROPERTIES"
+          echo "Signing properties written outside the workspace (contents not logged)."
 
       # Two invocations on purpose: build.gradle.kts disables ABI splits when a
       # bundle task is in the same invocation, so combining them would silently
@@ -462,6 +479,21 @@ jobs:
 
           echo "OK: artifacts signed with a non-debug key."
 
+      # This is an always() teardown so failed builds and signature checks do
+      # not leave the key available to later steps. No external action runs
+      # between restoring the key and removing both signing files.
+      - name: Remove signing material
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          rm -f -- "$RUNNER_TEMP/getline-release.keystore" "$RUNNER_TEMP/getline-signing.properties"
+          if [ -e "$RUNNER_TEMP/getline-release.keystore" ] \
+             || [ -e "$RUNNER_TEMP/getline-signing.properties" ]; then
+            echo "ERROR: failed to remove signing material"
+            exit 1
+          fi
+          echo "Signing material removed."
+
       # Everything above is local and reversible. This is the first irreversible
       # step, and it runs only after every artifact exists and every signature
       # check has passed.
@@ -474,14 +506,14 @@ jobs:
           git fetch --no-tags origin main
           if [ "$(git rev-parse FETCH_HEAD)" != "${{ steps.version.outputs.base_sha }}" ]; then
             echo "ERROR: main moved during the release run. Nothing was published;"
-            echo "re-run the workflow (artifacts of this run are downloadable)."
+            echo "re-run the workflow from the current main."
             exit 1
           fi
           git push --atomic origin "HEAD:main" "refs/tags/${{ steps.release_commit.outputs.tag }}"
 
       - name: Upload Release
         if: ${{ !env.ACT }}
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ steps.release_commit.outputs.tag }}
           files: |
