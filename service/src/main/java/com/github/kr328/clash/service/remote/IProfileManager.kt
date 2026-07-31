@@ -13,7 +13,7 @@ interface IProfileManager {
     suspend fun delete(uuid: UUID)
     suspend fun patch(uuid: UUID, name: String, source: String, interval: Long, ageSecretKey: String?)
     /**
-     * Schedules [ProfileWorker] (user-visible progress/result notifications).
+     * Schedules [ProfileWorker] (transient FGS/progress only; no result shade entries).
      * Prefer [updateSilently] for product/background sync.
      */
     suspend fun update(uuid: UUID)
