@@ -25,7 +25,10 @@
       try {
         const returnTo = encodeURIComponent(window.location.origin + "/");
         const response = await fetch(
-          "/api/auth/telegram-oidc/start?intent=login&return_to=" + returnTo,
+          // intent=register, not login: RWP provisions the trial only on the
+          // register branch, and it is idempotent — an existing account just
+          // signs in. login created accounts with no trial at all.
+          "/api/auth/telegram-oidc/start?intent=register&return_to=" + returnTo,
           {
             headers: { Accept: "application/json" },
             credentials: "same-origin",

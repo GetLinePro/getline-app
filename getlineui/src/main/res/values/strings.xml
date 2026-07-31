@@ -98,6 +98,7 @@
     <string name="get_line_action_logout">Sign out</string>
     <string name="get_line_logout_confirm_title">Sign out of your account?</string>
     <string name="get_line_logout_confirm_message">VPN will be disconnected and the GetLine configuration will be removed from this device.</string>
+    <string name="get_line_fetch_activating_trial">Activating trial period</string>
     <string name="get_line_fetch_loading_config">Getting configuration</string>
     <string name="get_line_fetch_checking">Checking settings</string>
     <string name="get_line_fetch_updating">Updating connection</string>

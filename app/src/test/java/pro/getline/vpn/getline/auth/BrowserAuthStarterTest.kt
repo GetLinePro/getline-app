@@ -85,9 +85,9 @@ class BrowserAuthStarterTest {
     fun startPath_googleAndTelegramAreDistinct() {
         val google = RwpGetLineAuthApi.startPath(AuthMethod.Google)
         val telegram = RwpGetLineAuthApi.startPath(AuthMethod.Telegram)
-        assertEquals("/api/auth/google/start", google)
+        assertEquals("/api/auth/google/start?intent=register", google)
         assertTrue(telegram.startsWith("/api/auth/telegram-oidc/start"))
-        assertTrue(telegram.contains("intent=login"))
+        assertTrue(telegram.contains("intent=register"))
         assertTrue(google != telegram)
     }
 

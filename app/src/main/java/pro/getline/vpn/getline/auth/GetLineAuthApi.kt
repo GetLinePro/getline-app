@@ -19,7 +19,8 @@ interface GetLineAuthApi {
     /**
      * Verifies the email OTP and returns a web token for
      * [GetLineSessionRepository.establishFromWebToken].
-     * Wire body always includes `"intent":"login"` (not a public parameter).
+     * Wire body always includes `"intent":"register"` (not a public parameter) —
+     * it is idempotent and is what provisions the trial on first sign-in.
      */
     suspend fun verifyEmailOtp(email: String, code: String): EmailOtpVerifyResult
 
@@ -28,4 +29,11 @@ interface GetLineAuthApi {
     suspend fun exchangeDeviceKey(deviceKey: String): NativeSession
     suspend fun refresh(refreshToken: String): NativeSession
     suspend fun getSubscriptions(accessToken: String): SubscriptionsResponse
+
+    /**
+     * GET /api/dashboard. Provisions the trial on a fresh account — see
+     * [DashboardInfo]. Call once after establishing a session, before
+     * [getSubscriptions], or a new user ends up with no subscription at all.
+     */
+    suspend fun getDashboard(accessToken: String): DashboardInfo
 }

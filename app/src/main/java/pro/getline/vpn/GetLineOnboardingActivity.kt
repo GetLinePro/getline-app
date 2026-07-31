@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.github.kr328.clash.design.R as DesignR
 import pro.getline.vpn.getlineui.GetLineOnboardingDesign
 import pro.getline.vpn.getlineui.R as GetLineUiR
+import pro.getline.vpn.getlineui.model.GetLineImportStage
 import pro.getline.vpn.getlineui.model.GetLineProductState
 import pro.getline.vpn.getline.GetLineBackendProvider
 import pro.getline.vpn.product.GetLineActivity
@@ -540,7 +541,13 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         // Capture prior selection before loading; loadPreferredSubscription does not
         // overwrite store, so account/subscription changes create a new profile.
         val previousSubscriptionId = sessionRepository.rememberedSubscriptionId()
-        val subscription = sessionRepository.loadPreferredSubscription()
+        val subscription = sessionRepository.loadPreferredSubscription(
+            // Fresh accounts have no subscription until GET /api/dashboard makes one.
+            provisionTrialIfEmpty = true,
+            onProvisioningTrial = {
+                design.setImportStage(GetLineImportStage.ActivatingTrial)
+            },
+        )
         val source = subscription.subscriptionLink
             ?: throw GetLineAuthException.Protocol("Missing subscription link")
 

@@ -326,6 +326,7 @@ Refresh lines during API smoke are the curl script, not the APK.
 | `GET` | `/api/auth/me` | Requires `Bearer s0-auth-token`; user `customer_id=e2e-user` |
 | `GET` | `/api/auth/device-key/generate` | Requires web Bearer; stores + returns `s1-device-key` |
 | `POST` | `/api/auth/device-key/exchange` | Body `{"device_key"}` must match issued; returns native session |
+| `GET` | `/api/dashboard` | Requires native access Bearer; trial flags only (prod counterpart provisions the trial) |
 | `GET` | `/api/subscriptions` | Requires native access Bearer; one active sub → `/sub/e2e` |
 | `GET` | `/sub/e2e` | Minimal valid Clash/Mihomo YAML |
 | `POST` | `/api/auth/native/refresh` | Stub; accepts `s1-native-refresh-token` |

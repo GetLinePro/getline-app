@@ -26,6 +26,8 @@ class BrowserAuthHandoffTest {
 
         val session = repo.establishFromWebToken("web-token-from-google-or-telegram")
 
+        // Trial provisioning is not part of establish: it costs a request that
+        // only an account without a subscription needs. See TrialProvisioningTest.
         assertEquals(listOf("generate", "exchange"), api.calls)
         assertEquals("native-access", session.accessToken)
         assertEquals("native-refresh", session.refreshToken)
@@ -107,6 +109,11 @@ class BrowserAuthHandoffTest {
 
         override suspend fun getSubscriptions(accessToken: String): SubscriptionsResponse {
             throw UnsupportedOperationException()
+        }
+
+        override suspend fun getDashboard(accessToken: String): DashboardInfo {
+            calls += "dashboard"
+            throw UnsupportedOperationException("login must not provision a trial")
         }
     }
 }

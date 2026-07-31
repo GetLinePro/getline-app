@@ -98,6 +98,7 @@
     <string name="get_line_action_logout">Выйти из аккаунта</string>
     <string name="get_line_logout_confirm_title">Выйти из аккаунта?</string>
     <string name="get_line_logout_confirm_message">VPN будет отключён, а конфигурация GetLine удалена с устройства.</string>
+    <string name="get_line_fetch_activating_trial">Активируем пробный период</string>
     <string name="get_line_fetch_loading_config">Получаем конфигурацию</string>
     <string name="get_line_fetch_checking">Проверяем настройки</string>
     <string name="get_line_fetch_updating">Обновляем подключение</string>

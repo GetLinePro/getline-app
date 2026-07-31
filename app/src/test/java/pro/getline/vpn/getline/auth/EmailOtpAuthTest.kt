@@ -14,7 +14,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [28])
 class EmailOtpAuthTest {
     @Test
-    fun verifyBody_alwaysIncludesIntentLogin() {
+    fun verifyBody_alwaysIncludesIntentRegister() {
         val body = RwpGetLineAuthApi.emailOtpVerifyBody(
             email = "user@example.com",
             code = "123456",
@@ -22,7 +22,7 @@ class EmailOtpAuthTest {
         val json = JSONObject(body)
         assertEquals("user@example.com", json.getString("email"))
         assertEquals("123456", json.getString("code"))
-        assertEquals("login", json.getString("intent"))
+        assertEquals("register", json.getString("intent"))
         assertEquals(3, json.length())
     }
 

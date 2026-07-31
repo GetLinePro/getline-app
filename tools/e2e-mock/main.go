@@ -63,6 +63,7 @@ func main() {
 	mux.HandleFunc("GET /api/auth/me", handleMe)
 	mux.HandleFunc("GET /api/auth/device-key/generate", handleDeviceKeyGenerate)
 	mux.HandleFunc("POST /api/auth/device-key/exchange", handleDeviceKeyExchange)
+	mux.HandleFunc("GET /api/dashboard", handleDashboard)
 	mux.HandleFunc("GET /api/subscriptions", handleSubscriptions)
 	mux.HandleFunc("GET /sub/e2e", handleSubscriptionYAML)
 	mux.HandleFunc("POST /api/auth/native/refresh", handleNativeRefresh)
@@ -314,6 +315,36 @@ func handleDeviceKeyExchange(w http.ResponseWriter, r *http.Request) {
 }
 
 // Requires native access Bearer (from exchange). Shape from SubscriptionsJson tests.
+// handleDashboard mirrors the prod endpoint the client calls once per login.
+// On real RWP this call is what provisions the trial; the mock always serves a
+// subscription, so here it only has to exist and report the trial as settled.
+func handleDashboard(w http.ResponseWriter, r *http.Request) {
+	nativePresent, nativeMatches := inspectNativeBearer(r)
+
+	log.Printf(
+		"dashboard_requested source=%s native_bearer_present=%t native_token_matches=%t",
+		requestSource(r),
+		nativePresent,
+		nativeMatches,
+	)
+
+	if !nativePresent || !nativeMatches {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "Authentication required",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"trial_enabled":        true,
+		"trial_available":      false,
+		"trial_auto_activated": false,
+		"trial_days":           3,
+		"plans_count":          1,
+		"banners":              []any{},
+	})
+}
+
 func handleSubscriptions(w http.ResponseWriter, r *http.Request) {
 	nativePresent, nativeMatches := inspectNativeBearer(r)
 
@@ -522,7 +553,7 @@ const googleTrampolineHTML = `<!DOCTYPE html>
   <script>
     (async () => {
       try {
-        const response = await fetch("/api/auth/google/start", {
+        const response = await fetch("/api/auth/google/start?intent=register", {
           headers: { Accept: "application/json" },
           credentials: "same-origin",
         });

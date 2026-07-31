@@ -18,6 +18,24 @@ data class NativeSession(
     val expiresInSeconds: Long,
 )
 
+/**
+ * Trial-relevant slice of GET /api/dashboard.
+ *
+ * That endpoint is not a read: it is what provisions the trial subscription on a
+ * fresh account, which is why the app must call it once per login. Verified
+ * 2026-07-31 against production — `subscriptions` was empty before the call and
+ * held one item with a working `subscription_link` right after.
+ *
+ * [trialAutoActivated] is the server reporting "activated during this request",
+ * not "can be activated"; the web SPA renders its confirmation dialog from it.
+ */
+data class DashboardInfo(
+    val trialEnabled: Boolean,
+    val trialAvailable: Boolean,
+    val trialAutoActivated: Boolean,
+    val trialDays: Int?,
+)
+
 data class SubscriptionTraffic(
     val usedBytes: Long,
     val limitBytes: Long,

@@ -48,6 +48,32 @@ class GetLineSessionRepository(
         return session
     }
 
+    /**
+     * GET /api/dashboard: on a fresh account this call is what creates the trial
+     * subscription, so an account with none needs it before there is anything to
+     * import. Only called when the subscription list came back empty — returning
+     * users must not pay for a request that can only tell them what they have.
+     *
+     * Best-effort: a failure here must not fail the login it is part of.
+     *
+     * @return true when the server reports it activated a trial during this call.
+     */
+    private suspend fun provisionTrial(): Boolean {
+        val info = try {
+            api.getDashboard(validAccessToken())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("trial_provision failed kind=${e::class.simpleName} msg=${e.message}")
+            return false
+        }
+        Log.i(
+            "trial_provision auto_activated=${info.trialAutoActivated} " +
+                "available=${info.trialAvailable} enabled=${info.trialEnabled}",
+        )
+        return info.trialAutoActivated
+    }
+
     suspend fun validAccessToken(): String {
         if (store.isAccessTokenValid()) {
             return store.accessToken
@@ -88,13 +114,29 @@ class GetLineSessionRepository(
      * a production URL. That check is environment-scoped, not the control-plane
      * allowlist: the link host is RWP's, not ours.
      * Does not restrict manual user-entered import URLs outside this path.
+     *
+     * @param provisionTrialIfEmpty when the list comes back with nothing to
+     *   import, run [provisionTrial] and read the list once more. Login passes
+     *   true — a fresh account has no subscription until that call creates one.
+     *   Repair paths leave it false: they run for users who already had one.
+     * @param onProvisioningTrial invoked before the extra round trip so the UI
+     *   can explain the pause. Not called when the first read already succeeded.
      */
-    suspend fun loadPreferredSubscription(): SubscriptionItem {
-        val response = getSubscriptionsAuthenticated()
-        val preferred = response.selectPreferred()
+    suspend fun loadPreferredSubscription(
+        provisionTrialIfEmpty: Boolean = false,
+        onProvisioningTrial: suspend () -> Unit = {},
+    ): SubscriptionItem {
+        var preferred = getSubscriptionsAuthenticated().selectPreferred()
+        if (preferred == null && provisionTrialIfEmpty) {
+            onProvisioningTrial()
+            if (provisionTrial()) {
+                preferred = getSubscriptionsAuthenticated().selectPreferred()
+            }
+        }
+        val selected = preferred
             ?: throw GetLineAuthException.Protocol("No subscription with import URL")
-        GetLineControlPlaneHostPolicy.requireSubscriptionUrl(preferred.subscriptionLink)
-        return preferred
+        GetLineControlPlaneHostPolicy.requireSubscriptionUrl(selected.subscriptionLink)
+        return selected
     }
 
     /**

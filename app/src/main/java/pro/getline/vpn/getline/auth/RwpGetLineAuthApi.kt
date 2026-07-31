@@ -135,6 +135,11 @@ class RwpGetLineAuthApi(
         return SubscriptionsJson.parseResponse(json)
     }
 
+    override suspend fun getDashboard(accessToken: String): DashboardInfo {
+        val json = authorizedGet(DASHBOARD_PATH, accessToken)
+        return parseDashboard(json)
+    }
+
     private suspend fun authorizedGet(
         path: String,
         bearer: String,
@@ -296,9 +301,15 @@ class RwpGetLineAuthApi(
     }
 
     companion object {
+        const val DASHBOARD_PATH = "/api/dashboard"
         const val EMAIL_SEND_OTP_PATH = "/api/auth/email/send-otp"
         const val EMAIL_VERIFY_OTP_PATH = "/api/auth/email/verify-otp"
-        private const val EMAIL_LOGIN_INTENT = "login"
+        /**
+         * `register`, not `login`: RWP provisions the trial only on the register
+         * branch and treats it as idempotent — an existing account just signs in.
+         * `login` silently created accounts that never got a trial.
+         */
+        private const val EMAIL_AUTH_INTENT = "register"
         private const val TIMEOUT_MS = 30_000
         private const val DEFAULT_EXPIRES_IN_SECONDS = 86_400L
 
@@ -362,14 +373,20 @@ class RwpGetLineAuthApi(
             )
         }
 
+        /**
+         * Browser start paths, kept in sync with the deployed trampoline HTML
+         * under `docs/spikes/android-auth/` — this is the revert path if
+         * trampolines misbehave, so a stale `intent` here would bring the
+         * "registered without a trial" bug back.
+         */
         fun startPath(method: AuthMethod): String {
             require(method.requiresBrowser()) {
                 "AuthMethod.$method has no browser start path"
             }
             return when (method) {
-                AuthMethod.Google -> "/api/auth/google/start"
+                AuthMethod.Google -> "/api/auth/google/start?intent=register"
                 AuthMethod.Telegram ->
-                    "/api/auth/telegram-oidc/start?intent=login&return_to=" +
+                    "/api/auth/telegram-oidc/start?intent=register&return_to=" +
                         java.net.URLEncoder.encode(
                             AppEnvironment.telegramReturnTo,
                             StandardCharsets.UTF_8.name(),
@@ -383,12 +400,12 @@ class RwpGetLineAuthApi(
             return JSONObject().put("email", email).toString()
         }
 
-        /** JSON body for verify-otp; intent is always `"login"`. */
+        /** JSON body for verify-otp; intent is always [EMAIL_AUTH_INTENT]. */
         fun emailOtpVerifyBody(email: String, code: String): String {
             return JSONObject()
                 .put("email", email)
                 .put("code", code)
-                .put("intent", EMAIL_LOGIN_INTENT)
+                .put("intent", EMAIL_AUTH_INTENT)
                 .toString()
         }
 
@@ -420,6 +437,25 @@ class RwpGetLineAuthApi(
             return EmailOtpVerifyResult(
                 webToken = token,
                 expiresInSeconds = expiresIn,
+            )
+        }
+
+        /**
+         * Tolerant by design: every field is optional. The call is made for its
+         * server-side effect (trial provisioning), so a payload we cannot fully
+         * read must not fail the login it is part of.
+         */
+        fun parseDashboard(json: JSONObject): DashboardInfo {
+            val days = if (json.has("trial_days") && !json.isNull("trial_days")) {
+                json.optInt("trial_days").takeIf { it > 0 }
+            } else {
+                null
+            }
+            return DashboardInfo(
+                trialEnabled = json.optBoolean("trial_enabled"),
+                trialAvailable = json.optBoolean("trial_available"),
+                trialAutoActivated = json.optBoolean("trial_auto_activated"),
+                trialDays = days,
             )
         }
     }

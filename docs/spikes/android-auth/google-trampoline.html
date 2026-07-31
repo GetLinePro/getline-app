@@ -24,7 +24,10 @@
     // initial load. Example: /android-auth/google
     (async () => {
       try {
-        const response = await fetch("/api/auth/google/start", {
+        // intent=register, not login: RWP provisions the trial only on the
+        // register branch, and it is idempotent — an existing account just
+        // signs in. Omitting it created accounts with no trial at all.
+        const response = await fetch("/api/auth/google/start?intent=register", {
           headers: { Accept: "application/json" },
           credentials: "same-origin",
         });

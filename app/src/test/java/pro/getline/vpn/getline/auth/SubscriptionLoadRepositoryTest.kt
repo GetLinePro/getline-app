@@ -339,6 +339,9 @@ class SubscriptionLoadRepositoryTest {
         override suspend fun generateDeviceKey(webToken: String) = error("not used")
         override suspend fun exchangeDeviceKey(deviceKey: String) = error("not used")
 
+        // Trial provisioning belongs to login, not to the subscription UI path.
+        override suspend fun getDashboard(accessToken: String) = error("not used")
+
         override suspend fun refresh(refreshToken: String): NativeSession {
             refreshCalls++
             if (refreshBlock != null) {
