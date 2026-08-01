@@ -75,7 +75,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         // remains a quiet hatch. EXTRA_OPEN_ADVANCED route is unchanged.
         design.setAdvancedButtonVisible(BuildConfig.DEBUG)
         // Read once: a later external import (onNewIntent) replaces the Activity
-        // intent, and this screen must not silently lose its exit affordance.
+        // intent: this screen must not silently lose its exit affordance, and
+        // QR / manual import stays hidden for the whole session of this entry.
         linkOnlySignIn = intent.getBooleanExtra(EXTRA_LINK_ONLY_SIGN_IN, false)
         design.setLinkOnlySignIn(linkOnlySignIn)
         // Resumed post-login step (mismatch dialog / import) starts with a live
@@ -175,6 +176,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             if (!busy) {
                                 finish()
                             }
+                        GetLineOnboardingDesign.Request.ScanQrCode ->
+                            scanQrSubscription(design)
                         GetLineOnboardingDesign.Request.OpenAdvanced ->
                             openAdvanced()
                         GetLineOnboardingDesign.Request.OpenHelp ->
@@ -221,22 +224,17 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
 
     /**
      * Manual "add existing subscription": product URL dialog, then headless import.
-     * Cancel returns to providers (or restores mid-OTP email flow).
+     *
+     * Cancel leaves product state and [retryTarget] alone — alternate import is
+     * reachable from Offline / AuthFailed / ImportFailed / BackendUnavailable,
+     * where Retry must still re-run the step that failed.
      */
     private suspend fun addExistingSubscription(design: GetLineOnboardingDesign) {
         if (busy) return
 
-        val emailToRestore = pendingEmailAuth
-        val url = design.requestSubscriptionUrl()
-        if (url == null) {
-            if (emailToRestore != null) {
-                restoreEmailAuth(design)
-            } else {
-                retryTarget = RetryTarget.Refresh
-                refreshEntryState(design)
-            }
-            return
-        }
+        val url = design.requestSubscriptionUrl(
+            validator = { GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(it) },
+        ) ?: return
 
         importSubscription(
             design = design,
@@ -246,6 +244,67 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 source = url,
             ),
         )
+    }
+
+    /**
+     * Product QR import. Same durable pipeline as [addExistingSubscription] after
+     * host-policy validation and a host-only confirm dialog.
+     */
+    private suspend fun scanQrSubscription(design: GetLineOnboardingDesign) {
+        if (busy) return
+
+        when (val result = startActivityForResult(ScanQrCode(), Unit)) {
+            is QrScanResult.Success -> {
+                val content = result.content.trim()
+                if (!GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(content)) {
+                    if (design.offerManualEntryAfterScanFailure(
+                            GetLineUiR.string.get_line_import_link_rejected,
+                        )
+                    ) {
+                        addExistingSubscription(design)
+                    }
+                    return
+                }
+                val host = GetLineControlPlaneHostPolicy.canonicalizeHost(
+                    android.net.Uri.parse(content).host,
+                )
+                if (host == null) {
+                    if (design.offerManualEntryAfterScanFailure(
+                            GetLineUiR.string.get_line_import_link_rejected,
+                        )
+                    ) {
+                        addExistingSubscription(design)
+                    }
+                    return
+                }
+                if (!design.confirmSubscriptionImport(host)) return
+                importSubscription(
+                    design = design,
+                    request = GetLineSubscriptionDraft(
+                        type = GetLineSubscriptionType.Url,
+                        name = getString(DesignR.string.new_profile),
+                        source = content,
+                    ),
+                )
+            }
+            QrScanResult.UserCanceled -> Unit
+            QrScanResult.MissingPermission -> {
+                if (design.offerManualEntryAfterScanFailure(
+                        GetLineUiR.string.get_line_qr_no_camera_permission,
+                    )
+                ) {
+                    addExistingSubscription(design)
+                }
+            }
+            QrScanResult.Error -> {
+                if (design.offerManualEntryAfterScanFailure(
+                        GetLineUiR.string.get_line_qr_scan_failed,
+                    )
+                ) {
+                    addExistingSubscription(design)
+                }
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -1176,8 +1235,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         private const val RESEND_COOLDOWN_MS = 60_000L
 
         /**
-         * Sign-in opened from Home on top of a working link-only subscription.
-         * Changes entry copy and offers an exit back to Home — no auth behaviour.
+         * Sign-in opened from Home over a working link-only subscription.
+         * Changes entry copy, offers an exit back to Home and suppresses
+         * alternate import (QR / manual link) — no auth behaviour.
          */
         const val EXTRA_LINK_ONLY_SIGN_IN =
             "pro.getline.vpn.extra.GET_LINE_LINK_ONLY_SIGN_IN"

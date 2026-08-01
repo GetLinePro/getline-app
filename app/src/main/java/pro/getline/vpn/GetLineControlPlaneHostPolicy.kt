@@ -143,16 +143,26 @@ object GetLineControlPlaneHostPolicy {
         return isGetLineFamilyHost(canonical) && !isStageHost(canonical)
     }
 
+    /**
+     * Predicate form of [requireSubscriptionUrl] for UI validators (manual entry /
+     * QR) that need a boolean without throwing.
+     */
+    fun isAllowedSubscriptionUrl(url: String?): Boolean {
+        val uri = parseHttpsUri(url) ?: return false
+        return isAllowedSubscriptionHost(uri.host)
+    }
+
     fun requireSubscriptionUrl(url: String?) {
-        val uri = parseHttpsUri(url)
-            ?: throw GetLineAuthException.Protocol(
+        if (isAllowedSubscriptionUrl(url)) return
+        // Preserve distinct messages for callers that surface Protocol text.
+        if (parseHttpsUri(url) == null) {
+            throw GetLineAuthException.Protocol(
                 "subscription_link must be https with a host",
             )
-        if (!isAllowedSubscriptionHost(uri.host)) {
-            throw GetLineAuthException.Protocol(
-                "subscription_link host not allowed for this environment",
-            )
         }
+        throw GetLineAuthException.Protocol(
+            "subscription_link host not allowed for this environment",
+        )
     }
 
     /** Hostname is under getline.pro (including the apex). */

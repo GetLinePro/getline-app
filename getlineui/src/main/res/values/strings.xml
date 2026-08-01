@@ -20,6 +20,15 @@
     <string name="get_line_email_back">Back</string>
     <string name="get_line_subscription_profile_name">GetLine Pro</string>
     <string name="get_line_add_existing_subscription">I have a subscription link</string>
+    <!-- TalkBack for the top-end QR icon button (no on-screen label). -->
+    <string name="get_line_onboarding_scan_qr">Scan QR code</string>
+    <string name="get_line_onboarding_enter_link">Enter link manually</string>
+    <string name="get_line_import_link_rejected">This does not look like a GetLine subscription link</string>
+    <string name="get_line_qr_no_camera_permission">Camera access is required. You can enter the link manually.</string>
+    <string name="get_line_qr_scan_failed">Couldn’t read the QR code. You can enter the link manually.</string>
+    <string name="get_line_qr_confirm_title">Import subscription?</string>
+    <string name="get_line_qr_confirm_message">The subscription will be loaded from %1$s.</string>
+    <string name="get_line_action_enter_link_manually">Enter link manually</string>
     <string name="get_line_open_advanced">Advanced</string>
     <string name="get_line_import_not_completed">Subscription import was not completed</string>
     <string name="get_line_home_status_disconnected">Disconnected</string>

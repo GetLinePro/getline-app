@@ -16,6 +16,15 @@
     <string name="get_line_email_back">Назад</string>
     <string name="get_line_subscription_profile_name">GetLine Pro</string>
     <string name="get_line_add_existing_subscription">У меня есть ссылка</string>
+    <!-- TalkBack for the top-end QR icon button (no on-screen label). -->
+    <string name="get_line_onboarding_scan_qr">Сканировать QR-код</string>
+    <string name="get_line_onboarding_enter_link">Ввести ссылку вручную</string>
+    <string name="get_line_import_link_rejected">Ссылка не похожа на подписку GetLine</string>
+    <string name="get_line_qr_no_camera_permission">Нет доступа к камере. Ссылку можно ввести вручную.</string>
+    <string name="get_line_qr_scan_failed">Не удалось прочитать QR-код. Ссылку можно ввести вручную.</string>
+    <string name="get_line_qr_confirm_title">Импортировать подписку?</string>
+    <string name="get_line_qr_confirm_message">Подписка будет загружена с %1$s.</string>
+    <string name="get_line_action_enter_link_manually">Ввести ссылку вручную</string>
     <string name="get_line_open_advanced">Расширенный интерфейс</string>
     <string name="get_line_import_not_completed">Импорт подписки не был завершён</string>
     <string name="get_line_home_status_disconnected">Отключён</string>

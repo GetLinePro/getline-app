@@ -232,6 +232,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         // Sign-in on top of a working link-only subscription is an
                         // optional upgrade, not a fallback to the entry screen: keep
                         // Home alive so the user can come back to the running VPN.
+                        // The screen also drops QR / manual import there — the
+                        // subscription already exists.
                         GetLineHomeDesign.Request.SignIn ->
                             if (usesLinkOnlyUi() &&
                                 sessionRepository.managedProfileUuid() != null

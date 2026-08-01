@@ -255,6 +255,58 @@ class GetLineControlPlaneHostPolicyTest {
     }
 
     @Test
+    fun isAllowedSubscriptionUrl_matchesRequireAndRejectsBadForms() {
+        assertFalse(GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(null))
+        assertFalse(GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(""))
+        assertFalse(GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl("not-a-url"))
+        assertFalse(
+            GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(
+                "http://sub.getline.pro/sub/x",
+            ),
+        )
+        assertFalse(
+            GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(
+                "https://user:pass@sub.getline.pro/sub/x",
+            ),
+        )
+        assertFalse(
+            GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(
+                "https://evil.com/sub/x",
+            ),
+        )
+
+        if (isE2e) {
+            assertFalse(
+                GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(
+                    "https://sub.getline.pro/sub/x",
+                ),
+            )
+            assertTrue(
+                GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(
+                    "https://app.stage.getline.pro/sub/e2e",
+                ),
+            )
+        } else {
+            assertFalse(
+                GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(
+                    "https://app.stage.getline.pro/sub/e2e",
+                ),
+            )
+            assertTrue(
+                GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(
+                    "https://sub.getline.pro/path/token",
+                ),
+            )
+            // Trailing FQDN dot on host must match the undotted form.
+            assertTrue(
+                GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(
+                    "https://sub.getline.pro./path/token",
+                ),
+            )
+        }
+    }
+
+    @Test
     fun requireBrowserLaunchUrl_rejectsWrongEnvironmentGetLineHost() {
         val foreign = if (isE2e) {
             "https://app.getline.pro/__mock__/google"

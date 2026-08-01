@@ -15,6 +15,13 @@
         <variable
             name="otpStepVisible"
             type="boolean" />
+        <!--
+          QR + manual link. Not the same as providersVisible: Offline /
+          ImportFailed hide login chrome but must keep alternate import.
+        -->
+        <variable
+            name="alternateImportVisible"
+            type="boolean" />
         <variable
             name="actionsEnabled"
             type="boolean" />
@@ -41,6 +48,10 @@
         android:paddingStart="@{self.surface.insets.start}"
         android:paddingEnd="@{self.surface.insets.end}">
 
+        <!--
+          Scroll content first. QR overlay is declared after so it draws and
+          receives taps above the match_parent ScrollView (z-order = child order).
+        -->
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="match_parent"
@@ -154,6 +165,23 @@
                         app:iconPadding="8dp"
                         app:iconTint="@color/getline_brand_primary"
                         tools:text="Sign in with Telegram" />
+
+                    <!--
+                      Manual link import only (QR is the top-end icon).
+                      Visible on Offline / ImportFailed / BackendUnavailable even when
+                      login chrome is gone; hidden on email/OTP to avoid mis-taps.
+                    -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/enter_link"
+                        style="@style/Widget.GetLine.SecondaryTextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_advanced_margin_top"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onEnterLink()}"
+                        android:text="@string/get_line_onboarding_enter_link"
+                        android:visibility="@{alternateImportVisible ? View.VISIBLE : View.GONE}"
+                        tools:text="Enter link manually" />
 
                     <!-- Email entry -->
                     <com.google.android.material.textfield.TextInputLayout
@@ -303,5 +331,43 @@
                 </LinearLayout>
             </FrameLayout>
         </ScrollView>
+
+        <!--
+          After ScrollView: child order = draw/touch order. A match_parent
+          ScrollView declared later ate all taps on the QR icon.
+          wrap_content only — a full-width strip would steal scrolls under it.
+          Hit target 56dp, icon 28dp (was 48/24).
+        -->
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:paddingTop="@{self.surface.insets.top}"
+            android:paddingEnd="8dp"
+            android:visibility="@{alternateImportVisible ? View.VISIBLE : View.GONE}">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/scan_qr"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:contentDescription="@string/get_line_onboarding_scan_qr"
+                android:enabled="@{actionsEnabled}"
+                android:elevation="2dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="56dp"
+                android:minHeight="56dp"
+                android:onClick="@{() -> self.onScanQr()}"
+                android:padding="0dp"
+                app:icon="@drawable/ic_qr_code_scanner"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconSize="28dp"
+                app:iconTint="@color/getline_brand_primary"
+                tools:visibility="visible" />
+        </FrameLayout>
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
 </layout>

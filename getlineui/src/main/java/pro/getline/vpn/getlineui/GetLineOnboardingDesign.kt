@@ -6,6 +6,7 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.view.View
+import androidx.annotation.StringRes
 import androidx.core.content.ContextCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import pro.getline.vpn.getlineui.databinding.DesignGetLineOnboardingBinding
@@ -13,7 +14,7 @@ import pro.getline.vpn.getlineui.dialog.requestModelTextInput
 import pro.getline.vpn.getlineui.model.GetLineImportStage
 import pro.getline.vpn.getlineui.model.GetLineProductState
 import pro.getline.vpn.getlineui.model.GetLineRecoveryAction
-import pro.getline.vpn.getlineui.util.ValidatorHttpUrl
+import pro.getline.vpn.getlineui.util.Validator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -34,6 +35,8 @@ class GetLineOnboardingDesign(context: Context) :
         object AddExistingSubscription : Request()
         /** Leave sign-in without signing in (link-only entry only). */
         object Dismiss : Request()
+        /** Product QR import (same pipeline as [AddExistingSubscription]). */
+        object ScanQrCode : Request()
         /**
          * Diagnostic hatch into MainActivity advanced shell.
          * Not a release product surface — debug button or brand multi-tap only.
@@ -58,7 +61,11 @@ class GetLineOnboardingDesign(context: Context) :
     private var authStep: AuthStep = AuthStep.Providers
     private var pendingEmail: String = ""
     private var resendSecondsRemaining: Int = 0
-    /** Entered from Home over a working link-only profile, not from a cold start. */
+    /**
+     * Entered from Home over a working link-only profile, not from a cold start
+     * (see Activity EXTRA_LINK_ONLY_SIGN_IN). Suppresses alternate import —
+     * the subscription is already present.
+     */
     private var linkOnlySignIn: Boolean = false
     /** Session persisted; only the subscription step is left (see [setSessionEstablished]). */
     private var sessionEstablished: Boolean = false
@@ -151,18 +158,72 @@ class GetLineOnboardingDesign(context: Context) :
 
     /**
      * Product URL dialog for "add existing subscription".
+     * [validator] is supplied by the host (control-plane host policy lives in
+     * `:app`; `:getlineui` must not depend on it).
      * @return validated URL, or null when the user cancels.
      */
-    suspend fun requestSubscriptionUrl(): String? {
+    suspend fun requestSubscriptionUrl(validator: Validator): String? {
         return withContext(Dispatchers.Main) {
+            // Validator may accept after internal trim (host policy); return the
+            // same normalized form the import pipeline will fetch.
             context.requestModelTextInput(
                 initial = null,
                 title = context.getText(R.string.url),
                 reset = null,
                 hint = context.getText(R.string.profile_url),
-                error = context.getText(R.string.accept_http_content),
-                validator = ValidatorHttpUrl,
-            )?.takeIf { it.isNotBlank() }
+                error = context.getText(R.string.get_line_import_link_rejected),
+                validator = validator,
+            )?.trim()?.takeIf { it.isNotEmpty() }
+        }
+    }
+
+    /**
+     * Confirm QR import. Shows [host] only — full URL carries a subscription
+     * token and must not appear in a dialog the user might screenshot/share.
+     */
+    suspend fun confirmSubscriptionImport(host: String): Boolean {
+        return withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { cont ->
+                val dialog = MaterialAlertDialogBuilder(context)
+                    .setTitle(R.string.get_line_qr_confirm_title)
+                    .setMessage(
+                        context.getString(R.string.get_line_qr_confirm_message, host),
+                    )
+                    .setCancelable(true)
+                    .setPositiveButton(R.string.ok) { _, _ ->
+                        if (!cont.isCompleted) cont.resume(true)
+                    }
+                    .setNegativeButton(R.string.cancel) { _, _ ->
+                        if (!cont.isCompleted) cont.resume(false)
+                    }
+                    .setOnDismissListener {
+                        if (!cont.isCompleted) cont.resume(false)
+                    }
+                    .show()
+                cont.invokeOnCancellation { dialog.dismiss() }
+            }
+        }
+    }
+
+    /** Scan failed: offer the manual path instead of leaving a dead end. */
+    suspend fun offerManualEntryAfterScanFailure(@StringRes message: Int): Boolean {
+        return withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { cont ->
+                val dialog = MaterialAlertDialogBuilder(context)
+                    .setMessage(message)
+                    .setCancelable(true)
+                    .setPositiveButton(R.string.get_line_action_enter_link_manually) { _, _ ->
+                        if (!cont.isCompleted) cont.resume(true)
+                    }
+                    .setNegativeButton(R.string.cancel) { _, _ ->
+                        if (!cont.isCompleted) cont.resume(false)
+                    }
+                    .setOnDismissListener {
+                        if (!cont.isCompleted) cont.resume(false)
+                    }
+                    .show()
+                cont.invokeOnCancellation { dialog.dismiss() }
+            }
         }
     }
 
@@ -240,6 +301,14 @@ class GetLineOnboardingDesign(context: Context) :
 
     fun onLoginEmail() {
         request(Request.LoginEmail)
+    }
+
+    fun onScanQr() {
+        request(Request.ScanQrCode)
+    }
+
+    fun onEnterLink() {
+        request(Request.AddExistingSubscription)
     }
 
     fun onSendEmailOtp() {
@@ -427,8 +496,8 @@ class GetLineOnboardingDesign(context: Context) :
     }
 
     /**
-     * Import-subscription CTA only on the provider list. Email/OTP steps must not
-     * offer it (easy mis-tap; traps users out of OTP entry).
+     * Link/QR import lives in the alternate-import block, not state-view recovery.
+     * Error states keep Retry; Home still uses [GetLineRecoveryAction.ImportSubscription].
      */
     private fun recoveryActionFor(state: GetLineProductState): GetLineRecoveryAction {
         return when (state) {
@@ -436,14 +505,7 @@ class GetLineOnboardingDesign(context: Context) :
             GetLineProductState.BackendUnavailable,
             GetLineProductState.ImportFailed,
             GetLineProductState.AuthFailed -> GetLineRecoveryAction.Retry
-            // linkOnlySignIn: the user got here from a subscription they already
-            // imported by link — offering to import another one is noise.
-            GetLineProductState.NoProfile ->
-                if (authStep == AuthStep.Providers && !linkOnlySignIn) {
-                    GetLineRecoveryAction.ImportSubscription
-                } else {
-                    GetLineRecoveryAction.None
-                }
+            GetLineProductState.NoProfile -> GetLineRecoveryAction.None
             // Home-only repair; onboarding never shows these states.
             GetLineProductState.ConnectionRepairFailed,
             GetLineProductState.ConnectionRestoreFailed,
@@ -466,6 +528,12 @@ class GetLineOnboardingDesign(context: Context) :
         binding.providersVisible = loginChrome && authStep == AuthStep.Providers
         binding.emailStepVisible = loginChrome && authStep == AuthStep.EmailEntry
         binding.otpStepVisible = loginChrome && authStep == AuthStep.OtpEntry
+        // Offline/ImportFailed hide login chrome (including mid-email/OTP). Alternate
+        // import must stay; pure authStep==Providers would hide it after email→offline.
+        binding.alternateImportVisible =
+            !linkOnlySignIn &&
+                showsAlternateImport(state) &&
+                (authStep == AuthStep.Providers || !loginChrome)
         // Hidden only while an email/OTP step is on screen — that step has its own
         // "Back". Where the chrome is hidden (post-session errors) this is the only
         // way out, and an exit racing an in-flight import (loading) is a trap.
@@ -473,6 +541,18 @@ class GetLineOnboardingDesign(context: Context) :
             (authStep == AuthStep.Providers || !loginChrome) &&
             !state.loading &&
             state != GetLineProductState.Content
+    }
+
+    /** States where QR + manual link must stay reachable. */
+    private fun showsAlternateImport(state: GetLineProductState): Boolean {
+        return when (state) {
+            GetLineProductState.NoProfile,
+            GetLineProductState.Offline,
+            GetLineProductState.AuthFailed,
+            GetLineProductState.ImportFailed,
+            GetLineProductState.BackendUnavailable -> true
+            else -> false
+        }
     }
 
     /**
