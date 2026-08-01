@@ -2,6 +2,7 @@ package pro.getline.vpn.getline.auth
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -127,6 +128,116 @@ class SubscriptionStateHolderTest {
         assertEquals("New", ready.subscription.title)
         assertFalse(ready.isRefreshing)
         assertFalse(ready.transientError)
+    }
+
+    @Test
+    fun beginLinkOnlyRefresh_keepsCardAndSetsRefreshing() {
+        val holder = SubscriptionStateHolder()
+        val linkOnly = LinkOnlyPresentation(
+            expireAtEpochMillis = 1_700_000_000_000L,
+            trafficUsedBytes = 10L,
+            trafficLimitBytes = 100L,
+        )
+        holder.applySignedOut(hasImportedProfile = true, linkOnly = linkOnly)
+        val gen = holder.beginLinkOnlyRefresh()
+        assertTrue(gen != null)
+        val signedOut = holder.state as SubscriptionUiState.SignedOut
+        assertEquals(linkOnly, signedOut.linkOnly)
+        assertTrue(signedOut.isRefreshing)
+        assertFalse(signedOut.refreshFailed)
+        assertTrue(holder.requestInFlight)
+        assertEquals(gen, holder.flightGeneration)
+    }
+
+    @Test
+    fun beginLinkOnlyRefresh_secondCallRejected() {
+        val holder = SubscriptionStateHolder()
+        holder.applySignedOut(
+            hasImportedProfile = true,
+            linkOnly = LinkOnlyPresentation(null, 0L, 100L),
+        )
+        assertTrue(holder.beginLinkOnlyRefresh() != null)
+        assertNull(holder.beginLinkOnlyRefresh())
+    }
+
+    @Test
+    fun onRequestCancelled_clearsLinkOnlyRefreshing() {
+        val holder = SubscriptionStateHolder()
+        holder.applySignedOut(
+            hasImportedProfile = true,
+            linkOnly = LinkOnlyPresentation(null, null, null),
+        )
+        val gen = holder.beginLinkOnlyRefresh()!!
+        holder.onRequestCancelled(gen)
+        val signedOut = holder.state as SubscriptionUiState.SignedOut
+        assertFalse(signedOut.isRefreshing)
+        assertFalse(holder.requestInFlight)
+    }
+
+    @Test
+    fun onRequestCancelled_staleGenerationIgnored() {
+        val holder = SubscriptionStateHolder()
+        holder.applySignedOut(
+            hasImportedProfile = true,
+            linkOnly = LinkOnlyPresentation(null, null, null),
+        )
+        val first = holder.beginLinkOnlyRefresh()!!
+        // Supersede as host would after cancel + new begin.
+        val second = holder.beginLinkOnlyRefresh(supersede = true)!!
+        assertTrue(second > first)
+        holder.onRequestCancelled(first)
+        assertTrue(holder.requestInFlight)
+        assertTrue((holder.state as SubscriptionUiState.SignedOut).isRefreshing)
+        holder.onRequestCancelled(second)
+        assertFalse(holder.requestInFlight)
+        assertFalse((holder.state as SubscriptionUiState.SignedOut).isRefreshing)
+    }
+
+    @Test
+    fun applyLinkOnlyRefreshResult_nullRemovesCard() {
+        val holder = SubscriptionStateHolder()
+        holder.applySignedOut(
+            hasImportedProfile = true,
+            linkOnly = LinkOnlyPresentation(1L, 2L, 3L),
+        )
+        val gen = holder.beginLinkOnlyRefresh()!!
+        // Confirmed absence after successful inventory — not a transient IPC failure.
+        holder.applyLinkOnlyRefreshResult(linkOnly = null, failed = true, generation = gen)
+        val signedOut = holder.state as SubscriptionUiState.SignedOut
+        assertNull(signedOut.linkOnly)
+        assertFalse(signedOut.isRefreshing)
+        assertTrue(signedOut.refreshFailed)
+        assertFalse(holder.requestInFlight)
+    }
+
+    @Test
+    fun applyLinkOnlyRefreshResult_failedKeepsLastKnownCard() {
+        val holder = SubscriptionStateHolder()
+        val card = LinkOnlyPresentation(1L, 2L, 3L)
+        holder.applySignedOut(hasImportedProfile = true, linkOnly = card)
+        val gen = holder.beginLinkOnlyRefresh()!!
+        // Transient snapshot/update failure: host re-passes previous presentation.
+        holder.applyLinkOnlyRefreshResult(linkOnly = card, failed = true, generation = gen)
+        val signedOut = holder.state as SubscriptionUiState.SignedOut
+        assertEquals(card, signedOut.linkOnly)
+        assertFalse(signedOut.isRefreshing)
+        assertTrue(signedOut.refreshFailed)
+    }
+
+    @Test
+    fun applyLinkOnlyRefreshResult_staleGenerationIgnored() {
+        val holder = SubscriptionStateHolder()
+        val card = LinkOnlyPresentation(1L, 2L, 3L)
+        holder.applySignedOut(hasImportedProfile = true, linkOnly = card)
+        val first = holder.beginLinkOnlyRefresh()!!
+        val second = holder.beginLinkOnlyRefresh(supersede = true)!!
+        holder.applyLinkOnlyRefreshResult(linkOnly = null, failed = false, generation = first)
+        // Stale completion must not wipe the superseding refresh.
+        assertTrue(holder.requestInFlight)
+        assertEquals(card, (holder.state as SubscriptionUiState.SignedOut).linkOnly)
+        holder.applyLinkOnlyRefreshResult(linkOnly = card, failed = true, generation = second)
+        assertFalse(holder.requestInFlight)
+        assertTrue((holder.state as SubscriptionUiState.SignedOut).refreshFailed)
     }
 
     private fun samplePresentation(title: String = "Trial"): SubscriptionPresentation {

@@ -166,6 +166,7 @@ data class GetLineSubscriptionDraft(
 )
 
 data class GetLineSubscriptionSummary(
+    val uuid: String,
     val name: String,
     val expire: Long,
     val upload: Long,

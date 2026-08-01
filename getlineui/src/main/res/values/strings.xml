@@ -37,7 +37,7 @@
     <!-- Whole Home location card, spoken as one phrase: value then what it does. -->
     <string name="get_line_home_location_action">Location: %1$s. Change server</string>
     <string name="get_line_shell_servers_title">Servers</string>
-    <string name="get_line_shell_servers_explanation">Choose a location for your VPN connection. Switching tabs does not disconnect VPN.</string>
+    <string name="get_line_shell_servers_explanation">Choose a location for your VPN connection.</string>
     <string name="get_line_shell_select_server">Select server</string>
     <string name="get_line_shell_current_server_label">Current server</string>
     <string name="get_line_shell_available_servers_label">Available servers</string>
@@ -57,7 +57,7 @@
         <item quantity="other">%1$d options</item>
     </plurals>
     <string name="get_line_servers_vpn_stopped_title">VPN is not connected</string>
-    <string name="get_line_servers_vpn_stopped_explanation">Connect on Home to load servers. Switching tabs does not disconnect VPN.</string>
+    <string name="get_line_servers_vpn_stopped_explanation">Connect on Home to load servers.</string>
     <string name="get_line_servers_empty_title">No servers available</string>
     <string name="get_line_servers_empty_explanation">The active profile has no selectable servers in the main group.</string>
     <string name="get_line_servers_load_failed_title">Couldn’t load servers</string>
@@ -89,6 +89,10 @@
     <string name="get_line_subscription_empty_explanation">Refresh the data or contact support.</string>
     <string name="get_line_subscription_signed_out_title">Subscription management unavailable</string>
     <string name="get_line_subscription_signed_out_explanation">Sign in to GetLine Pro to view and manage your subscription.</string>
+    <string name="get_line_subscription_link_only_title">Subscription added by link</string>
+    <string name="get_line_subscription_link_only_explanation">To manage billing and devices, sign in with the subscription owner account.</string>
+    <string name="get_line_subscription_link_only_sign_in">Sign in to manage</string>
+    <string name="get_line_subscription_link_only_refresh_failed">Couldn’t refresh subscription. Using last saved settings.</string>
     <string name="get_line_subscription_transient_error">Couldn’t refresh. Showing last known data.</string>
     <string name="get_line_account_portal_title">Personal account</string>
     <string name="get_line_account_portal_explanation">Plans, payments, and device management</string>
@@ -99,8 +103,12 @@
     <string name="get_line_action_sign_in">Sign in</string>
     <string name="get_line_action_help">Help</string>
     <string name="get_line_action_logout">Sign out</string>
+    <string name="get_line_action_remove_subscription">Remove subscription from device</string>
     <string name="get_line_logout_confirm_title">Sign out of your account?</string>
     <string name="get_line_logout_confirm_message">VPN will be disconnected and the GetLine Pro configuration will be removed from this device.</string>
+    <string name="get_line_remove_subscription_confirm_title">Remove subscription from this device?</string>
+    <string name="get_line_remove_subscription_confirm_message">VPN will be disconnected and the configuration removed from this device. You can import the link again.</string>
+    <string name="get_line_remove_subscription_failed">Couldn’t remove the subscription. VPN was disconnected — connect again and retry.</string>
     <string name="get_line_fetch_activating_trial">Activating trial period</string>
     <string name="get_line_fetch_loading_config">Getting configuration</string>
     <string name="get_line_fetch_checking">Checking settings</string>

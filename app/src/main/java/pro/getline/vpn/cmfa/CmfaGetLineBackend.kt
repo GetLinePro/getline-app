@@ -364,6 +364,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
 
     private fun Profile.toGetLineSummary(): GetLineSubscriptionSummary {
         return GetLineSubscriptionSummary(
+            uuid = uuid.toString(),
             name = name,
             expire = expire,
             upload = upload,

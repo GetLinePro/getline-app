@@ -14,7 +14,9 @@ object SessionSubscriptionConsistency {
 
         /**
          * Managed binding without refresh token.
-         * Legitimate after manual URL import; unexpected right after browser login.
+         * Steady-state for link-only (URL import without account session).
+         * Still anomalous only when session is expected (e.g. right after login)
+         * and binding is missing — that case is the inverse of this verdict.
          */
         BindingWithoutSession,
     }

@@ -703,6 +703,35 @@
                     </LinearLayout>
                 </LinearLayout>
 
+                <!-- Link-only: imported profile without account session. Sign-in for billing/devices. -->
+                <LinearLayout
+                    android:id="@+id/link_only_block"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_card_margin_top"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Secondary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/get_line_subscription_link_only_explanation"
+                        android:textColor="@color/getline_text_secondary" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/link_only_sign_in"
+                        style="@style/Widget.GetLine.Onboarding.PrimaryButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_home_cta_gap"
+                        android:contentDescription="@string/get_line_subscription_link_only_sign_in"
+                        android:minHeight="@dimen/get_line_home_primary_button_min_height"
+                        android:onClick="@{() -> self.request(Request.SignIn)}"
+                        android:text="@string/get_line_subscription_link_only_sign_in" />
+                </LinearLayout>
+
                 <!-- Help: always on Subscription; above logout so destructive stays last. -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/open_help"
@@ -714,7 +743,7 @@
                     android:onClick="@{() -> self.request(Request.OpenHelp)}"
                     android:text="@string/get_line_action_help" />
 
-                <!-- Account logout: bottom of Subscription, red text — not a filled danger block. -->
+                <!-- Account logout / remove subscription: bottom of Subscription, red text. -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/logout_account"
                     style="@style/Widget.GetLine.LogoutTextButton"

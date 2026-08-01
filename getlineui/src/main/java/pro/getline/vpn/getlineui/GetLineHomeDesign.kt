@@ -116,9 +116,21 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
 
         data class SignedOut(
             val hasImportedProfile: Boolean,
+            val card: CardContent? = null,
+            val isRefreshing: Boolean = false,
+            val refreshFailed: Boolean = false,
         ) : SubscriptionScreen
 
         data object Failed : SubscriptionScreen
+    }
+
+    /**
+     * Bottom-of-Subscription account action: sign out, remove link-only profile, or hide.
+     */
+    enum class AccountAction {
+        None,
+        SignOut,
+        RemoveSubscription,
     }
 
     /**
@@ -336,28 +348,62 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     }
 
     /**
-     * Logout CTA at the bottom of the Subscription destination.
-     * Shown when a native session or managed GetLine binding is present.
+     * Account action CTA at the bottom of the Subscription destination.
+     * Sign out (session) or remove link-only subscription (managed binding only).
      */
-    suspend fun setLogoutVisible(visible: Boolean) {
+    suspend fun setAccountAction(action: AccountAction) {
         withContext(Dispatchers.Main) {
-            binding.logoutAccount.visibility =
-                if (visible) View.VISIBLE else View.GONE
+            val button = binding.logoutAccount
+            when (action) {
+                AccountAction.None -> {
+                    button.visibility = View.GONE
+                }
+                AccountAction.SignOut -> {
+                    button.visibility = View.VISIBLE
+                    button.setText(R.string.get_line_action_logout)
+                    button.contentDescription =
+                        context.getString(R.string.get_line_action_logout)
+                }
+                AccountAction.RemoveSubscription -> {
+                    button.visibility = View.VISIBLE
+                    button.setText(R.string.get_line_action_remove_subscription)
+                    button.contentDescription =
+                        context.getString(R.string.get_line_action_remove_subscription)
+                }
+            }
         }
     }
 
     /**
-     * Confirm device sign-out. One calm dialog — not a multi-warning security wall.
+     * Confirm device sign-out or link-only profile removal.
+     * One calm dialog — not a multi-warning security wall.
      * @return true if the user confirmed.
      */
-    suspend fun confirmLogout(): Boolean {
+    suspend fun confirmLogout(action: AccountAction): Boolean {
+        if (action == AccountAction.None) return false
+        val titleRes: Int
+        val messageRes: Int
+        val positiveRes: Int
+        when (action) {
+            AccountAction.SignOut -> {
+                titleRes = R.string.get_line_logout_confirm_title
+                messageRes = R.string.get_line_logout_confirm_message
+                positiveRes = R.string.get_line_action_logout
+            }
+            AccountAction.RemoveSubscription -> {
+                titleRes = R.string.get_line_remove_subscription_confirm_title
+                messageRes = R.string.get_line_remove_subscription_confirm_message
+                positiveRes = R.string.get_line_action_remove_subscription
+            }
+            AccountAction.None -> return false
+        }
         return withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { cont ->
                 val dialog = MaterialAlertDialogBuilder(context)
-                    .setTitle(R.string.get_line_logout_confirm_title)
-                    .setMessage(R.string.get_line_logout_confirm_message)
+                    .setTitle(titleRes)
+                    .setMessage(messageRes)
                     .setCancelable(true)
-                    .setPositiveButton(R.string.get_line_action_logout) { _, _ ->
+                    .setPositiveButton(positiveRes) { _, _ ->
                         if (!cont.isCompleted) cont.resume(true)
                     }
                     .setNegativeButton(R.string.cancel) { _, _ -> }
@@ -838,6 +884,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     private fun applySubscriptionScreen(screen: SubscriptionScreen) {
         when (screen) {
             is SubscriptionScreen.Loading -> {
+                applyLinkOnlyBlock(visible = false)
                 applyCard(content = null, isRefreshing = false, transientError = false)
                 // Hide portal CTA while loading (native session unknown / in flight).
                 applyAccountPortalUi(visible = false, launching = false, showError = false)
@@ -849,6 +896,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 )
             }
             is SubscriptionScreen.Ready -> {
+                applyLinkOnlyBlock(visible = false)
                 binding.subscriptionStateView.hide()
                 applyCard(
                     content = screen.card,
@@ -862,6 +910,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 )
             }
             is SubscriptionScreen.Empty -> {
+                applyLinkOnlyBlock(visible = false)
                 applyCard(content = null, isRefreshing = false, transientError = false)
                 // Authenticated empty — user can resolve plan issues in the web cabinet.
                 applyAccountPortalUi(
@@ -877,17 +926,31 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 )
             }
             is SubscriptionScreen.SignedOut -> {
-                applyCard(content = null, isRefreshing = false, transientError = false)
-                // Browser login does not create native session — keep Sign in only.
+                // Portal is session-only; never show it on SignedOut.
                 applyAccountPortalUi(visible = false, launching = false, showError = false)
-                binding.subscriptionStateView.renderMessage(
-                    title = R.string.get_line_subscription_signed_out_title,
-                    explanation = R.string.get_line_subscription_signed_out_explanation,
-                    loading = false,
-                    action = GetLineRecoveryAction.SignIn,
-                )
+                if (screen.card != null) {
+                    binding.subscriptionStateView.hide()
+                    applyCard(
+                        content = screen.card,
+                        isRefreshing = screen.isRefreshing,
+                        transientError = screen.refreshFailed,
+                        transientErrorTextRes =
+                            R.string.get_line_subscription_link_only_refresh_failed,
+                    )
+                    applyLinkOnlyBlock(visible = true)
+                } else {
+                    applyLinkOnlyBlock(visible = false)
+                    applyCard(content = null, isRefreshing = false, transientError = false)
+                    binding.subscriptionStateView.renderMessage(
+                        title = R.string.get_line_subscription_signed_out_title,
+                        explanation = R.string.get_line_subscription_signed_out_explanation,
+                        loading = false,
+                        action = GetLineRecoveryAction.SignIn,
+                    )
+                }
             }
             is SubscriptionScreen.Failed -> {
+                applyLinkOnlyBlock(visible = false)
                 applyCard(content = null, isRefreshing = false, transientError = false)
                 // Failed after a session-backed load attempt — portal may still help.
                 applyAccountPortalUi(
@@ -903,6 +966,10 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 )
             }
         }
+    }
+
+    private fun applyLinkOnlyBlock(visible: Boolean) {
+        binding.linkOnlyBlock.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     private fun applyAccountPortalUi(
@@ -940,6 +1007,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         content: CardContent?,
         isRefreshing: Boolean,
         transientError: Boolean,
+        transientErrorTextRes: Int = R.string.get_line_subscription_transient_error,
     ) {
         hasProfile = content != null
         if (content == null) {
@@ -955,6 +1023,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             binding.trafficProgress.visibility = View.GONE
             binding.devicesText = ""
             binding.devicesVisible = false
+            binding.subscriptionTransientError.setText(R.string.get_line_subscription_transient_error)
             binding.subscriptionTransientError.visibility = View.GONE
             binding.refreshSubscription.visibility = View.GONE
             binding.refreshSubscriptionProgress.visibility = View.GONE
@@ -967,6 +1036,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             binding.trafficText = content.trafficText
             binding.devicesText = content.devicesText.orEmpty()
             binding.devicesVisible = content.devicesText != null
+            binding.subscriptionTransientError.setText(transientErrorTextRes)
             binding.subscriptionTransientError.visibility =
                 if (transientError) View.VISIBLE else View.GONE
 
