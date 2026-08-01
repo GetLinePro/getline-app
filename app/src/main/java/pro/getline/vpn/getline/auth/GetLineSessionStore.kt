@@ -11,8 +11,9 @@ import androidx.security.crypto.MasterKey
  * Never stores web auth_token, device_key, callback URIs, or OAuth codes.
  *
  * Binding keys ([subscriptionId], [managedProfileUuid], [managedProfileSource],
- * [customerId]) survive process death and normal APK updates; cleared only via
- * [clearAccountState].
+ * [customerId]) survive process death and normal APK updates.
+ * Full clear: [clearAccountState]. Session-only clear keeping managed binding:
+ * [clearSessionKeepingBinding].
  */
 class GetLineSessionStore(context: Context) {
     private val prefs: SharedPreferences = createPrefs(context.applicationContext)
@@ -78,6 +79,10 @@ class GetLineSessionStore(context: Context) {
             putString(KEY_PENDING_IMPORT_REUSE_UUID, pending.reuseUuid)
             putString(KEY_PENDING_IMPORT_SUBSCRIPTION_ID, pending.subscriptionIdToRemember)
             putLong(KEY_PENDING_IMPORT_INTERVAL, pending.interval)
+            putString(
+                KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID,
+                pending.previousManagedUuidToDelete,
+            )
         }
     }
 
@@ -89,6 +94,7 @@ class GetLineSessionStore(context: Context) {
             remove(KEY_PENDING_IMPORT_REUSE_UUID)
             remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
             remove(KEY_PENDING_IMPORT_INTERVAL)
+            remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
         }
     }
 
@@ -105,6 +111,10 @@ class GetLineSessionStore(context: Context) {
             subscriptionIdToRemember = prefs.getString(KEY_PENDING_IMPORT_SUBSCRIPTION_ID, null)
                 ?.takeIf { it.isNotBlank() },
             interval = prefs.getLong(KEY_PENDING_IMPORT_INTERVAL, 0L),
+            previousManagedUuidToDelete = prefs.getString(
+                KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID,
+                null,
+            )?.takeIf { it.isNotBlank() },
         )
     }
 
@@ -125,6 +135,30 @@ class GetLineSessionStore(context: Context) {
             remove(KEY_PENDING_IMPORT_REUSE_UUID)
             remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
             remove(KEY_PENDING_IMPORT_INTERVAL)
+            remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
+        }
+    }
+
+    /**
+     * Drop the account session but keep the link-only managed binding.
+     * Used when the user declines to replace a link-imported subscription:
+     * the profile stays theirs to refresh and remove.
+     */
+    fun clearSessionKeepingBinding() {
+        prefs.edit {
+            remove(KEY_ACCESS_TOKEN)
+            remove(KEY_REFRESH_TOKEN)
+            remove(KEY_ACCESS_EXPIRES_AT)
+            remove(KEY_CUSTOMER_ID)
+            remove(KEY_SUBSCRIPTION_ID)
+            // pending import keys: this login is abandoned
+            remove(KEY_PENDING_IMPORT_NAME)
+            remove(KEY_PENDING_IMPORT_SOURCE)
+            remove(KEY_PENDING_IMPORT_TYPE)
+            remove(KEY_PENDING_IMPORT_REUSE_UUID)
+            remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
+            remove(KEY_PENDING_IMPORT_INTERVAL)
+            remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
         }
     }
 
@@ -170,6 +204,8 @@ class GetLineSessionStore(context: Context) {
         private const val KEY_PENDING_IMPORT_REUSE_UUID = "pending_import_reuse_uuid"
         private const val KEY_PENDING_IMPORT_SUBSCRIPTION_ID = "pending_import_subscription_id"
         private const val KEY_PENDING_IMPORT_INTERVAL = "pending_import_interval"
+        private const val KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID =
+            "pending_import_previous_managed_uuid"
 
         /** Pref file names — e2e / debug probes may look for either. */
         const val PREFS_FILE_ENCRYPTED = FILE_NAME
@@ -189,4 +225,6 @@ data class PendingImport(
     val reuseUuid: String? = null,
     val subscriptionIdToRemember: String? = null,
     val interval: Long = 0L,
+    /** Link-only UUID to delete after UseAccount import Success. */
+    val previousManagedUuidToDelete: String? = null,
 )

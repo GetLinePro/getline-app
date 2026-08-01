@@ -1,0 +1,134 @@
+package pro.getline.vpn.getline.auth
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
+class GetLineSessionStoreBindingTest {
+    @Test
+    fun clearSessionKeepingBinding_dropsTokensKeepsManagedBinding() {
+        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        store.clearAccountState()
+        store.saveSession(
+            NativeSession(
+                accessToken = "access",
+                refreshToken = "refresh",
+                expiresInSeconds = 86_400L,
+            ),
+        )
+        store.customerId = "cust-1"
+        store.subscriptionId = "sub-should-clear"
+        store.managedProfileUuid = "profile-uuid"
+        store.managedProfileSource = "https://sub.example.com/link"
+        store.savePendingImport(
+            PendingImport(
+                name = "GetLine",
+                source = "https://pending",
+                typeName = "Url",
+                reuseUuid = "reuse",
+                subscriptionIdToRemember = "pending-sub",
+                interval = 0L,
+                previousManagedUuidToDelete = "orphan-uuid",
+            ),
+        )
+
+        store.clearSessionKeepingBinding()
+
+        assertNull(store.accessToken)
+        assertNull(store.refreshToken)
+        assertEquals(0L, store.accessTokenExpiresAtEpochMs)
+        assertNull(store.customerId)
+        assertNull(store.subscriptionId)
+        assertFalse(store.hasRefreshToken())
+        assertFalse(store.hasPendingImport())
+
+        assertEquals("profile-uuid", store.managedProfileUuid)
+        assertEquals("https://sub.example.com/link", store.managedProfileSource)
+    }
+
+    @Test
+    fun pendingImport_persistsPreviousManagedUuidToDelete() {
+        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        store.clearAccountState()
+        store.savePendingImport(
+            PendingImport(
+                name = "GetLine",
+                source = "https://account.example.com/sub",
+                typeName = "Url",
+                reuseUuid = null,
+                subscriptionIdToRemember = "sub-new",
+                interval = 0L,
+                previousManagedUuidToDelete = "old-link-only-uuid",
+            ),
+        )
+
+        val pending = store.pendingImport()
+        assertEquals("old-link-only-uuid", pending?.previousManagedUuidToDelete)
+        assertEquals("https://account.example.com/sub", pending?.source)
+
+        store.clearPendingImport()
+        assertNull(store.pendingImport())
+    }
+
+    @Test
+    fun clearAccountState_stillClearsBinding() {
+        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        store.clearAccountState()
+        store.managedProfileUuid = "profile-uuid"
+        store.managedProfileSource = "https://sub.example.com/link"
+        store.saveSession(
+            NativeSession(
+                accessToken = "a",
+                refreshToken = "r",
+                expiresInSeconds = 60L,
+            ),
+        )
+
+        store.clearAccountState()
+
+        assertNull(store.managedProfileUuid)
+        assertNull(store.managedProfileSource)
+        assertFalse(store.hasRefreshToken())
+    }
+
+    @Test
+    fun discardSessionKeepingSubscription_repoDelegates() {
+        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        store.clearAccountState()
+        store.saveSession(
+            NativeSession(
+                accessToken = "a",
+                refreshToken = "r",
+                expiresInSeconds = 60L,
+            ),
+        )
+        store.managedProfileUuid = "u"
+        store.managedProfileSource = "https://s"
+        val repo = GetLineSessionRepository(object : GetLineAuthApi {
+            override suspend fun startBrowserAuth(method: AuthMethod) = error("n/a")
+            override suspend fun sendEmailOtp(email: String) = error("n/a")
+            override suspend fun verifyEmailOtp(email: String, code: String) = error("n/a")
+            override suspend fun getCurrentUser(webToken: String) = error("n/a")
+            override suspend fun generateDeviceKey(webToken: String) = error("n/a")
+            override suspend fun exchangeDeviceKey(deviceKey: String) = error("n/a")
+            override suspend fun refresh(refreshToken: String) = error("n/a")
+            override suspend fun getSubscriptions(accessToken: String) = error("n/a")
+            override suspend fun getDashboard(accessToken: String) = error("n/a")
+        }, store)
+
+        repo.discardSessionKeepingSubscription()
+
+        assertFalse(repo.hasSession())
+        assertEquals("u", repo.managedProfileUuid())
+        assertEquals("https://s", repo.managedProfileSource())
+        assertTrue(repo.canRemoteRepair())
+    }
+}

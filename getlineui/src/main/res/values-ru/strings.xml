@@ -105,6 +105,10 @@
     <string name="get_line_action_remove_subscription">Удалить подписку с устройства</string>
     <string name="get_line_logout_confirm_title">Выйти из аккаунта?</string>
     <string name="get_line_logout_confirm_message">VPN будет отключён, а конфигурация GetLine Pro удалена с устройства.</string>
+    <string name="get_line_account_mismatch_title">Текущая подписка не найдена в этом аккаунте</string>
+    <string name="get_line_account_mismatch_message">Подписка, добавленная по ссылке, не принадлежит этому аккаунту. Выберите, какую использовать на этом устройстве.</string>
+    <string name="get_line_account_mismatch_use_account">Использовать подписку из аккаунта</string>
+    <string name="get_line_account_mismatch_keep_link">Оставить текущую — выйти из аккаунта</string>
     <string name="get_line_remove_subscription_confirm_title">Удалить подписку с этого устройства?</string>
     <string name="get_line_remove_subscription_confirm_message">VPN будет отключён, конфигурация удалена с устройства. Ссылку можно импортировать снова.</string>
     <string name="get_line_remove_subscription_failed">Не удалось удалить подписку. VPN отключён — подключитесь снова и повторите.</string>

@@ -7,6 +7,7 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.view.View
 import androidx.core.content.ContextCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import pro.getline.vpn.getlineui.databinding.DesignGetLineOnboardingBinding
 import pro.getline.vpn.getlineui.dialog.requestModelTextInput
 import pro.getline.vpn.getlineui.model.GetLineImportStage
@@ -14,7 +15,9 @@ import pro.getline.vpn.getlineui.model.GetLineProductState
 import pro.getline.vpn.getlineui.model.GetLineRecoveryAction
 import pro.getline.vpn.getlineui.util.ValidatorHttpUrl
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 class GetLineOnboardingDesign(context: Context) :
     GetLineScreen<GetLineOnboardingDesign.Request>(context) {
@@ -100,6 +103,43 @@ class GetLineOnboardingDesign(context: Context) :
                 explanation = stage.label,
                 loading = true,
             )
+        }
+    }
+
+    enum class MismatchChoice { UseAccount, KeepLinkOnly }
+
+    /**
+     * Link-only profile vs account preferred subscription mismatch.
+     * Not cancelable: both branches lead to a consistent state; deferral would
+     * leave a live session with a foreign active subscription.
+     */
+    suspend fun confirmAccountMismatch(): MismatchChoice {
+        return withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { cont ->
+                val dialog = MaterialAlertDialogBuilder(context)
+                    .setTitle(R.string.get_line_account_mismatch_title)
+                    .setMessage(R.string.get_line_account_mismatch_message)
+                    .setCancelable(false)
+                    .setPositiveButton(R.string.get_line_account_mismatch_use_account) { _, _ ->
+                        if (!cont.isCompleted) {
+                            cont.resume(MismatchChoice.UseAccount)
+                        }
+                    }
+                    .setNegativeButton(R.string.get_line_account_mismatch_keep_link) { _, _ ->
+                        if (!cont.isCompleted) {
+                            cont.resume(MismatchChoice.KeepLinkOnly)
+                        }
+                    }
+                    .setOnDismissListener {
+                        // OEM quirks / unexpected dismiss must not hang the coroutine.
+                        // Default to KeepLinkOnly (Decision 1: no mixed session state).
+                        if (!cont.isCompleted) {
+                            cont.resume(MismatchChoice.KeepLinkOnly)
+                        }
+                    }
+                    .show()
+                cont.invokeOnCancellation { dialog.dismiss() }
+            }
         }
     }
 

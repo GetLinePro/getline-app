@@ -106,6 +106,10 @@
     <string name="get_line_action_remove_subscription">Remove subscription from device</string>
     <string name="get_line_logout_confirm_title">Sign out of your account?</string>
     <string name="get_line_logout_confirm_message">VPN will be disconnected and the GetLine Pro configuration will be removed from this device.</string>
+    <string name="get_line_account_mismatch_title">Current subscription is not in this account</string>
+    <string name="get_line_account_mismatch_message">The subscription added by link does not belong to this account. Choose which one to use on this device.</string>
+    <string name="get_line_account_mismatch_use_account">Use account subscription</string>
+    <string name="get_line_account_mismatch_keep_link">Keep current — sign out</string>
     <string name="get_line_remove_subscription_confirm_title">Remove subscription from this device?</string>
     <string name="get_line_remove_subscription_confirm_message">VPN will be disconnected and the configuration removed from this device. You can import the link again.</string>
     <string name="get_line_remove_subscription_failed">Couldn’t remove the subscription. VPN was disconnected — connect again and retry.</string>

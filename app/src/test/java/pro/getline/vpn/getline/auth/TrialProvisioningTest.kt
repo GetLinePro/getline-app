@@ -51,6 +51,57 @@ class TrialProvisioningTest {
         assertTrue(announced)
     }
 
+    @Test
+    fun loadPreferredSubscriptionWithList_usesSecondResponseAfterTrial() = runBlocking {
+        // First read has no importable preferred (no links) so trial runs; second
+        // response is the one kept in PreferredSubscriptionLoad.all.
+        val leaky = item().copy(
+            id = "must-not-leak",
+            isPrimary = false,
+            subscriptionLink = null,
+        )
+        val afterTrial = item()
+        val other = item().copy(
+            id = "other",
+            isPrimary = false,
+            subscriptionLink = environmentLink() + "/other",
+        )
+        val api = FakeApi(
+            itemsPerCall = listOf(
+                listOf(leaky),
+                listOf(other, afterTrial),
+            ),
+            autoActivated = true,
+        )
+        val repo = GetLineSessionRepository(api, seededStore())
+
+        val load = repo.loadPreferredSubscriptionWithList(provisionTrialIfEmpty = true)
+
+        assertEquals("9", load.preferred.id)
+        assertEquals(2, load.all.size)
+        assertEquals(listOf("other", "9"), load.all.map { it.id })
+        assertEquals(2, api.subscriptionCalls)
+        assertFalse(load.all.any { it.id == "must-not-leak" })
+    }
+
+    @Test
+    fun loadPreferredSubscriptionWithList_returnsFullListWithoutTrial() = runBlocking {
+        val primary = item()
+        val secondary = item().copy(
+            id = "2",
+            isPrimary = false,
+            subscriptionLink = environmentLink() + "/2",
+        )
+        val api = FakeApi(itemsPerCall = listOf(listOf(secondary, primary)))
+        val repo = GetLineSessionRepository(api, seededStore())
+
+        val load = repo.loadPreferredSubscriptionWithList()
+
+        assertEquals("9", load.preferred.id)
+        assertEquals(2, load.all.size)
+        assertEquals(1, api.subscriptionCalls)
+    }
+
     /** Trial already spent: nothing was created, so re-reading the list is waste. */
     @Test
     fun noActivationSkipsTheSecondRead() = runBlocking {

@@ -25,6 +25,9 @@ class GetLineSessionRepository(
         store.clearAccountState()
     }
 
+    /** Drop tokens/customer but keep link-only managed profile binding. */
+    fun discardSessionKeepingSubscription() = store.clearSessionKeepingBinding()
+
     suspend fun establishFromWebToken(webToken: String): NativeSession {
         // Optional identity probe; failure is non-fatal for handoff.
         val user = runCatching { api.getCurrentUser(webToken) }.getOrNull()
@@ -105,6 +108,15 @@ class GetLineSessionRepository(
     }
 
     /**
+     * Preferred subscription plus the full list from the same round-trip.
+     * On the trial path the list is read twice; the second response is kept.
+     */
+    data class PreferredSubscriptionLoad(
+        val preferred: SubscriptionItem,
+        val all: List<SubscriptionItem>,
+    )
+
+    /**
      * Loads preferred subscription for profile import.
      * Does not persist the selected ID so callers can compare against
      * [rememberedSubscriptionId] before deciding profile reuse.
@@ -126,17 +138,38 @@ class GetLineSessionRepository(
         provisionTrialIfEmpty: Boolean = false,
         onProvisioningTrial: suspend () -> Unit = {},
     ): SubscriptionItem {
-        var preferred = getSubscriptionsAuthenticated().selectPreferred()
+        return loadPreferredSubscriptionWithList(
+            provisionTrialIfEmpty = provisionTrialIfEmpty,
+            onProvisioningTrial = onProvisioningTrial,
+        ).preferred
+    }
+
+    /**
+     * Same as [loadPreferredSubscription] but returns the full subscriptions list
+     * from the last successful read (second read after trial provisioning).
+     * List items are not host-validated — only [PreferredSubscriptionLoad.preferred]
+     * is checked before import.
+     */
+    suspend fun loadPreferredSubscriptionWithList(
+        provisionTrialIfEmpty: Boolean = false,
+        onProvisioningTrial: suspend () -> Unit = {},
+    ): PreferredSubscriptionLoad {
+        var response = getSubscriptionsAuthenticated()
+        var preferred = response.selectPreferred()
         if (preferred == null && provisionTrialIfEmpty) {
             onProvisioningTrial()
             if (provisionTrial()) {
-                preferred = getSubscriptionsAuthenticated().selectPreferred()
+                response = getSubscriptionsAuthenticated()
+                preferred = response.selectPreferred()
             }
         }
         val selected = preferred
             ?: throw GetLineAuthException.Protocol("No subscription with import URL")
         GetLineControlPlaneHostPolicy.requireSubscriptionUrl(selected.subscriptionLink)
-        return selected
+        return PreferredSubscriptionLoad(
+            preferred = selected,
+            all = response.subscriptions,
+        )
     }
 
     /**
@@ -274,6 +307,7 @@ class GetLineSessionRepository(
         draft: GetLineSubscriptionDraft,
         reuseId: GetLineSubscriptionId?,
         subscriptionIdToRemember: String?,
+        previousManagedUuidToDelete: String? = null,
     ) {
         val source = draft.source?.takeIf { it.isNotBlank() } ?: return
         store.savePendingImport(
@@ -284,6 +318,7 @@ class GetLineSessionRepository(
                 reuseUuid = reuseId?.value,
                 subscriptionIdToRemember = subscriptionIdToRemember,
                 interval = draft.interval,
+                previousManagedUuidToDelete = previousManagedUuidToDelete,
             ),
         )
     }
@@ -310,6 +345,21 @@ class GetLineSessionRepository(
 
     fun pendingImportSubscriptionIdToRemember(): String? =
         store.pendingImport()?.subscriptionIdToRemember
+
+    fun pendingImportPreviousManagedUuidToDelete(): String? =
+        store.pendingImport()?.previousManagedUuidToDelete
+
+    /**
+     * Session + still-link-only binding: post-login subscription step incomplete.
+     * See [LinkOnlyBindingPolicy.needsPostLoginSubscriptionStep].
+     */
+    fun needsPostLoginSubscriptionStep(): Boolean =
+        LinkOnlyBindingPolicy.needsPostLoginSubscriptionStep(
+            hasSession = hasSession(),
+            managedUuid = managedProfileUuid(),
+            managedSource = managedProfileSource(),
+            rememberedSubscriptionId = rememberedSubscriptionId(),
+        )
 
     /**
      * Local session vs binding classification for logs / e2e (no token values).

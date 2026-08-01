@@ -30,7 +30,10 @@ import pro.getline.vpn.getline.auth.GetLineAuthException
 import pro.getline.vpn.diagnostics.DiagnosticReportShare
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
+import pro.getline.vpn.getline.auth.LinkOnlyBindingPolicy
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
+import pro.getline.vpn.getline.auth.SubscriptionLinkMatcher
+import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -74,23 +77,39 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         when {
             // Explicit external / deep-link import replaces any stale pending work.
             initialImport != null -> importSubscription(design, initialImport)
-            // Resume durable import after HOME / process death (first-time only;
-            // MainActivity prefers Home when a managed profile already exists).
+            // Resume durable import after HOME / process death. Prefer pending over
+            // the incomplete-login fork: UseAccount mid-flight is still link-only
+            // until Success writes subscriptionId.
             sessionRepository.hasPendingImport() -> {
                 val draft = sessionRepository.pendingImportDraft()
-                if (draft != null) {
-                    importSubscription(
+                when {
+                    draft == null -> {
+                        sessionRepository.clearPendingImport()
+                        refreshEntryState(design)
+                    }
+                    // Offline resume dead-ends on Offline + Retry. With a managed
+                    // profile the VPN is still usable, so go Home instead of
+                    // trapping it here; pending stays durable for the next launch.
+                    !hasValidatedInternetConnection() &&
+                        !sessionRepository.managedProfileUuid().isNullOrBlank() -> {
+                        backend.navigation.openHome()
+                        finish()
+                    }
+                    else -> importSubscription(
                         design = design,
                         request = draft,
                         reuseId = sessionRepository.pendingImportReuseId(),
                         subscriptionIdToRemember =
                             sessionRepository.pendingImportSubscriptionIdToRemember(),
+                        previousManagedUuidToDelete =
+                            sessionRepository.pendingImportPreviousManagedUuidToDelete(),
                     )
-                } else {
-                    sessionRepository.clearPendingImport()
-                    refreshEntryState(design)
                 }
             }
+            // Session + link-only binding: mismatch dialog / import never finished.
+            // Do not leave the user on providers with a live mixed state.
+            sessionRepository.needsPostLoginSubscriptionStep() ->
+                resumePreferredSubscription(design)
             else -> refreshEntryState(design)
         }
 
@@ -113,6 +132,10 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                                         ?: sessionRepository.pendingImportReuseId(),
                                     subscriptionIdToRemember = target?.subscriptionIdToRemember
                                         ?: sessionRepository.pendingImportSubscriptionIdToRemember(),
+                                    previousManagedUuidToDelete =
+                                        target?.previousManagedUuidToDelete
+                                            ?: sessionRepository
+                                                .pendingImportPreviousManagedUuidToDelete(),
                                 )
                             }
                         }
@@ -373,6 +396,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             retryTarget = RetryTarget.CompleteFromWebToken(webToken)
             try {
                 completeLoginFromWebToken(design, webToken)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: GetLineAuthException) {
                 design.showProviders()
                 applyLoginFailure(design, RetryTarget.CompleteFromWebToken(webToken), e)
@@ -401,6 +426,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         design.setProductState(GetLineProductState.Loading)
         try {
             completeLoginFromWebToken(design, webToken)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: GetLineAuthException) {
             applyLoginFailure(design, RetryTarget.CompleteFromWebToken(webToken), e)
         } catch (e: Exception) {
@@ -416,6 +443,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
      */
     private suspend fun resumePreferredSubscription(design: GetLineOnboardingDesign) {
         if (busy) return
+        // Set before any early return so Offline/Retry stay on this step, not providers.
+        retryTarget = RetryTarget.ImportPreferredSubscription
         if (!sessionRepository.hasSession()) {
             // Session died meanwhile (e.g. 401 recovery logged us out).
             refreshEntryState(design)
@@ -430,6 +459,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         design.setProductState(GetLineProductState.Loading)
         try {
             importPreferredSubscription(design)
+        } catch (e: CancellationException) {
+            // Mismatch dialog / Activity destroy must not map to AuthFailed UI.
+            throw e
         } catch (e: GetLineAuthException) {
             applyLoginFailure(design, RetryTarget.ImportPreferredSubscription, e)
         } catch (e: Exception) {
@@ -546,6 +578,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             Log.w("browser_auth_invalid_callback method=${method.name}")
             retryTarget = RetryTarget.BrowserLogin(method)
             design.setProductState(GetLineProductState.AuthFailed)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: GetLineAuthException) {
             applyLoginFailure(design, RetryTarget.BrowserLogin(method), e)
         } catch (e: Exception) {
@@ -574,23 +608,64 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     /**
-     * Subscription half of the post-login path: pick the preferred subscription
-     * for the current native session and import it. Requires an established
-     * session; does not touch tokens.
+     * Subscription half of the post-login path: resolve which account subscription
+     * to import (preferred, or the list item matching a link-only source).
+     * Requires an established session; does not touch tokens unless the user
+     * keeps a link-only profile (session discarded, binding kept).
      */
     private suspend fun importPreferredSubscription(design: GetLineOnboardingDesign) {
-        // Capture prior selection before loading; loadPreferredSubscription does not
-        // overwrite store, so account/subscription changes create a new profile.
+        // Capture prior selection before loading; load does not overwrite store.
         val previousSubscriptionId = sessionRepository.rememberedSubscriptionId()
-        val subscription = sessionRepository.loadPreferredSubscription(
+        val managedUuid = sessionRepository.managedProfileUuid()
+        val managedSource = sessionRepository.managedProfileSource()
+
+        val load = sessionRepository.loadPreferredSubscriptionWithList(
             // Fresh accounts have no subscription until GET /api/dashboard makes one.
             provisionTrialIfEmpty = true,
             onProvisioningTrial = {
                 design.setImportStage(GetLineImportStage.ActivatingTrial)
             },
         )
+        val all = load.all
+
+        val linkOnly = LinkOnlyBindingPolicy.isLinkOnlyBinding(
+            managedUuid = managedUuid,
+            managedSource = managedSource,
+            rememberedSubscriptionId = previousSubscriptionId,
+        )
+        // Match the concrete list item (may be non-preferred). Import that item
+        // so a secondary-link profile is not silently rewritten to preferred.
+        val matchedItem = if (linkOnly) {
+            SubscriptionLinkMatcher.findMatch(managedSource, all)
+        } else {
+            null
+        }
+        val linkMatch = matchedItem != null
+        if (linkOnly) {
+            Log.i("link_match matched=$linkMatch account_items=${all.size}")
+        }
+
+        var previousManagedUuidToDelete: String? = null
+        if (linkOnly && !linkMatch) {
+            when (design.confirmAccountMismatch()) {
+                GetLineOnboardingDesign.MismatchChoice.KeepLinkOnly -> {
+                    sessionRepository.discardSessionKeepingSubscription()
+                    backend.navigation.openHome()
+                    finish()
+                    return
+                }
+                GetLineOnboardingDesign.MismatchChoice.UseAccount -> {
+                    previousManagedUuidToDelete = managedUuid
+                }
+            }
+        }
+
+        val subscription = matchedItem ?: load.preferred
         val source = subscription.subscriptionLink
             ?: throw GetLineAuthException.Protocol("Missing subscription link")
+        // preferred is validated inside loadPreferredSubscriptionWithList; matched
+        // secondary items are not — re-check before import (env isolation).
+        GetLineControlPlaneHostPolicy.requireSubscriptionUrl(source)
 
         val draft = GetLineSubscriptionDraft(
             type = GetLineSubscriptionType.Url,
@@ -599,10 +674,11 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             source = source,
         )
 
-        val reuseId = sessionRepository.managedProfileUuid()
+        val reuseId = managedUuid
             ?.takeIf {
-                previousSubscriptionId != null &&
-                    previousSubscriptionId == subscription.id
+                (previousSubscriptionId != null &&
+                    previousSubscriptionId == subscription.id) ||
+                    linkMatch
             }
             ?.let { GetLineSubscriptionId(it) }
 
@@ -612,6 +688,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             reuseId = reuseId,
             alreadyBusy = true,
             subscriptionIdToRemember = subscription.id,
+            previousManagedUuidToDelete = previousManagedUuidToDelete,
         )
     }
 
@@ -621,6 +698,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         reuseId: GetLineSubscriptionId? = null,
         alreadyBusy: Boolean = false,
         subscriptionIdToRemember: String? = null,
+        previousManagedUuidToDelete: String? = null,
     ) {
         if (busy && !alreadyBusy) {
             // Nested call while waiting: treat as supersede target.
@@ -637,6 +715,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             request = request,
             reuseId = reuseId,
             subscriptionIdToRemember = subscriptionIdToRemember,
+            previousManagedUuidToDelete = previousManagedUuidToDelete,
         )
         if (!hasValidatedInternetConnection()) {
             design.setProductState(GetLineProductState.Offline)
@@ -653,6 +732,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             draft = request,
             reuseId = reuseId,
             subscriptionIdToRemember = subscriptionIdToRemember,
+            previousManagedUuidToDelete = previousManagedUuidToDelete,
         )
         val importKey = GetLineImportCoordinator.importKey(
             source = request.source,
@@ -687,6 +767,19 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                                 sessionRepository.rememberSubscription(subscriptionIdToRemember)
                             }
                             sessionRepository.clearPendingImport()
+                            // Orphan cleanup only after the new binding is written.
+                            // Stop tunnel first: previousUuid may still be the active profile.
+                            val previousUuid = previousManagedUuidToDelete
+                            if (previousUuid != null && previousUuid != result.id.value) {
+                                // Separate runCatching: a failed stop must not skip
+                                // the delete, or the orphan keeps being updated.
+                                runCatching { backend.vpn.stop() }
+                                runCatching {
+                                    backend.subscriptions.deleteManaged(
+                                        GetLineSubscriptionId(previousUuid),
+                                    )
+                                }
+                            }
                             // No profile UUID: lands in user-shareable diagnostics (GL-19).
                             Log.i(
                                 "import_terminal success " +
@@ -762,8 +855,18 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             latest = next
         }
         val draft = latest ?: return false
+        // Supersede must not drop UseAccount orphan cleanup: savePendingImport in
+        // the nested call would otherwise clear previousManagedUuidToDelete.
+        val previousToDelete =
+            (retryTarget as? RetryTarget.ImportSubscription)?.previousManagedUuidToDelete
+                ?: sessionRepository.pendingImportPreviousManagedUuidToDelete()
         // Keep outer busy ownership; nested call must not clear it early.
-        importSubscription(design, draft, alreadyBusy = true)
+        importSubscription(
+            design = design,
+            request = draft,
+            alreadyBusy = true,
+            previousManagedUuidToDelete = previousToDelete,
+        )
         return true
     }
 
@@ -836,6 +939,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     request = target.request,
                     reuseId = target.reuseId,
                     subscriptionIdToRemember = target.subscriptionIdToRemember,
+                    previousManagedUuidToDelete = target.previousManagedUuidToDelete,
                 )
             is RetryTarget.Activate ->
                 activateImportedProfile(design, target.id, target.request)
@@ -1041,6 +1145,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             val request: GetLineSubscriptionDraft,
             val reuseId: GetLineSubscriptionId? = null,
             val subscriptionIdToRemember: String? = null,
+            /** Link-only profile replaced by account preferred; delete after Success. */
+            val previousManagedUuidToDelete: String? = null,
         ) : RetryTarget()
         data class Activate(
             val id: GetLineSubscriptionId,

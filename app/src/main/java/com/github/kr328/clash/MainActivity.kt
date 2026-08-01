@@ -137,14 +137,19 @@ class MainActivity : BaseActivity<MainDesign>() {
 
         launchTargetBackendUnavailable = false
 
-        // Managed binding wins over durable pending. Failed re-import must not
-        // trap a working VPN on Onboarding forever (pending only resumes first-time).
         val sessionSnapshot = readSessionRoutingSnapshot()
-        if (sessionSnapshot.hasManagedProfile) return LaunchTarget.Home
 
-        // No profile yet: resume in-flight / interrupted first import on Onboarding.
-        // Terminal failures clear pending — so this is not a permanent fail loop.
+        // In-flight durable import (first-time or UseAccount) resumes on Onboarding.
+        // Checked before managed-profile → Home so a mid-import cold start does not
+        // drop the pending UseAccount orphan-cleanup payload.
         if (sessionSnapshot.hasPendingImport) return LaunchTarget.Onboarding
+
+        // Managed binding wins. Do NOT force Onboarding solely because the post-login
+        // step is incomplete (session + still-link-only): permanent failures
+        // (no importable subscription / offline) would trap a working VPN profile
+        // forever with only Retry/Diagnostics. Mid-dialog process death may land
+        // Home with a temporary session+link-only mix; VPN stays reachable.
+        if (sessionSnapshot.hasManagedProfile) return LaunchTarget.Home
 
         return when (val hasImported = getLineBackend.subscriptions.hasImported()) {
             GetLineBackendResult.Unavailable -> {
