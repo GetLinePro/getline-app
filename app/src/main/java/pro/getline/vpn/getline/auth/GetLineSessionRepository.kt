@@ -64,7 +64,7 @@ class GetLineSessionRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w("trial_provision failed kind=${e::class.simpleName} msg=${e.message}")
+            Log.w("trial_provision failed kind=${e::class.simpleName}")
             return false
         }
         Log.i(
@@ -182,7 +182,7 @@ class GetLineSessionRepository(
             if (!hasSession()) {
                 SubscriptionLoadResult.SignedOut
             } else {
-                Log.w("subscription_ui auth_failure kind=${e::class.simpleName} msg=${e.message}")
+                Log.w("subscription_ui auth_failure kind=${e::class.simpleName}")
                 SubscriptionLoadResult.TransientFailure
             }
         } catch (e: Exception) {
@@ -190,10 +190,7 @@ class GetLineSessionRepository(
                 SubscriptionLoadResult.SignedOut
             } else {
                 // Common when VPN is up and control-plane is routed via broken tunnel.
-                Log.w(
-                    "subscription_ui network_failure " +
-                        "kind=${e::class.simpleName} msg=${e.message}",
-                )
+                Log.w("subscription_ui network_failure kind=${e::class.simpleName}")
                 SubscriptionLoadResult.TransientFailure
             }
         }

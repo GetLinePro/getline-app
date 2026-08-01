@@ -441,21 +441,26 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         preSessionTarget: RetryTarget,
         error: Exception?,
     ) {
-        if (!sessionRepository.hasSession()) {
-            retryTarget = preSessionTarget
-            design.setProductState(authFailureState())
-            return
-        }
-
         // Class name plus a non-secret discriminator. HttpFailure/RateLimited
         // messages hold raw response bodies, so only the status code is logged;
         // Protocol messages are authored constants (labels only, no URLs/tokens).
+        // Never interpolate preSessionTarget: EmailSend carries an address.
         val kind = error?.javaClass?.simpleName ?: "unknown"
         val detail = when (error) {
             is GetLineAuthException.HttpFailure -> " code=${error.code}"
             is GetLineAuthException.Protocol -> " reason=${error.message}"
             else -> ""
         }
+
+        if (!sessionRepository.hasSession()) {
+            // Used to be silent: every pre-session failure reached the user as a
+            // bare "Couldn't sign in" with nothing in the log to say why.
+            Log.w("pre_session_auth_failed kind=$kind$detail")
+            retryTarget = preSessionTarget
+            design.setProductState(authFailureState())
+            return
+        }
+
         Log.w("post_session_subscription_failed kind=$kind$detail")
         retryTarget = RetryTarget.ImportPreferredSubscription
         design.setProductState(
@@ -487,6 +492,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
 
         try {
             val authUrl = BrowserAuthStarter.resolveAuthUrl(method)
+            // Pairs with auth_tab_result: a launch with no result line means the
+            // tab never came back (hang, process death, or a silent fallback).
+            Log.i("browser_auth_launch method=${method.name}")
             val launchResult = browserAuthLauncher.launch(this, authUrl)
 
             val callbackUri = when (launchResult) {
@@ -507,6 +515,10 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             retryTarget = RetryTarget.BrowserLogin(method)
             design.setProductState(GetLineProductState.AuthFailed)
         } catch (_: GetLineAuthException.InvalidCallback) {
+            // Not derivable from the result code: the tab returned RESULT_OK and
+            // the callback URI was rejected here. Message is dropped — it may
+            // carry the URI.
+            Log.w("browser_auth_invalid_callback method=${method.name}")
             retryTarget = RetryTarget.BrowserLogin(method)
             design.setProductState(GetLineProductState.AuthFailed)
         } catch (e: GetLineAuthException) {
@@ -698,10 +710,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         } catch (e: CancellationException) {
             // UI gone (HOME / renav). Import may still be running; pending kept only
             // while in-flight — terminal paths clear it.
-            Log.i(
-                "import_waiter_cancelled key=$importKey " +
-                    "in_flight=${GetLineImportCoordinator.isInFlight()}",
-            )
+            // No importKey: it starts with the subscription URL.
+            Log.i("import_waiter_cancelled in_flight=${GetLineImportCoordinator.isInFlight()}")
             throw e
         } finally {
             if (!alreadyBusy) {

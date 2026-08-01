@@ -5,9 +5,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import androidx.browser.auth.AuthTabIntent
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsService
+import com.github.kr328.clash.common.log.Log
 import pro.getline.vpn.AppEnvironment
 import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import pro.getline.vpn.getlineui.GetLineScreen
@@ -43,9 +45,21 @@ class BrowserAuthLauncher {
             putExtra(AuthTabIntent.EXTRA_HTTPS_REDIRECT_PATH, REDIRECT_PATH)
         }
 
+        val startedAt = SystemClock.elapsedRealtime()
         val result = activity.startActivityForResult(
             AuthTabIntent.AuthenticateUserResultContract(),
             intent,
+        )
+
+        // The only place the raw code survives: RESULT_VERIFICATION_FAILED (2) and
+        // RESULT_VERIFICATION_TIMED_OUT (3) collapse into one state below, and a
+        // pre-session failure reaches the UI as a single "Couldn't sign in".
+        // Numbers and a package name only — never result, resultUri or authUrl:
+        // this tag lands in the crash dump the user can screenshot.
+        Log.w(
+            "auth_tab_result code=${result.resultCode} " +
+                "elapsed_ms=${SystemClock.elapsedRealtime() - startedAt} " +
+                "browser=$browserPackage",
         )
 
         return when (result.resultCode) {
