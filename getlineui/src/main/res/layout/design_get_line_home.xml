@@ -432,8 +432,9 @@
                                     android:layout_width="0dp"
                                     android:layout_height="wrap_content"
                                     android:layout_weight="1"
+                                    android:breakStrategy="balanced"
                                     android:ellipsize="end"
-                                    android:maxLines="1"
+                                    android:maxLines="2"
                                     android:text="@{cardTitle}"
                                     android:textColor="@color/getline_text_primary"
                                     tools:text="Trial" />
@@ -879,4 +880,3 @@
         </FrameLayout>
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
 </layout>
-

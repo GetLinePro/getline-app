@@ -247,10 +247,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             design.openAccountPortal()
                         GetLineHomeDesign.Request.RefreshSubscription,
                         GetLineHomeDesign.Request.RetrySubscription -> {
-                            if (sessionRepository.hasSession()) {
-                                design.refreshSubscriptionUi(force = true)
-                            } else {
+                            if (usesLinkOnlyUi()) {
                                 design.refreshLinkOnlySubscription()
+                            } else {
+                                design.refreshSubscriptionUi(force = true)
                             }
                         }
                         GetLineHomeDesign.Request.RetryServers ->
@@ -829,14 +829,17 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * always re-fetching a valid Ready card.
      *
      * Successful onboarding while this Activity stays alive:
-     * SignedOut + session present → [SubscriptionStateHolder.invalidateSessionState]
+     * SignedOut + real account session → [SubscriptionStateHolder.invalidateSessionState]
      * → forced load → Ready/Empty/Failed. No profile import, no VPN restart.
+     *
+     * Mixed post-login (session + still-link-only binding) is treated as link-only
+     * UI — see [usesLinkOnlyUi].
      */
     private fun GetLineHomeDesign.onSubscriptionHostResumed() {
-        val hasSession = sessionRepository.hasSession()
         when {
-            !hasSession -> {
-                // Session gone while away (logout / failed recovery elsewhere).
+            usesLinkOnlyUi() -> {
+                // No usable account card: pure signed-out, or session exists but the
+                // post-login step never finished (still link-only binding).
                 // Drop pending portal-return refresh; do not touch browser cookies.
                 accountPortalVisit.clear()
                 pendingForceSubscriptionRefresh.clear()
@@ -864,7 +867,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 }
             }
             subscriptionState.state is SubscriptionUiState.SignedOut -> {
-                // Sign-in completed; invalidate and force load.
+                // Sign-in completed and binding is account-bound; invalidate and force load.
                 cancelSubscriptionJob()
                 subscriptionState.invalidateSessionState()
                 paintSubscriptionState()
@@ -884,8 +887,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * (see [onSubscriptionHostResumed]).
      */
     private fun GetLineHomeDesign.ensureSubscriptionLoaded() {
-        val hasSession = sessionRepository.hasSession()
-        if (!hasSession) {
+        if (usesLinkOnlyUi()) {
             // Do not cancel an in-flight link-only refresh when switching tabs.
             if (subscriptionState.requestInFlight ||
                 subscriptionLoadJob?.isActive == true
@@ -994,7 +996,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * portal-return refresh is not silently dropped.
      */
     private fun GetLineHomeDesign.refreshSubscriptionUi(force: Boolean) {
-        if (!sessionRepository.hasSession()) {
+        if (usesLinkOnlyUi()) {
             pendingForceSubscriptionRefresh.clear()
             // Not a silent no-op: rebuild SignedOut (stub or link-only) and paint.
             if (subscriptionState.requestInFlight ||
@@ -1078,7 +1080,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     // Cancelled jobs are often superseded by a newer load; do not start
                     // another force from here (avoids double-refresh races).
                 } else if (
-                    sessionRepository.hasSession() &&
+                    !usesLinkOnlyUi() &&
                     pendingForceSubscriptionRefresh.consume()
                 ) {
                     // Drain at most one queued force refresh after a normal completion.
@@ -1175,9 +1177,11 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         "verdict=${sessionRepository.consistencyVerdict()} " +
                         "state=${subscriptionState.state::class.simpleName}",
                 )
+                // Mixed post-login (session + still-link-only) legitimately paints SignedOut.
                 if (
                     hasSession &&
-                    subscriptionState.state is SubscriptionUiState.SignedOut
+                    subscriptionState.state is SubscriptionUiState.SignedOut &&
+                    !sessionRepository.needsPostLoginSubscriptionStep()
                 ) {
                     Log.w("subscription_ui inconsistent SignedOut while has_refresh=true")
                 }
@@ -1187,8 +1191,23 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
     }
 
+    /**
+     * Session exists but the post-login step never finished: the active profile is
+     * still the link-only one, so the tab must describe it, not the account.
+     *
+     * Exit path already exists: link-only «Войти для управления» opens Onboarding,
+     * which reads [GetLineSessionRepository.needsPostLoginSubscriptionStep] and
+     * resumes the mismatch dialog. No persisted flag and no new navigation.
+     */
+    private fun usesLinkOnlyUi(): Boolean =
+        !sessionRepository.hasSession() ||
+            sessionRepository.needsPostLoginSubscriptionStep()
+
     private fun accountAction(): GetLineHomeDesign.AccountAction = when {
-        sessionRepository.hasSession() -> GetLineHomeDesign.AccountAction.SignOut
+        // Real account session only. Mixed post-login still has tokens but must
+        // show RemoveSubscription — SignOut would clear the link-only binding via
+        // logout() under the wrong label (and delete the working profile).
+        !usesLinkOnlyUi() -> GetLineHomeDesign.AccountAction.SignOut
         sessionRepository.managedProfileUuid() != null ->
             GetLineHomeDesign.AccountAction.RemoveSubscription
         else -> GetLineHomeDesign.AccountAction.None
