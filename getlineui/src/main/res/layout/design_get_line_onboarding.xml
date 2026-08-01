@@ -22,6 +22,9 @@
             name="helpVisible"
             type="boolean" />
         <variable
+            name="dismissVisible"
+            type="boolean" />
+        <variable
             name="resendEnabled"
             type="boolean" />
         <variable
@@ -249,6 +252,22 @@
                         android:text="@string/get_line_email_back"
                         android:visibility="@{otpStepVisible ? View.VISIBLE : View.GONE}"
                         tools:text="Back" />
+
+                    <!--
+                      Link-only sign-in only: an explicit way back to the running VPN.
+                      Home is still alive underneath, so this just finishes the screen.
+                    -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/dismiss_sign_in"
+                        style="@style/Widget.GetLine.Onboarding.SecondaryButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
+                        android:enabled="@{actionsEnabled}"
+                        android:onClick="@{() -> self.onDismiss()}"
+                        android:text="@string/get_line_action_not_now"
+                        android:visibility="@{dismissVisible ? View.VISIBLE : View.GONE}"
+                        tools:text="Not now" />
 
                     <!--
                       Help on idle auth chrome / errors only.

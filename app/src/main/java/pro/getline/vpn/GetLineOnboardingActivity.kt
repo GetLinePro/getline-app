@@ -64,6 +64,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
      * [otpSent] true after a successful send — resume at OTP, not blank providers.
      */
     private var pendingEmailAuth: PendingEmailAuth? = null
+    /** Opened from Home over a working link-only profile (see [EXTRA_LINK_ONLY_SIGN_IN]). */
+    private var linkOnlySignIn = false
 
     override suspend fun main() {
         val design = GetLineOnboardingDesign(this)
@@ -72,6 +74,13 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         // Product release: no Advanced door. Debug keeps the button; brand multi-tap
         // remains a quiet hatch. EXTRA_OPEN_ADVANCED route is unchanged.
         design.setAdvancedButtonVisible(BuildConfig.DEBUG)
+        // Read once: a later external import (onNewIntent) replaces the Activity
+        // intent, and this screen must not silently lose its exit affordance.
+        linkOnlySignIn = intent.getBooleanExtra(EXTRA_LINK_ONLY_SIGN_IN, false)
+        design.setLinkOnlySignIn(linkOnlySignIn)
+        // Resumed post-login step (mismatch dialog / import) starts with a live
+        // session — login controls must stay hidden on its error states too.
+        design.setSessionEstablished(sessionRepository.hasSession())
 
         val initialImport = intent.importRequest
         when {
@@ -160,6 +169,12 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             backFromEmail(design)
                         GetLineOnboardingDesign.Request.AddExistingSubscription ->
                             addExistingSubscription(design)
+                        // Home is still below (openLinkOnlySignIn does not finish it);
+                        // finishing here returns to the running VPN.
+                        GetLineOnboardingDesign.Request.Dismiss ->
+                            if (!busy) {
+                                finish()
+                            }
                         GetLineOnboardingDesign.Request.OpenAdvanced ->
                             openAdvanced()
                         GetLineOnboardingDesign.Request.OpenHelp ->
@@ -604,6 +619,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         // subscription step. Re-running auth mints another device key and adds
         // more RWP calls, which is how a single 429 turned into a loop.
         retryTarget = RetryTarget.ImportPreferredSubscription
+        // Same rule for the UI: no login controls on post-session error states.
+        design.setSessionEstablished(true)
         importPreferredSubscription(design)
     }
 
@@ -1157,6 +1174,13 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     companion object {
         /** Client-side resend spacing; separate from OTP TTL (~300s on server). */
         private const val RESEND_COOLDOWN_MS = 60_000L
+
+        /**
+         * Sign-in opened from Home on top of a working link-only subscription.
+         * Changes entry copy and offers an exit back to Home — no auth behaviour.
+         */
+        const val EXTRA_LINK_ONLY_SIGN_IN =
+            "pro.getline.vpn.extra.GET_LINE_LINK_ONLY_SIGN_IN"
 
         private const val EXTRA_IMPORT_TYPE =
             "pro.getline.vpn.extra.GET_LINE_IMPORT_TYPE"

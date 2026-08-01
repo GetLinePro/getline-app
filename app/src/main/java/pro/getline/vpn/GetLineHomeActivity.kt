@@ -227,9 +227,19 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         }
                         GetLineHomeDesign.Request.Retry ->
                             design.fetch(showLoading = true)
-                        GetLineHomeDesign.Request.AddSubscription,
-                        GetLineHomeDesign.Request.SignIn ->
+                        GetLineHomeDesign.Request.AddSubscription ->
                             backend.navigation.openOnboarding()
+                        // Sign-in on top of a working link-only subscription is an
+                        // optional upgrade, not a fallback to the entry screen: keep
+                        // Home alive so the user can come back to the running VPN.
+                        GetLineHomeDesign.Request.SignIn ->
+                            if (usesLinkOnlyUi() &&
+                                sessionRepository.managedProfileUuid() != null
+                            ) {
+                                backend.navigation.openLinkOnlySignIn()
+                            } else {
+                                backend.navigation.openOnboarding()
+                            }
                         // Not wired from product recovery UI. Kept as internal route only.
                         GetLineHomeDesign.Request.OpenProfiles ->
                             backend.navigation.openAdvanced()

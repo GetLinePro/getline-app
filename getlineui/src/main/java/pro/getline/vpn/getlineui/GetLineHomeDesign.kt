@@ -393,7 +393,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             AccountAction.RemoveSubscription -> {
                 titleRes = R.string.get_line_remove_subscription_confirm_title
                 messageRes = R.string.get_line_remove_subscription_confirm_message
-                positiveRes = R.string.get_line_action_remove_subscription
+                // Short form: the full label fits the card button, not a dialog button.
+                positiveRes = R.string.get_line_action_remove_subscription_short
             }
             AccountAction.None -> return false
         }

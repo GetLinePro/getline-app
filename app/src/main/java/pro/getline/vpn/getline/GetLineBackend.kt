@@ -140,6 +140,12 @@ data class GetLineSession(
 interface GetLineNavigation {
     fun openAdvanced()
     fun openOnboarding()
+    /**
+     * Sign-in offered on top of a working link-only profile. Unlike [openOnboarding]
+     * the caller is kept alive: the VPN keeps running, so back must land on Home
+     * instead of leaving the app.
+     */
+    fun openLinkOnlySignIn()
     fun openHome()
 }
 

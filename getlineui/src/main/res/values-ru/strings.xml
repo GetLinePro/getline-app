@@ -2,7 +2,7 @@
 <resources>
     <string name="url">URL</string>
     <string name="profile_url">URL профиля</string>
-    <string name="accept_http_content">Принимать только http(s)</string>
+    <string name="accept_http_content">Принимается только ссылка http(s)</string>
     <string name="get_line_onboarding_value_prop">Простой и безопасный доступ с вашей подпиской GetLine Pro</string>
     <string name="get_line_login">Войти через Telegram</string>
     <string name="get_line_login_google">Войти через Google</string>
@@ -92,6 +92,8 @@
     <string name="get_line_subscription_link_only_explanation">Для управления оплатой и устройствами войдите в аккаунт владельца подписки.</string>
     <string name="get_line_subscription_link_only_sign_in">Войти для управления</string>
     <string name="get_line_subscription_link_only_refresh_failed">Не удалось обновить подписку. Используются последние сохранённые настройки.</string>
+    <string name="get_line_link_only_sign_in_title">Вход в аккаунт GetLine Pro</string>
+    <string name="get_line_link_only_sign_in_explanation">Подписка, добавленная по ссылке, продолжит работать. Если в аккаунте другая подписка, спросим, какую оставить.</string>
     <string name="get_line_subscription_transient_error">Не удалось обновить. Показаны последние данные.</string>
     <string name="get_line_account_portal_title">Личный кабинет</string>
     <string name="get_line_account_portal_explanation">Тарифы, оплата и управление устройствами</string>
@@ -101,14 +103,16 @@
     <string name="get_line_account_portal_no_browser">На устройстве не найден подходящий браузер.</string>
     <string name="get_line_action_sign_in">Войти</string>
     <string name="get_line_action_help">Помощь</string>
+    <string name="get_line_action_not_now">Не сейчас</string>
     <string name="get_line_action_logout">Выйти из аккаунта</string>
     <string name="get_line_action_remove_subscription">Удалить подписку с устройства</string>
+    <string name="get_line_action_remove_subscription_short">Удалить</string>
     <string name="get_line_logout_confirm_title">Выйти из аккаунта?</string>
     <string name="get_line_logout_confirm_message">VPN будет отключён, а конфигурация GetLine Pro удалена с устройства.</string>
     <string name="get_line_account_mismatch_title">Текущая подписка не найдена в этом аккаунте</string>
-    <string name="get_line_account_mismatch_message">Подписка, добавленная по ссылке, не принадлежит этому аккаунту. Выберите, какую использовать на этом устройстве.</string>
-    <string name="get_line_account_mismatch_use_account">Использовать подписку из аккаунта</string>
-    <string name="get_line_account_mismatch_keep_link">Оставить текущую — выйти из аккаунта</string>
+    <string name="get_line_account_mismatch_message">Подписка, добавленная по ссылке, не принадлежит этому аккаунту. Выберите, какую использовать на этом устройстве. Если оставить текущую, вход в аккаунт будет отменён.</string>
+    <string name="get_line_account_mismatch_use_account">Из аккаунта</string>
+    <string name="get_line_account_mismatch_keep_link">Оставить текущую</string>
     <string name="get_line_remove_subscription_confirm_title">Удалить подписку с этого устройства?</string>
     <string name="get_line_remove_subscription_confirm_message">VPN будет отключён, конфигурация удалена с устройства. Ссылку можно импортировать снова.</string>
     <string name="get_line_remove_subscription_failed">Не удалось удалить подписку. VPN отключён — подключитесь снова и повторите.</string>

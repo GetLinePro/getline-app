@@ -461,6 +461,19 @@ private class CmfaGetLineNavigation(
         activity.finish()
     }
 
+    override fun openLinkOnlySignIn() {
+        activity.startActivity(
+            GetLineOnboardingActivity::class.intent.putExtra(
+                GetLineOnboardingActivity.EXTRA_LINK_ONLY_SIGN_IN,
+                true,
+            )
+        )
+        // No finish(): the link-only profile is still routing traffic, so Home stays
+        // below and back / "Not now" returns to it. Home is singleTask, so a later
+        // openHome() from Onboarding reuses that instance and drops this screen;
+        // its onStart reconciles session vs UI (onSubscriptionHostResumed).
+    }
+
     override fun openHome() {
         activity.startActivity(GetLineHomeActivity::class.intent)
     }

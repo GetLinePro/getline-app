@@ -75,21 +75,24 @@ suspend fun Context.requestModelTextInput(
             binding.textField.apply {
                 binding.textLayout.isErrorEnabled = error != null
 
-                doOnTextChanged { text, _, _, _ ->
-                    if (!validator(text?.toString() ?: "")) {
-                        if (error != null)
-                            binding.textLayout.error = error
-
-                        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
-                    } else {
-                        if (error != null)
-                            binding.textLayout.error = null
-
-                        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+                // An empty field is "not filled in yet", not a mistake: keep OK
+                // disabled but do not paint the field red before the user typed.
+                // setText(initial) below runs this too, which is what used to show
+                // the error on a dialog the user had not touched.
+                fun applyValidation(text: String) {
+                    val valid = validator(text)
+                    if (error != null) {
+                        binding.textLayout.error = error.takeIf { !valid && text.isNotEmpty() }
                     }
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = valid
+                }
+
+                doOnTextChanged { text, _, _, _ ->
+                    applyValidation(text?.toString() ?: "")
                 }
 
                 setText(initial)
+                applyValidation(initial ?: "")
 
                 setSelection(0, initial?.length ?: 0)
 

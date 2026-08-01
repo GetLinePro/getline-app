@@ -32,6 +32,8 @@ class GetLineOnboardingDesign(context: Context) :
         /** Email entry → provider list. */
         object BackFromEmail : Request()
         object AddExistingSubscription : Request()
+        /** Leave sign-in without signing in (link-only entry only). */
+        object Dismiss : Request()
         /**
          * Diagnostic hatch into MainActivity advanced shell.
          * Not a release product surface — debug button or brand multi-tap only.
@@ -56,6 +58,10 @@ class GetLineOnboardingDesign(context: Context) :
     private var authStep: AuthStep = AuthStep.Providers
     private var pendingEmail: String = ""
     private var resendSecondsRemaining: Int = 0
+    /** Entered from Home over a working link-only profile, not from a cold start. */
+    private var linkOnlySignIn: Boolean = false
+    /** Session persisted; only the subscription step is left (see [setSessionEstablished]). */
+    private var sessionEstablished: Boolean = false
 
     override val root: View
         get() = binding.root
@@ -270,6 +276,10 @@ class GetLineOnboardingDesign(context: Context) :
      * @return true if a step was handled (do not finish activity).
      */
     fun tryNavigateEmailAuthBack(): Boolean {
+        // Error states hide the email chrome while [authStep] stays where it was.
+        // Stepping back through invisible screens only swallows Back presses —
+        // on the link-only entry it swallows the way home.
+        if (!showsLoginChrome(lastProductState)) return false
         return when (authStep) {
             AuthStep.OtpEntry -> {
                 request(Request.BackFromOtp)
@@ -289,6 +299,33 @@ class GetLineOnboardingDesign(context: Context) :
 
     fun onOpenHelp() {
         request(Request.OpenHelp)
+    }
+
+    /**
+     * Sign-in entered from Home while a link-only subscription keeps working.
+     * Changes the entry copy, drops the "add a subscription link" recovery CTA
+     * (the user already has one) and offers an explicit way back to Home.
+     */
+    fun setLinkOnlySignIn(enabled: Boolean) {
+        if (linkOnlySignIn == enabled) return
+        linkOnlySignIn = enabled
+        applyState(lastProductState)
+    }
+
+    fun onDismiss() {
+        request(Request.Dismiss)
+    }
+
+    /**
+     * A native session already exists (post-login subscription step in flight).
+     * From here login controls must stay hidden even on states that would
+     * otherwise keep them: a tap would re-run the browser leg (new device key) or
+     * send another OTP instead of retrying the subscription step.
+     */
+    fun setSessionEstablished(established: Boolean) {
+        if (sessionEstablished == established) return
+        sessionEstablished = established
+        applyState(lastProductState)
     }
 
     /**
@@ -359,11 +396,23 @@ class GetLineOnboardingDesign(context: Context) :
     private fun applyState(state: GetLineProductState) {
         lastProductState = state
         val action = recoveryActionFor(state)
-        binding.stateView.render(
-            state = state,
-            action = action,
-            showSendDiagnostics = offersDiagnostics(state),
-        )
+        if (linkOnlySignIn && state == GetLineProductState.NoProfile) {
+            // Nothing is missing here: the link-only profile is imported and routing
+            // traffic. NoProfile copy ("no VPN profile yet… add a subscription link")
+            // would read as if the working subscription had been lost.
+            binding.stateView.renderMessage(
+                title = R.string.get_line_link_only_sign_in_title,
+                explanation = R.string.get_line_link_only_sign_in_explanation,
+                action = action,
+                showSendDiagnostics = offersDiagnostics(state),
+            )
+        } else {
+            binding.stateView.render(
+                state = state,
+                action = action,
+                showSendDiagnostics = offersDiagnostics(state),
+            )
+        }
         binding.actionsEnabled = state != GetLineProductState.Loading
         // Idle auth + errors only — no Help during Loading/PreparingVpn or on Content exit.
         binding.helpVisible = !state.loading && state != GetLineProductState.Content
@@ -387,8 +436,10 @@ class GetLineOnboardingDesign(context: Context) :
             GetLineProductState.BackendUnavailable,
             GetLineProductState.ImportFailed,
             GetLineProductState.AuthFailed -> GetLineRecoveryAction.Retry
+            // linkOnlySignIn: the user got here from a subscription they already
+            // imported by link — offering to import another one is noise.
             GetLineProductState.NoProfile ->
-                if (authStep == AuthStep.Providers) {
+                if (authStep == AuthStep.Providers && !linkOnlySignIn) {
                     GetLineRecoveryAction.ImportSubscription
                 } else {
                     GetLineRecoveryAction.None
@@ -411,10 +462,32 @@ class GetLineOnboardingDesign(context: Context) :
     }
 
     private fun applyAuthStepVisibility(state: GetLineProductState) {
-        val loginChrome = keepsEmailLoginChrome(state)
+        val loginChrome = showsLoginChrome(state)
         binding.providersVisible = loginChrome && authStep == AuthStep.Providers
         binding.emailStepVisible = loginChrome && authStep == AuthStep.EmailEntry
         binding.otpStepVisible = loginChrome && authStep == AuthStep.OtpEntry
+        // Hidden only while an email/OTP step is on screen — that step has its own
+        // "Back". Where the chrome is hidden (post-session errors) this is the only
+        // way out, and an exit racing an in-flight import (loading) is a trap.
+        binding.dismissVisible = linkOnlySignIn &&
+            (authStep == AuthStep.Providers || !loginChrome) &&
+            !state.loading &&
+            state != GetLineProductState.Content
+    }
+
+    /**
+     * Login controls actually on screen for [state].
+     *
+     * Offline normally replaces the whole entry screen — there is nothing to do
+     * without network. Coming from a working link-only VPN it is only a warning
+     * above the buttons, so the provider list stays reachable instead of leaving a
+     * lone Retry on a screen the user opened deliberately. Once a session exists
+     * that no longer holds: the failing step is the subscription import, and
+     * re-running login there mints a new device key or burns another OTP.
+     */
+    private fun showsLoginChrome(state: GetLineProductState): Boolean {
+        return keepsEmailLoginChrome(state) ||
+            (linkOnlySignIn && !sessionEstablished && state == GetLineProductState.Offline)
     }
 
     private fun applyResendBinding() {

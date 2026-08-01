@@ -4,7 +4,7 @@
     <string name="cancel">Cancel</string>
     <string name="url">URL</string>
     <string name="profile_url">Profile URL</string>
-    <string name="accept_http_content">Accept only http(s)</string>
+    <string name="accept_http_content">Only http(s) links are accepted</string>
     <string name="get_line_vpn" translatable="false">GetLine Pro</string>
     <string name="get_line_brand_name" translatable="false">GetLine Pro</string>
     <string name="get_line_onboarding_value_prop">Simple secure access with your GetLine Pro subscription</string>
@@ -93,6 +93,8 @@
     <string name="get_line_subscription_link_only_explanation">To manage billing and devices, sign in with the subscription owner account.</string>
     <string name="get_line_subscription_link_only_sign_in">Sign in to manage</string>
     <string name="get_line_subscription_link_only_refresh_failed">Couldn’t refresh subscription. Using last saved settings.</string>
+    <string name="get_line_link_only_sign_in_title">Sign in to your GetLine Pro account</string>
+    <string name="get_line_link_only_sign_in_explanation">The subscription added by link keeps working. If the account holds a different subscription, we will ask which one to keep.</string>
     <string name="get_line_subscription_transient_error">Couldn’t refresh. Showing last known data.</string>
     <string name="get_line_account_portal_title">Personal account</string>
     <string name="get_line_account_portal_explanation">Plans, payments, and device management</string>
@@ -102,14 +104,17 @@
     <string name="get_line_account_portal_no_browser">No suitable browser found on this device.</string>
     <string name="get_line_action_sign_in">Sign in</string>
     <string name="get_line_action_help">Help</string>
+    <string name="get_line_action_not_now">Not now</string>
     <string name="get_line_action_logout">Sign out</string>
     <string name="get_line_action_remove_subscription">Remove subscription from device</string>
+    <!-- Dialog button: the title and message already say what is removed. -->
+    <string name="get_line_action_remove_subscription_short">Remove</string>
     <string name="get_line_logout_confirm_title">Sign out of your account?</string>
     <string name="get_line_logout_confirm_message">VPN will be disconnected and the GetLine Pro configuration will be removed from this device.</string>
     <string name="get_line_account_mismatch_title">Current subscription is not in this account</string>
-    <string name="get_line_account_mismatch_message">The subscription added by link does not belong to this account. Choose which one to use on this device.</string>
-    <string name="get_line_account_mismatch_use_account">Use account subscription</string>
-    <string name="get_line_account_mismatch_keep_link">Keep current — sign out</string>
+    <string name="get_line_account_mismatch_message">The subscription added by link does not belong to this account. Choose which one to use on this device. Keeping the current one cancels this sign-in.</string>
+    <string name="get_line_account_mismatch_use_account">Account one</string>
+    <string name="get_line_account_mismatch_keep_link">Keep current</string>
     <string name="get_line_remove_subscription_confirm_title">Remove subscription from this device?</string>
     <string name="get_line_remove_subscription_confirm_message">VPN will be disconnected and the configuration removed from this device. You can import the link again.</string>
     <string name="get_line_remove_subscription_failed">Couldn’t remove the subscription. VPN was disconnected — connect again and retry.</string>
