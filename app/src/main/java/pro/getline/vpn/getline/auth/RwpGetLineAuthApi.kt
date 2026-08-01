@@ -5,12 +5,14 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import com.github.kr328.clash.common.Global
+import com.github.kr328.clash.common.log.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import pro.getline.vpn.AppEnvironment
 import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
@@ -166,32 +168,55 @@ class RwpGetLineAuthApi(
         errorContext: AuthErrorContext = AuthErrorContext.Default,
     ): JSONObject = withContext(Dispatchers.IO) {
         val url = URL("$origin$path")
+
+        fun open(network: Network?): HttpURLConnection {
+            return openControlPlaneConnection(url, network).apply {
+                requestMethod = method
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                useCaches = false
+                doInput = true
+                // Never follow 3xx: a stage handler must not bounce the e2e client
+                // onto production RWP/Auth (or any other host) with Bearer headers.
+                instanceFollowRedirects = false
+                setRequestProperty("Accept", "application/json")
+                if (xhr) {
+                    setRequestProperty("X-Requested-With", "XMLHttpRequest")
+                }
+                if (includeBrowserOriginHeaders) {
+                    setRequestProperty("Origin", origin)
+                    setRequestProperty("Referer", "$origin/")
+                }
+                if (bearer != null) {
+                    setRequestProperty("Authorization", "Bearer $bearer")
+                }
+                if (body != null) {
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                }
+            }
+        }
+
         // Prefer the underlying (non-VPN) network. When TunService is up with a
         // broken/expired outbound, default routing goes through fake-ip + proxy
         // and control-plane GETs fail even though the account/subscription is fine.
-        val connection = openControlPlaneConnection(url).apply {
-            requestMethod = method
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
-            useCaches = false
-            doInput = true
-            // Never follow 3xx: a stage handler must not bounce the e2e client
-            // onto production RWP/Auth (or any other host) with Bearer headers.
-            instanceFollowRedirects = false
-            setRequestProperty("Accept", "application/json")
-            if (xhr) {
-                setRequestProperty("X-Requested-With", "XMLHttpRequest")
-            }
-            if (includeBrowserOriginHeaders) {
-                setRequestProperty("Origin", origin)
-                setRequestProperty("Referer", "$origin/")
-            }
-            if (bearer != null) {
-                setRequestProperty("Authorization", "Bearer $bearer")
-            }
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json")
+        val underlying = resolveUnderlyingNetwork()
+        var connection = open(underlying)
+
+        if (underlying != null) {
+            // Seeing a network is not the same as being allowed to select it. Under
+            // a foreign lockdown VPN the platform refuses the bind for this uid
+            // ("can't select networks other than N" in netd) and every control-plane
+            // call dies with SocketException — sign-in, refresh and import alike.
+            // Connecting explicitly keeps the retry safe: nothing has been written
+            // yet, so re-issuing on default routing cannot duplicate a POST.
+            // Our own tunnel never lands here — the VPN owner may select underlying.
+            try {
+                connection.connect()
+            } catch (e: IOException) {
+                Log.w("control_plane_net fallback=default kind=${e.javaClass.simpleName}")
+                connection.disconnect()
+                connection = open(null)
             }
         }
 
@@ -241,8 +266,7 @@ class RwpGetLineAuthApi(
         }
     }
 
-    private fun openControlPlaneConnection(url: URL): HttpURLConnection {
-        val network = resolveUnderlyingNetwork()
+    private fun openControlPlaneConnection(url: URL, network: Network?): HttpURLConnection {
         return if (network != null) {
             network.openConnection(url) as HttpURLConnection
         } else {
