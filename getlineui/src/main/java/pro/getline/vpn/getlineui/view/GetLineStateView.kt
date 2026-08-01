@@ -23,6 +23,7 @@ class GetLineStateView @JvmOverloads constructor(
     )
     private var recoveryAction = GetLineRecoveryAction.None
     private var onRecoveryAction: ((GetLineRecoveryAction) -> Unit)? = null
+    private var onSendDiagnostics: (() -> Unit)? = null
 
     init {
         radius = 16 * resources.displayMetrics.density
@@ -36,6 +37,9 @@ class GetLineStateView @JvmOverloads constructor(
         binding.action.setOnClickListener {
             onRecoveryAction?.invoke(recoveryAction)
         }
+        binding.sendDiagnostics.setOnClickListener {
+            onSendDiagnostics?.invoke()
+        }
         visibility = View.GONE
     }
 
@@ -43,9 +47,14 @@ class GetLineStateView @JvmOverloads constructor(
         onRecoveryAction = listener
     }
 
+    fun setOnSendDiagnostics(listener: () -> Unit) {
+        onSendDiagnostics = listener
+    }
+
     fun render(
         state: GetLineProductState,
         action: GetLineRecoveryAction = GetLineRecoveryAction.None,
+        showSendDiagnostics: Boolean = false,
     ) {
         visibility = if (state == GetLineProductState.Content) View.GONE else View.VISIBLE
         if (state == GetLineProductState.Content)
@@ -60,6 +69,8 @@ class GetLineStateView @JvmOverloads constructor(
         if (action != GetLineRecoveryAction.None) {
             binding.action.setText(action.label)
         }
+        binding.sendDiagnostics.visibility =
+            if (showSendDiagnostics) View.VISIBLE else View.GONE
     }
 
     /**
@@ -71,6 +82,7 @@ class GetLineStateView @JvmOverloads constructor(
         @androidx.annotation.StringRes explanation: Int,
         loading: Boolean = false,
         action: GetLineRecoveryAction = GetLineRecoveryAction.None,
+        showSendDiagnostics: Boolean = false,
     ) {
         visibility = View.VISIBLE
         recoveryAction = action
@@ -82,6 +94,8 @@ class GetLineStateView @JvmOverloads constructor(
         if (action != GetLineRecoveryAction.None) {
             binding.action.setText(action.label)
         }
+        binding.sendDiagnostics.visibility =
+            if (showSendDiagnostics) View.VISIBLE else View.GONE
     }
 
     fun hide() {

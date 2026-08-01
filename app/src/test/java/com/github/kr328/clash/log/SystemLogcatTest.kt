@@ -2,6 +2,7 @@ package com.github.kr328.clash.log
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SystemLogcatTest {
@@ -22,5 +23,19 @@ class SystemLogcatTest {
                 filters.any { it == forbidden || it.startsWith("$forbidden:") },
             )
         }
+    }
+
+    @Test
+    fun diagnosticDump_isAppTagOnly_noAndroidRuntime() {
+        assertArrayEquals(
+            arrayOf("GetLineVPN:V"),
+            SystemLogcat.diagnosticLogFilters,
+        )
+        assertFalse(
+            SystemLogcat.diagnosticLogFilters.any {
+                it.startsWith("AndroidRuntime")
+            },
+        )
+        assertTrue(SystemLogcat.diagnosticLogFilters.contains("GetLineVPN:V"))
     }
 }

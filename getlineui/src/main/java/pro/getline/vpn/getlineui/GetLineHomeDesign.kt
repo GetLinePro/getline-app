@@ -60,6 +60,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         Logout,
         /** Open existing HelpActivity (support links, about). */
         OpenHelp,
+        /** GL-19: local safe diagnostic report → preview → share. */
+        SendDiagnostics,
     }
 
     /** Payload for [Request.SelectServer]; cleared when the request is consumed. */
@@ -221,6 +223,9 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 GetLineRecoveryAction.SignIn -> request(Request.SignIn)
                 GetLineRecoveryAction.None -> Unit
             }
+        }
+        binding.stateView.setOnSendDiagnostics {
+            request(Request.SendDiagnostics)
         }
         binding.subscriptionStateView.setOnRecoveryAction {
             when (it) {
@@ -1068,7 +1073,12 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         action: GetLineRecoveryAction,
     ) {
         productState = state
-        binding.stateView.render(state, action)
+        binding.stateView.render(
+            state = state,
+            action = action,
+            showSendDiagnostics = state == GetLineProductState.ImportFailed ||
+                state == GetLineProductState.AuthFailed,
+        )
         applyControls()
     }
 

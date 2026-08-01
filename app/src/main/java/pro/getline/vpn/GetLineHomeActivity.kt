@@ -26,6 +26,7 @@ import pro.getline.vpn.getline.accountportal.AccountPortalUriPolicy
 import pro.getline.vpn.getline.accountportal.AccountPortalVisitCoordinator
 import pro.getline.vpn.getline.accountportal.DefaultAccountPortalLauncher
 import pro.getline.vpn.getline.accountportal.PendingForceSubscriptionRefresh
+import pro.getline.vpn.diagnostics.DiagnosticReportShare
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
@@ -257,6 +258,11 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             design.performLogout()
                         GetLineHomeDesign.Request.OpenHelp ->
                             startActivity(HelpActivity::class.intent)
+                        GetLineHomeDesign.Request.SendDiagnostics ->
+                            DiagnosticReportShare.present(
+                                activity = this@GetLineHomeActivity,
+                                hasSession = sessionRepository.hasSession(),
+                            )
                     }
                 }
                 trafficTicker.onReceive {

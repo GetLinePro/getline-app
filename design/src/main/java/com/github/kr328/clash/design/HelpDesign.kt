@@ -23,6 +23,8 @@ class HelpDesign(
      * the explicit entry point from HelpActivity when the string is injected.
      */
     accountPortalUrl: String = context.getString(R.string.getline_account_url),
+    /** GL-19: always-available path to build/share a safe diagnostic report. */
+    openSendDiagnostics: (() -> Unit)? = null,
 ) : Design<Unit>(context) {
     private val binding = DesignSettingsCommonBinding
         .inflate(context.layoutInflater, context.root, false)
@@ -52,6 +54,17 @@ class HelpDesign(
             ) {
                 clicked {
                     openLink(Uri.parse(context.getString(R.string.getline_support_url)))
+                }
+            }
+
+            val sendDiagnostics = openSendDiagnostics
+            if (sendDiagnostics != null) {
+                clickable(
+                    title = R.string.send_diagnostics,
+                ) {
+                    clicked {
+                        sendDiagnostics()
+                    }
                 }
             }
 

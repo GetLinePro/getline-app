@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pro.getline.vpn.getline.auth.GetLineAuthException
 import pro.getline.vpn.getlineui.model.GetLineImportStage
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -267,6 +268,24 @@ class GetLineImportCoordinatorTest {
         val a = GetLineImportCoordinator.importKey("https://x", "sub", GetLineSubscriptionId("u"))
         val b = GetLineImportCoordinator.importKey("https://x", "sub", GetLineSubscriptionId("u"))
         assertEquals(a, b)
+    }
+
+    @Test
+    fun importUnavailableReason_bareThrowable_isKindOnly() {
+        val reason = importUnavailableReason(IllegalStateException("body must not leak"))
+        assertEquals("kind=IllegalStateException", reason)
+        assertTrue(!reason.contains("body must not leak"))
+    }
+
+    @Test
+    fun importUnavailableReason_nestedHttpFailure_includesCode() {
+        val nested = RuntimeException(
+            "wrapper",
+            GetLineAuthException.HttpFailure(503, "{\"error\":\"raw body\"}"),
+        )
+        val reason = importUnavailableReason(nested)
+        assertEquals("kind=RuntimeException code=503", reason)
+        assertTrue(!reason.contains("raw body"))
     }
 
     private fun request(key: String, source: String) =

@@ -226,6 +226,9 @@
     <string name="sources">Open source</string>
     <string name="donate">Donate</string>
     <string name="support">Support</string>
+    <string name="send_diagnostics">Send diagnostics</string>
+    <string name="diagnostics_report_title">Diagnostic report</string>
+    <string name="diagnostics_share">Share</string>
     <string name="privacy_policy">Privacy policy</string>
     <string name="getline_account">GetLine account</string>
     <string name="clash_wiki">Clash Wiki</string>

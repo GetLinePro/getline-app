@@ -27,6 +27,7 @@ import pro.getline.vpn.getline.auth.BrowserAuthLaunchResult
 import pro.getline.vpn.getline.auth.AuthMethod
 import pro.getline.vpn.getline.auth.BrowserAuthStarter
 import pro.getline.vpn.getline.auth.GetLineAuthException
+import pro.getline.vpn.diagnostics.DiagnosticReportShare
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
@@ -142,6 +143,11 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             startActivity(HelpActivity::class.intent)
                         GetLineOnboardingDesign.Request.Retry ->
                             retry(design)
+                        GetLineOnboardingDesign.Request.SendDiagnostics ->
+                            DiagnosticReportShare.present(
+                                activity = this@GetLineOnboardingActivity,
+                                hasSession = sessionRepository.hasSession(),
+                            )
                     }
                 }
                 imports.onReceive {
@@ -311,8 +317,10 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         } catch (e: GetLineAuthException) {
             retryTarget = RetryTarget.EmailSend(normalized)
             applyEmailAuthError(design, e)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             retryTarget = RetryTarget.EmailSend(normalized)
+            // AuthFailed now offers Send diagnostics — emit a discriminator first (GL-19).
+            logPreSessionAuthFailed(e)
             design.setProductState(authFailureState())
         } finally {
             busy = false
@@ -347,8 +355,10 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 retryTarget = RetryTarget.EmailVerify(normalizedEmail, normalizedCode)
                 applyEmailAuthError(design, e)
                 return
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 retryTarget = RetryTarget.EmailVerify(normalizedEmail, normalizedCode)
+                // AuthFailed now offers Send diagnostics — emit a discriminator first (GL-19).
+                logPreSessionAuthFailed(e)
                 design.setProductState(authFailureState())
                 return
             }
@@ -441,27 +451,17 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         preSessionTarget: RetryTarget,
         error: Exception?,
     ) {
-        // Class name plus a non-secret discriminator. HttpFailure/RateLimited
-        // messages hold raw response bodies, so only the status code is logged;
-        // Protocol messages are authored constants (labels only, no URLs/tokens).
         // Never interpolate preSessionTarget: EmailSend carries an address.
-        val kind = error?.javaClass?.simpleName ?: "unknown"
-        val detail = when (error) {
-            is GetLineAuthException.HttpFailure -> " code=${error.code}"
-            is GetLineAuthException.Protocol -> " reason=${error.message}"
-            else -> ""
-        }
-
         if (!sessionRepository.hasSession()) {
             // Used to be silent: every pre-session failure reached the user as a
             // bare "Couldn't sign in" with nothing in the log to say why.
-            Log.w("pre_session_auth_failed kind=$kind$detail")
+            logPreSessionAuthFailed(error)
             retryTarget = preSessionTarget
             design.setProductState(authFailureState())
             return
         }
 
-        Log.w("post_session_subscription_failed kind=$kind$detail")
+        logPostSessionSubscriptionFailed(error)
         retryTarget = RetryTarget.ImportPreferredSubscription
         design.setProductState(
             if (hasValidatedInternetConnection()) {
@@ -470,6 +470,31 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 GetLineProductState.Offline
             },
         )
+    }
+
+    /**
+     * Class name plus a non-secret discriminator for allowlisted diagnostics (GL-19).
+     * HttpFailure/RateLimited messages hold raw response bodies — only the status code.
+     * Protocol messages are authored constants (labels only, no URLs/tokens).
+     */
+    private fun logPreSessionAuthFailed(error: Exception?) {
+        Log.w("pre_session_auth_failed kind=${authFailureKind(error)}${authFailureDetail(error)}")
+    }
+
+    private fun logPostSessionSubscriptionFailed(error: Exception?) {
+        Log.w(
+            "post_session_subscription_failed kind=${authFailureKind(error)}" +
+                authFailureDetail(error),
+        )
+    }
+
+    private fun authFailureKind(error: Exception?): String =
+        error?.javaClass?.simpleName ?: "unknown"
+
+    private fun authFailureDetail(error: Exception?): String = when (error) {
+        is GetLineAuthException.HttpFailure -> " code=${error.code}"
+        is GetLineAuthException.Protocol -> " reason=${error.message}"
+        else -> ""
     }
 
     private suspend fun signInWithBrowserProvider(
@@ -662,14 +687,19 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                                 sessionRepository.rememberSubscription(subscriptionIdToRemember)
                             }
                             sessionRepository.clearPendingImport()
+                            // No profile UUID: lands in user-shareable diagnostics (GL-19).
                             Log.i(
-                                "import_terminal success id=${result.id.value} " +
+                                "import_terminal success " +
                                     "verdict=${sessionRepository.consistencyVerdict()}",
                             )
                         }
                         is GetLineImportCoordinator.ImportTerminal.Unavailable -> {
                             sessionRepository.clearPendingImport()
-                            Log.i("import_terminal unavailable; pending cleared")
+                            // reason is a safe discriminator (kind=/code=), never raw t.message.
+                            Log.w(
+                                "import_terminal unavailable " +
+                                    (result.reason ?: "kind=unknown"),
+                            )
                         }
                     }
                 },
@@ -854,6 +884,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             reuseId = id,
                         )
                     }
+                    // GL-19: ImportFailed without a prior import_terminal line is opaque.
+                    Log.w("import_terminal activate_failed")
                     design.setProductState(GetLineProductState.ImportFailed)
                     return
                 }
@@ -861,6 +893,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 finishImportToHome(design)
             }
             GetLineBackendResult.Unavailable -> {
+                Log.w("import_terminal activate_unavailable")
                 design.setProductState(GetLineProductState.BackendUnavailable)
             }
         }
@@ -927,7 +960,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 startResendTicker(design)
             }
             else -> {
+                // Unmapped GetLineAuthException → AuthFailed + Send diagnostics (GL-19).
                 // Stay on current email/OTP step (authStep unchanged).
+                logPreSessionAuthFailed(error)
                 design.setProductState(authFailureState())
             }
         }

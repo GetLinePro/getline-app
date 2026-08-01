@@ -37,6 +37,8 @@ class GetLineOnboardingDesign(context: Context) :
         /** Open existing HelpActivity (support links, about). */
         object OpenHelp : Request()
         object Retry : Request()
+        /** GL-19: local safe diagnostic report → preview → share. */
+        object SendDiagnostics : Request()
     }
 
     private enum class AuthStep {
@@ -73,6 +75,9 @@ class GetLineOnboardingDesign(context: Context) :
                 GetLineRecoveryAction.OpenProfiles,
                 GetLineRecoveryAction.None -> Unit
             }
+        }
+        binding.stateView.setOnSendDiagnostics {
+            request(Request.SendDiagnostics)
         }
         applyState(GetLineProductState.Loading)
     }
@@ -314,12 +319,22 @@ class GetLineOnboardingDesign(context: Context) :
     private fun applyState(state: GetLineProductState) {
         lastProductState = state
         val action = recoveryActionFor(state)
-        binding.stateView.render(state, action)
+        binding.stateView.render(
+            state = state,
+            action = action,
+            showSendDiagnostics = offersDiagnostics(state),
+        )
         binding.actionsEnabled = state != GetLineProductState.Loading
         // Idle auth + errors only — no Help during Loading/PreparingVpn or on Content exit.
         binding.helpVisible = !state.loading && state != GetLineProductState.Content
         applyAuthStepVisibility(state)
         applyResendBinding()
+    }
+
+    /** Diagnostics next to Retry where the tester already is (GL-19). */
+    private fun offersDiagnostics(state: GetLineProductState): Boolean {
+        return state == GetLineProductState.ImportFailed ||
+            state == GetLineProductState.AuthFailed
     }
 
     /**

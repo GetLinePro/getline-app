@@ -211,6 +211,9 @@
     <string name="sources">Открытый исходный код</string>
     <string name="donate">Сделать пожертвование</string>
     <string name="support">Поддержка</string>
+    <string name="send_diagnostics">Отправить диагностику</string>
+    <string name="diagnostics_report_title">Диагностический отчёт</string>
+    <string name="diagnostics_share">Поделиться</string>
     <string name="privacy_policy">Политика конфиденциальности</string>
     <string name="getline_account">Кабинет GetLine</string>
     <string name="clash_wiki">Clash Wiki</string>

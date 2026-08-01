@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import pro.getline.vpn.getline.auth.GetLineAuthException
 import pro.getline.vpn.getlineui.model.GetLineImportStage
 import java.util.concurrent.atomic.AtomicLong
 
@@ -116,12 +117,14 @@ object GetLineImportCoordinator {
                                 is GetLineBackendResult.Success ->
                                     ImportTerminal.Success(result.value)
                                 GetLineBackendResult.Unavailable ->
-                                    ImportTerminal.Unavailable()
+                                    // Safe discriminator for GL-19 — never a raw exception body.
+                                    ImportTerminal.Unavailable("kind=backend")
                             }
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (t: Throwable) {
-                            ImportTerminal.Unavailable(t.message)
+                            // kind + optional HTTP code only; t.message may hold response bodies.
+                            ImportTerminal.Unavailable(importUnavailableReason(t))
                         }
 
                         // Gen check + full durable commit under terminalCommit.
@@ -223,4 +226,23 @@ object GetLineImportCoordinator {
             reuseId?.value.orEmpty(),
         ).joinToString("|")
     }
+}
+
+/**
+ * Safe [ImportTerminal.Unavailable.reason] for logs/diagnostics.
+ * Exception class name + optional HTTP status — never [Throwable.message].
+ */
+internal fun importUnavailableReason(error: Throwable): String {
+    val kind = error.javaClass.simpleName.ifBlank { "Throwable" }
+    var current: Throwable? = error
+    var depth = 0
+    while (current != null && depth < 6) {
+        val failure = current as? GetLineAuthException.HttpFailure
+        if (failure != null) {
+            return "kind=$kind code=${failure.code}"
+        }
+        current = current.cause
+        depth++
+    }
+    return "kind=$kind"
 }

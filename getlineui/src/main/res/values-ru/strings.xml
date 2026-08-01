@@ -142,6 +142,7 @@
     <string name="get_line_state_expired_title">Подписка истекла</string>
     <string name="get_line_state_expired_explanation">Продлите подписку в кабинете GetLine Pro и повторите подключение.</string>
     <string name="get_line_action_retry">Повторить</string>
+    <string name="get_line_action_send_diagnostics">Отправить диагностику</string>
     <string name="get_line_action_choose_profile">Выбрать профиль</string>
     <string name="get_line_action_open_account">Открыть кабинет GetLine Pro</string>
     <string name="get_line_vpn_stopped">VPN остановлен. Повторите подключение.</string>
