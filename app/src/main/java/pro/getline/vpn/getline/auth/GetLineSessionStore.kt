@@ -162,6 +162,37 @@ class GetLineSessionStore(context: Context) {
         }
     }
 
+    /**
+     * Drop a rejected session while preserving the best-known binding shape.
+     *
+     * Shape is inferred from persisted fields, not an explicit provenance flag.
+     * UUID + source + no subscription ID is treated as link-only, including the
+     * brief post-login window before an account subscription ID is committed.
+     * Otherwise the account UUID + subscription ID stay, but its URL is removed.
+     */
+    fun clearRejectedSessionKeepingBindingShape() {
+        val keepLikelyLinkOnlySource =
+            !managedProfileUuid.isNullOrBlank() &&
+                !managedProfileSource.isNullOrBlank() &&
+                subscriptionId.isNullOrBlank()
+        prefs.edit {
+            remove(KEY_ACCESS_TOKEN)
+            remove(KEY_REFRESH_TOKEN)
+            remove(KEY_ACCESS_EXPIRES_AT)
+            remove(KEY_CUSTOMER_ID)
+            if (!keepLikelyLinkOnlySource) {
+                remove(KEY_PROFILE_SOURCE)
+            }
+            remove(KEY_PENDING_IMPORT_NAME)
+            remove(KEY_PENDING_IMPORT_SOURCE)
+            remove(KEY_PENDING_IMPORT_TYPE)
+            remove(KEY_PENDING_IMPORT_REUSE_UUID)
+            remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
+            remove(KEY_PENDING_IMPORT_INTERVAL)
+            remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
+        }
+    }
+
     fun isAccessTokenValid(nowMs: Long = System.currentTimeMillis(), skewMs: Long = 60_000L): Boolean {
         val token = accessToken
         if (token.isNullOrBlank()) return false

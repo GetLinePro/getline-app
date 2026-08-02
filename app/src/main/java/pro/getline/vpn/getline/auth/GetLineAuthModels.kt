@@ -139,6 +139,8 @@ sealed class GetLineAuthException(message: String) : Exception(message) {
 enum class AuthErrorContext {
     Default,
     EmailOtpVerify,
+    /** Preserve HTTP status and response text for refresh-specific classification. */
+    NativeRefresh,
 }
 
 /**
@@ -157,6 +159,9 @@ object GetLineAuthErrorClassifier {
         val lower = text.lowercase()
         val message = text.ifBlank { "HTTP $statusCode" }
 
+        if (context == AuthErrorContext.NativeRefresh) {
+            return GetLineAuthException.HttpFailure(statusCode, message)
+        }
         if (statusCode == 429) {
             return GetLineAuthException.RateLimited(message)
         }

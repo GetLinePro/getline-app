@@ -6,6 +6,25 @@ import org.junit.Test
 
 class GetLineAuthErrorClassifierTest {
     @Test
+    fun nativeRefresh_preservesHttpStatusInsteadOfBodyClassification() {
+        val expired = GetLineAuthErrorClassifier.classify(
+            401,
+            "refresh token expired",
+            AuthErrorContext.NativeRefresh,
+        )
+        assertTrue(expired is GetLineAuthException.HttpFailure)
+        assertEquals(401, (expired as GetLineAuthException.HttpFailure).code)
+
+        val rateLimited = GetLineAuthErrorClassifier.classify(
+            429,
+            "too many attempts",
+            AuthErrorContext.NativeRefresh,
+        )
+        assertTrue(rateLimited is GetLineAuthException.HttpFailure)
+        assertEquals(429, (rateLimited as GetLineAuthException.HttpFailure).code)
+    }
+
+    @Test
     fun rateLimited_on429() {
         val e = GetLineAuthErrorClassifier.classify(429, "slow down")
         assertTrue(e is GetLineAuthException.RateLimited)

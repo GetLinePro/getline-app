@@ -26,6 +26,9 @@ object DiagnosticReportBuilder {
         "import_waiter_cancelled",
         "trial_provision",
         "subscription_ui",
+        // Authenticated subscriptions 401 recovery; fixed outcomes/status only.
+        "session_recovery",
+        "session_refresh",
         // Slice 1: startup decision + repair ladder (daily double-login / Home state).
         "startup_route",
         "repair_outcome",

@@ -55,6 +55,67 @@ class GetLineSessionStoreBindingTest {
     }
 
     @Test
+    fun clearRejectedSession_accountBindingKeepsIdentityButDropsRemoteSource() {
+        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        store.clearAccountState()
+        store.saveSession(
+            NativeSession(
+                accessToken = "access",
+                refreshToken = "refresh",
+                expiresInSeconds = 86_400L,
+            ),
+        )
+        store.customerId = "customer-id"
+        store.subscriptionId = "subscription-id"
+        store.managedProfileUuid = "profile-uuid"
+        store.managedProfileSource = "https://account.example.com/sub"
+
+        store.clearRejectedSessionKeepingBindingShape()
+
+        assertFalse(store.hasRefreshToken())
+        assertNull(store.customerId)
+        assertEquals("subscription-id", store.subscriptionId)
+        assertEquals("profile-uuid", store.managedProfileUuid)
+        assertNull(store.managedProfileSource)
+        assertFalse(
+            LinkOnlyBindingPolicy.isLinkOnlyBinding(
+                store.managedProfileUuid,
+                store.managedProfileSource,
+                store.subscriptionId,
+            ),
+        )
+    }
+
+    @Test
+    fun clearRejectedSession_linkOnlyBindingKeepsItsSource() {
+        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        store.clearAccountState()
+        store.saveSession(
+            NativeSession(
+                accessToken = "access",
+                refreshToken = "refresh",
+                expiresInSeconds = 86_400L,
+            ),
+        )
+        store.managedProfileUuid = "profile-uuid"
+        store.managedProfileSource = "https://link.example.com/sub"
+
+        store.clearRejectedSessionKeepingBindingShape()
+
+        assertFalse(store.hasRefreshToken())
+        assertNull(store.subscriptionId)
+        assertEquals("profile-uuid", store.managedProfileUuid)
+        assertEquals("https://link.example.com/sub", store.managedProfileSource)
+        assertTrue(
+            LinkOnlyBindingPolicy.isLinkOnlyBinding(
+                store.managedProfileUuid,
+                store.managedProfileSource,
+                store.subscriptionId,
+            ),
+        )
+    }
+
+    @Test
     fun pendingImport_persistsPreviousManagedUuidToDelete() {
         val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()

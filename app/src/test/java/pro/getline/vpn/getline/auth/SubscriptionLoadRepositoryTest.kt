@@ -2,6 +2,7 @@ package pro.getline.vpn.getline.auth
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
@@ -16,6 +17,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.IOException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -112,46 +114,166 @@ class SubscriptionLoadRepositoryTest {
     }
 
     @Test
-    fun getSubscriptionsAuthenticated_failedRecovery_logsOutAndThrows() = runBlocking {
-        val api = FakeAuthApi(failSubscriptionsTimes = 2, failRefresh = true)
-        val store = seededStore()
-        val repo = GetLineSessionRepository(api, store)
+    fun getSubscriptionsAuthenticated_concurrent401_rotatesSessionOnce() = runBlocking {
+        val enteredRefresh = CompletableDeferred<Unit>()
+        val releaseRefresh = CompletableDeferred<Unit>()
+        val api = FakeAuthApi(
+            failSubscriptionsTimes = 2,
+            refreshBlock = {
+                enteredRefresh.complete(Unit)
+                releaseRefresh.await()
+                NativeSession(
+                    accessToken = "access-refreshed",
+                    refreshToken = "refresh-refreshed",
+                    expiresInSeconds = 86_400L,
+                )
+            },
+        )
+        val repo = GetLineSessionRepository(api, seededStore())
 
-        try {
+        val first = async(start = CoroutineStart.UNDISPATCHED) {
             repo.getSubscriptionsAuthenticated()
-            fail("expected failure")
-        } catch (_: GetLineAuthException) {
-            // expected
         }
-        // refresh fails before retry completes; or second 401 after refresh
-        assertFalse(store.hasRefreshToken())
+        enteredRefresh.await()
+        val second = async(start = CoroutineStart.UNDISPATCHED) {
+            repo.getSubscriptionsAuthenticated()
+        }
+        releaseRefresh.complete(Unit)
+
+        assertEquals(1, first.await().subscriptions.size)
+        assertEquals(1, second.await().subscriptions.size)
+        assertEquals(1, api.refreshCalls)
+        assertEquals(4, api.subscriptionsCalls)
     }
 
     @Test
-    fun loadSubscriptionForUi_failedRecovery_signedOut() = runBlocking {
-        val api = FakeAuthApi(failSubscriptionsTimes = 99, failRefresh = true)
-        val store = seededStore()
+    fun loadSubscriptionForUi_expiredAccess_refresh401OrInvalidGrant_rejectsAccountSession() =
+        runBlocking {
+            for (error in listOf(
+                GetLineAuthException.HttpFailure(401, "refresh rejected"),
+                GetLineAuthException.HttpFailure(400, "{\"error\":\"invalid_grant\"}"),
+            )) {
+                val api = FakeAuthApi(
+                    refreshError = error,
+                )
+                val store = seededManagedStore().also {
+                    it.accessTokenExpiresAtEpochMs = 0L
+                }
+                val repo = GetLineSessionRepository(api, store)
+
+                val result = repo.loadSubscriptionForUi()
+                assertEquals(SubscriptionLoadResult.SignedOut, result)
+                assertFalse(store.hasRefreshToken())
+                assertEquals("managed-uuid", store.managedProfileUuid)
+                assertEquals("subscription-id", store.subscriptionId)
+                assertEquals(null, store.managedProfileSource)
+                assertEquals(null, store.customerId)
+                assertFalse(repo.canRemoteRepair())
+                assertEquals(1, api.refreshCalls)
+                assertEquals(0, api.subscriptionsCalls)
+            }
+        }
+
+    @Test
+    fun loadSubscriptionForUi_expiredAccess_unknown400Or403_isTransient() = runBlocking {
+        for (code in listOf(400, 403)) {
+            val api = FakeAuthApi(
+                refreshError = GetLineAuthException.HttpFailure(code, "edge rejected request"),
+            )
+            val store = seededManagedStore().also {
+                it.accessTokenExpiresAtEpochMs = 0L
+            }
+            val repo = GetLineSessionRepository(api, store)
+
+            val result = repo.loadSubscriptionForUi()
+            assertEquals(SubscriptionLoadResult.TransientFailure, result)
+            assertTrue(repo.hasSession())
+            assertEquals("refresh", store.refreshToken)
+            assertEquals("managed-uuid", store.managedProfileUuid)
+            assertEquals("https://example.test/managed", store.managedProfileSource)
+            assertEquals("subscription-id", store.subscriptionId)
+            assertEquals("customer-id", store.customerId)
+            assertTrue(repo.canRemoteRepair())
+            assertEquals(1, api.refreshCalls)
+            assertEquals(0, api.subscriptionsCalls)
+        }
+    }
+
+    @Test
+    fun loadSubscriptionForUi_expiredAccess_refresh5xx_isTransient() = runBlocking {
+        val api = FakeAuthApi(
+            refreshError = GetLineAuthException.HttpFailure(503, "refresh unavailable"),
+        )
+        val store = seededManagedStore().also {
+            it.accessTokenExpiresAtEpochMs = 0L
+        }
         val repo = GetLineSessionRepository(api, store)
 
         val result = repo.loadSubscriptionForUi()
-        assertEquals(SubscriptionLoadResult.SignedOut, result)
-        assertFalse(repo.hasSession())
+        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        assertTrue(repo.hasSession())
+        assertEquals("refresh", store.refreshToken)
+        assertEquals("managed-uuid", store.managedProfileUuid)
+        assertEquals("https://example.test/managed", store.managedProfileSource)
+        assertEquals("subscription-id", store.subscriptionId)
+        assertEquals("customer-id", store.customerId)
+        assertEquals(1, api.refreshCalls)
+        assertEquals(0, api.subscriptionsCalls)
     }
 
     @Test
-    fun loadSubscriptionForUi_protocolRefreshFailure_signedOutNotTransient() = runBlocking {
-        // Non-HTTP recovery failure (malformed refresh body) must clear session and
-        // surface SignedOut — not Failed/Transient while hasSession() is false.
+    fun loadSubscriptionForUi_refresh5xx_transientAndPreservesState() = runBlocking {
+        val api = FakeAuthApi(
+            failSubscriptionsTimes = 1,
+            refreshError = GetLineAuthException.HttpFailure(503, "refresh unavailable"),
+        )
+        val store = seededManagedStore()
+        val repo = GetLineSessionRepository(api, store)
+
+        val result = repo.loadSubscriptionForUi()
+        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        assertTrue(repo.hasSession())
+        assertEquals("refresh", store.refreshToken)
+        assertEquals("managed-uuid", store.managedProfileUuid)
+        assertEquals("https://example.test/managed", store.managedProfileSource)
+        assertEquals("subscription-id", store.subscriptionId)
+        assertEquals("customer-id", store.customerId)
+    }
+
+    @Test
+    fun loadSubscriptionForUi_networkRefreshFailure_transientAndPreservesState() = runBlocking {
+        val api = FakeAuthApi(
+            failSubscriptionsTimes = 1,
+            refreshError = IOException("offline"),
+        )
+        val store = seededManagedStore()
+        val repo = GetLineSessionRepository(api, store)
+
+        val result = repo.loadSubscriptionForUi()
+        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        assertTrue(repo.hasSession())
+        assertEquals("refresh", store.refreshToken)
+        assertEquals("managed-uuid", store.managedProfileUuid)
+        assertEquals("https://example.test/managed", store.managedProfileSource)
+        assertEquals("subscription-id", store.subscriptionId)
+        assertEquals("customer-id", store.customerId)
+    }
+
+    @Test
+    fun loadSubscriptionForUi_protocolRefreshFailure_transientAndPreservesState() = runBlocking {
         val api = FakeAuthApi(
             failSubscriptionsTimes = 1,
             refreshError = GetLineAuthException.Protocol("malformed refresh"),
         )
-        val store = seededStore()
+        val store = seededManagedStore()
         val repo = GetLineSessionRepository(api, store)
 
         val result = repo.loadSubscriptionForUi()
-        assertEquals(SubscriptionLoadResult.SignedOut, result)
-        assertFalse(repo.hasSession())
+        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        assertTrue(repo.hasSession())
+        assertEquals("managed-uuid", store.managedProfileUuid)
+        assertEquals("subscription-id", store.subscriptionId)
+        assertEquals("customer-id", store.customerId)
     }
 
     @Test
@@ -235,7 +357,27 @@ class SubscriptionLoadRepositoryTest {
     }
 
     @Test
-    fun getSubscriptionsAuthenticated_second401_logsOut_second403_doesNot() = runBlocking {
+    fun getSubscriptionsAuthenticated_second401_clearsSessionButKeepsBinding() = runBlocking {
+        val api = FakeAuthApi(failSubscriptionsTimes = 2)
+        val store = seededManagedStore()
+        val repo = GetLineSessionRepository(api, store)
+
+        try {
+            repo.getSubscriptionsAuthenticated()
+            fail("expected 401")
+        } catch (e: GetLineAuthException.HttpFailure) {
+            assertEquals(401, e.code)
+        }
+        assertFalse(store.hasRefreshToken())
+        assertEquals("managed-uuid", store.managedProfileUuid)
+        assertEquals(null, store.managedProfileSource)
+        assertEquals("subscription-id", store.subscriptionId)
+        assertEquals(null, store.customerId)
+        assertFalse(repo.canRemoteRepair())
+    }
+
+    @Test
+    fun getSubscriptionsAuthenticated_second403_keepsSession() = runBlocking {
         // After one 401 on subscriptions, refresh succeeds; second call returns 403.
         val api = FakeAuthApi(failSubscriptionsTimes = 1, secondSubscriptionsHttpCode = 403)
         val store = seededStore()
@@ -264,6 +406,15 @@ class SubscriptionLoadRepositoryTest {
             ),
         )
         return store
+    }
+
+    private fun seededManagedStore(): GetLineSessionStore {
+        return seededStore().also { store ->
+            store.managedProfileUuid = "managed-uuid"
+            store.managedProfileSource = "https://example.test/managed"
+            store.subscriptionId = "subscription-id"
+            store.customerId = "customer-id"
+        }
     }
 
     private fun item(
@@ -318,8 +469,7 @@ class SubscriptionLoadRepositoryTest {
             ),
         ),
         private var failSubscriptionsTimes: Int = 0,
-        private val failRefresh: Boolean = false,
-        private val refreshError: GetLineAuthException? = null,
+        private val refreshError: Exception? = null,
         private val refreshBlock: (suspend () -> NativeSession)? = null,
         private val subscriptionsHttpCode: Int? = null,
         /** Applied after a successful refresh when the first subscription call 401'd. */
@@ -349,9 +499,6 @@ class SubscriptionLoadRepositoryTest {
             }
             if (refreshError != null) {
                 throw refreshError
-            }
-            if (failRefresh) {
-                throw GetLineAuthException.HttpFailure(401, "refresh failed")
             }
             return NativeSession(
                 accessToken = "access-refreshed",

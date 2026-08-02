@@ -128,6 +128,7 @@ class RwpGetLineAuthApi(
             body = body,
             xhr = true,
             includeBrowserOriginHeaders = true,
+            errorContext = AuthErrorContext.NativeRefresh,
         )
         return json.toNativeSession()
     }

@@ -8,6 +8,7 @@ import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
+import java.io.IOException
 
 /**
  * Owns native session lifecycle. Raw tokens stay inside this layer except when
@@ -27,6 +28,9 @@ class GetLineSessionRepository(
 
     /** Drop tokens/customer but keep link-only managed profile binding. */
     fun discardSessionKeepingSubscription() = store.clearSessionKeepingBinding()
+
+    private fun invalidateRejectedSession() =
+        store.clearRejectedSessionKeepingBindingShape()
 
     suspend fun establishFromWebToken(webToken: String): NativeSession {
         // Optional identity probe; failure is non-fatal for handoff.
@@ -198,20 +202,19 @@ class GetLineSessionRepository(
             // Lifecycle cancellation must not be mapped to UI failure states.
             throw e
         } catch (e: GetLineAuthException.HttpFailure) {
-            // Recovery may already have cleared the store; prefer SignedOut then.
-            // Only 401 means "session invalid" after recovery. 403 is not treated as
-            // global session death (may be permission/policy for this endpoint).
+            // Refresh recovery may already have invalidated the session. A 403 from
+            // subscriptions itself is endpoint policy, not refresh-token rejection.
             if (!hasSession()) {
                 SubscriptionLoadResult.SignedOut
             } else if (e.code == 401) {
-                logout()
+                invalidateRejectedSession()
                 SubscriptionLoadResult.SignedOut
             } else {
                 Log.w("subscription_ui http_failure code=${e.code}")
                 SubscriptionLoadResult.TransientFailure
             }
         } catch (e: GetLineAuthException) {
-            // e.g. Protocol/malformed refresh after 401 recovery logged the user out.
+            // Malformed/transient refresh failures keep the last persisted session.
             if (!hasSession()) {
                 SubscriptionLoadResult.SignedOut
             } else {
@@ -235,42 +238,116 @@ class GetLineSessionRepository(
      * Concurrent 401 recoveries share [sessionRefreshMutex].
      */
     suspend fun getSubscriptionsAuthenticated(): SubscriptionsResponse {
-        val accessToken = validAccessToken()
+        val accessToken = accessTokenForSubscriptions()
+        val rejectedRefreshToken = store.refreshToken
         return try {
             api.getSubscriptions(accessToken)
         } catch (first: GetLineAuthException.HttpFailure) {
             if (first.code != 401) throw first
+            Log.i("session_recovery stage=first_401")
             val recovered = try {
-                forceRefreshSession()
+                forceRefreshSession(
+                    rejectedAccessToken = accessToken,
+                    rejectedRefreshToken = rejectedRefreshToken,
+                ).also {
+                    Log.i("session_refresh outcome=ok code=na")
+                }
             } catch (cancelled: CancellationException) {
                 // Activity destroy/recreate mid-refresh — keep persisted session.
                 throw cancelled
             } catch (refreshError: Exception) {
-                logout()
-                throw refreshError
+                throwRefreshFailure(refreshError)
             }
             try {
-                api.getSubscriptions(recovered.accessToken)
+                api.getSubscriptions(recovered.accessToken).also {
+                    Log.i("session_recovery stage=retry outcome=ok code=na")
+                }
             } catch (second: GetLineAuthException.HttpFailure) {
                 // Second 401 after a forced refresh → session is dead.
                 // 403 is not session-invalidation; keep tokens and surface as error.
                 if (second.code == 401) {
-                    logout()
+                    Log.w("session_recovery stage=retry outcome=unauthorized code=401")
+                    invalidateRejectedSession()
+                } else {
+                    Log.w("session_recovery stage=retry outcome=http_failure code=${second.code}")
                 }
                 throw second
             }
         }
     }
 
-    /** Refresh even if access token looks valid (401 recovery). */
-    private suspend fun forceRefreshSession(): NativeSession {
+    /** Access token for subscriptions, including observable cold-start refresh. */
+    private suspend fun accessTokenForSubscriptions(): String {
+        if (store.isAccessTokenValid()) {
+            return store.accessToken
+                ?: throw GetLineAuthException.Protocol("Missing access token")
+        }
+        Log.i("session_recovery stage=access_expired")
+        return try {
+            refreshSession().accessToken.also {
+                Log.i("session_refresh outcome=ok code=na")
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (refreshError: Exception) {
+            throwRefreshFailure(refreshError)
+        }
+    }
+
+    /**
+     * Refresh a rejected access token once. If another waiter already rotated
+     * either token while this caller queued, reuse that persisted session.
+     */
+    private suspend fun forceRefreshSession(
+        rejectedAccessToken: String,
+        rejectedRefreshToken: String?,
+    ): NativeSession {
         return sessionRefreshMutex.withLock {
+            val currentAccessToken = store.accessToken
+            val currentRefreshToken = store.refreshToken
+            val sessionChanged =
+                currentAccessToken != rejectedAccessToken ||
+                    currentRefreshToken != rejectedRefreshToken
+            if (
+                sessionChanged &&
+                store.isAccessTokenValid() &&
+                currentAccessToken != null &&
+                currentRefreshToken != null
+            ) {
+                return@withLock NativeSession(
+                    accessToken = currentAccessToken,
+                    refreshToken = currentRefreshToken,
+                    expiresInSeconds = 0L,
+                )
+            }
             val refreshToken = store.refreshToken
                 ?: throw GetLineAuthException.Protocol("Missing refresh token")
             val session = api.refresh(refreshToken)
             store.saveSession(session)
             session
         }
+    }
+
+    private fun throwRefreshFailure(error: Exception): Nothing {
+        when (error) {
+            is GetLineAuthException.HttpFailure -> {
+                val invalidGrant =
+                    error.code == 400 &&
+                        error.message?.contains("invalid_grant", ignoreCase = true) == true
+                val rejected = error.code == 401 || invalidGrant
+                if (rejected) {
+                    Log.w("session_refresh outcome=rejected code=${error.code}")
+                    invalidateRejectedSession()
+                } else {
+                    Log.w("session_refresh outcome=http_failure code=${error.code}")
+                }
+            }
+            is IOException -> Log.w("session_refresh outcome=network_failure code=na")
+            is GetLineAuthException ->
+                Log.w("session_refresh outcome=protocol_failure code=na")
+            else -> Log.w("session_refresh outcome=unexpected_failure code=na")
+        }
+        throw error
     }
 
     /**

@@ -143,6 +143,30 @@ class DiagnosticReportBuilderTest {
     }
 
     @Test
+    fun allowlist_keepsSessionRecoveryEvents_andRedactsInjectedSecrets() {
+        val raw = """
+            08-02 14:13:30.900  1000  1001 I GetLineVPN: session_recovery stage=access_expired
+            08-02 14:13:31.000  1000  1001 I GetLineVPN: session_recovery stage=first_401
+            08-02 14:13:31.100  1000  1001 W GetLineVPN: session_refresh outcome=http_failure code=503
+            08-02 14:13:31.200  1000  1001 I GetLineVPN: session_refresh outcome=ok code=na
+            08-02 14:13:31.300  1000  1001 W GetLineVPN: session_recovery stage=retry outcome=unauthorized code=401
+            08-02 14:13:31.400  1000  1001 W GetLineVPN: session_refresh outcome=network_failure code=na url=https://secret.example/refresh token=raw-secret
+        """.trimIndent()
+
+        val lines = DiagnosticReportBuilder.selectEventLines(raw)
+        assertEquals(6, lines.size)
+        assertTrue(lines[0].contains("session_recovery stage=access_expired"))
+        assertTrue(lines[1].contains("session_recovery stage=first_401"))
+        assertTrue(lines[2].contains("outcome=http_failure code=503"))
+        assertTrue(lines[3].contains("session_refresh outcome=ok"))
+        assertTrue(lines[4].contains("outcome=unauthorized code=401"))
+        assertTrue(lines[5].contains("url=<url>"))
+        assertTrue(lines[5].contains("token=<redacted>"))
+        assertFalse(lines.any { it.contains("secret.example") })
+        assertFalse(lines.any { it.contains("raw-secret") })
+    }
+
+    @Test
     fun allowlist_dropsUnlistedAppNoise() {
         val raw = """
             08-01 12:00:01.000  1000  1001 I GetLineVPN: App becomes visible
