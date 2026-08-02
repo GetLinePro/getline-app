@@ -100,4 +100,30 @@ class EmailOtpAuthTest {
         assertTrue(AuthMethod.Google.requiresBrowser())
         assertTrue(!AuthMethod.Email.requiresBrowser())
     }
+
+    @Test
+    fun errorMessageOf_unwrapsCanonicalEnvelope() {
+        assertEquals(
+            "no_account",
+            RwpGetLineAuthApi.errorMessageOf("""{"error":"no_account"}"""),
+        )
+    }
+
+    @Test
+    fun errorMessageOf_keepsDeployedPlainText() {
+        assertEquals(
+            "email_domain_not_allowed",
+            RwpGetLineAuthApi.errorMessageOf("  email_domain_not_allowed\n"),
+        )
+    }
+
+    @Test
+    fun errorMessageOf_fallsBackOnUnusableBodies() {
+        // Truncated JSON, an object without `error`, and an explicit null all keep
+        // the raw text: a body we cannot read is still the best message available.
+        for (body in listOf("""{"error":""", """{"detail":"nope"}""", """{"error":null}""")) {
+            assertEquals(body, RwpGetLineAuthApi.errorMessageOf(body))
+        }
+        assertEquals("", RwpGetLineAuthApi.errorMessageOf("   "))
+    }
 }

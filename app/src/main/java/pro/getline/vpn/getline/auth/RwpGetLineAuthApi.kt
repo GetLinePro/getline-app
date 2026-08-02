@@ -243,7 +243,11 @@ class RwpGetLineAuthApi(
             val payload = stream?.readTextAndClose().orEmpty()
 
             if (code !in 200..299) {
-                throw GetLineAuthErrorClassifier.classify(code, payload, errorContext)
+                throw GetLineAuthErrorClassifier.classify(
+                    code,
+                    errorMessageOf(payload),
+                    errorContext,
+                )
             }
 
             if (payload.isBlank()) {
@@ -482,6 +486,27 @@ class RwpGetLineAuthApi(
                 trialAutoActivated = json.optBoolean("trial_auto_activated"),
                 trialDays = days,
             )
+        }
+
+        /**
+         * Error bodies come in two shapes: 6.8.0 documents `ErrorResponse
+         * {"error": "..."}`, while deployed email auth still answers in plain text.
+         * Unwrap the field so the classifier and the user-visible message both see
+         * the same string instead of a raw JSON blob.
+         *
+         * Anything that is not an object with a usable `error` is returned trimmed
+         * and unchanged — an unparseable body is still the best message we have.
+         */
+        fun errorMessageOf(payload: String): String {
+            val text = payload.trim()
+            if (!text.startsWith("{")) return text
+            return try {
+                JSONObject(text).optString("error")
+                    .takeIf { it.isNotBlank() && it != "null" }
+                    ?: text
+            } catch (_: Exception) {
+                text
+            }
         }
     }
 }

@@ -94,6 +94,33 @@ class GetLineAuthErrorClassifierTest {
     }
 
     @Test
+    fun verifyContext_serverOutage_isHttpFailureNotInvalidOtp() {
+        for (code in listOf(500, 502, 503)) {
+            val e = GetLineAuthErrorClassifier.classify(
+                statusCode = code,
+                body = "Bad Gateway",
+                context = AuthErrorContext.EmailOtpVerify,
+            )
+            assertTrue("$code should stay HttpFailure", e is GetLineAuthException.HttpFailure)
+            assertEquals(code, (e as GetLineAuthException.HttpFailure).code)
+        }
+    }
+
+    @Test
+    fun serverOutage_bodyKeywordsDoNotOverrideStatus() {
+        // A 5xx body is untrusted: gateway pages carrying "expired" or "no_account"
+        // must not be presented as a user-fixable auth error.
+        for (body in listOf("code expired", "no_account", "too many")) {
+            val e = GetLineAuthErrorClassifier.classify(
+                statusCode = 503,
+                body = body,
+                context = AuthErrorContext.EmailOtpVerify,
+            )
+            assertTrue("\"$body\" on 503 should stay HttpFailure", e is GetLineAuthException.HttpFailure)
+        }
+    }
+
+    @Test
     fun genericHttpFailure() {
         val e = GetLineAuthErrorClassifier.classify(500, "boom")
         assertTrue(e is GetLineAuthException.HttpFailure)

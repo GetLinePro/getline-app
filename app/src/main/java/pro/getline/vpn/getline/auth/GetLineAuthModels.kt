@@ -132,9 +132,10 @@ sealed class GetLineAuthException(message: String) : Exception(message) {
 /**
  * Error classification context for [GetLineAuthErrorClassifier].
  *
- * [EmailOtpVerify] maps residual failures to [GetLineAuthException.InvalidOtp]
- * (web UI treats unknown verify errors as a bad code). Other endpoints must not
- * treat generic bodies like "Invalid email address" as OTP errors.
+ * [EmailOtpVerify] maps residual **4xx** failures to
+ * [GetLineAuthException.InvalidOtp] (web UI treats unknown verify errors as a bad
+ * code). Other endpoints must not treat generic bodies like "Invalid email
+ * address" as OTP errors. A 5xx is never the user's code — see [classify].
  */
 enum class AuthErrorContext {
     Default,
@@ -162,6 +163,12 @@ object GetLineAuthErrorClassifier {
         if (context == AuthErrorContext.NativeRefresh) {
             return GetLineAuthException.HttpFailure(statusCode, message)
         }
+        // A broken server is not a user error, whatever its body says. Gateways and
+        // error pages are free to contain words like "expired"; classifying on that
+        // would tell the user to fix a code that is still valid.
+        if (statusCode >= 500) {
+            return GetLineAuthException.HttpFailure(statusCode, message)
+        }
         if (statusCode == 429) {
             return GetLineAuthException.RateLimited(message)
         }
@@ -175,7 +182,8 @@ object GetLineAuthErrorClassifier {
             lower.contains("too many") ->
                 return GetLineAuthException.RateLimited(message)
         }
-        // InvalidOtp only for verify residuals (or explicit OTP phrases).
+        // InvalidOtp only for verify residuals the client could have caused; 5xx
+        // already returned above, so the outage never reaches this line.
         if (context == AuthErrorContext.EmailOtpVerify) {
             return GetLineAuthException.InvalidOtp(message)
         }
