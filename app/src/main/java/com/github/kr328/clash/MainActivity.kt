@@ -154,6 +154,10 @@ class MainActivity : BaseActivity<MainDesign>() {
         // store=err: EncryptedSharedPreferences/keystore failed — false flags are defaults,
         // not a proven empty session (see readSessionRoutingSnapshot).
         val store = if (sessionSnapshot.storeOk) "ok" else "err"
+        val prefs = sessionSnapshot.prefsBackend
+        val prefsOther = sessionSnapshot.prefsOther
+        val prefsRaw = sessionSnapshot.prefsRaw
+        val prefsAge = sessionSnapshot.prefsAgeHours
         val session = flag01(sessionSnapshot.hasSession)
         val managed = flag01(sessionSnapshot.hasManagedProfile)
         val pendingImport = flag01(sessionSnapshot.hasPendingImport)
@@ -166,6 +170,10 @@ class MainActivity : BaseActivity<MainDesign>() {
                 dest = "onboarding",
                 reason = "pending_import",
                 store = store,
+                prefs = prefs,
+                prefsOther = prefsOther,
+                prefsRaw = prefsRaw,
+                prefsAge = prefsAge,
                 session = session,
                 managed = managed,
                 pendingImport = pendingImport,
@@ -185,6 +193,10 @@ class MainActivity : BaseActivity<MainDesign>() {
                 dest = "home",
                 reason = "managed_profile",
                 store = store,
+                prefs = prefs,
+                prefsOther = prefsOther,
+                prefsRaw = prefsRaw,
+                prefsAge = prefsAge,
                 session = session,
                 managed = managed,
                 pendingImport = pendingImport,
@@ -201,6 +213,10 @@ class MainActivity : BaseActivity<MainDesign>() {
                     dest = "home",
                     reason = "backend_unavailable",
                     store = store,
+                    prefs = prefs,
+                    prefsOther = prefsOther,
+                    prefsRaw = prefsRaw,
+                    prefsAge = prefsAge,
                     session = session,
                     managed = managed,
                     pendingImport = pendingImport,
@@ -215,6 +231,10 @@ class MainActivity : BaseActivity<MainDesign>() {
                         dest = "home",
                         reason = "has_import",
                         store = store,
+                        prefs = prefs,
+                        prefsOther = prefsOther,
+                        prefsRaw = prefsRaw,
+                        prefsAge = prefsAge,
                         session = session,
                         managed = managed,
                         pendingImport = pendingImport,
@@ -227,6 +247,10 @@ class MainActivity : BaseActivity<MainDesign>() {
                         dest = "onboarding",
                         reason = "no_import",
                         store = store,
+                        prefs = prefs,
+                        prefsOther = prefsOther,
+                        prefsRaw = prefsRaw,
+                        prefsAge = prefsAge,
                         session = session,
                         managed = managed,
                         pendingImport = pendingImport,
@@ -242,11 +266,17 @@ class MainActivity : BaseActivity<MainDesign>() {
      * Safe GL-19 breadcrumb: enum/bool tokens only (no UUID, URL, or Exception text).
      * Fields not evaluated on this branch are [na] — never call backend solely for logging.
      * [store] is ok|err|na: err means snapshot defaults, not a proven empty session.
+     * [prefs]/[prefsOther] expose the store's pref file (enc|fallback) and whether the
+     * other one exists: store=ok with a forked file is an empty read, not a wiped session.
      */
     private fun logStartupRoute(
         dest: String,
         reason: String,
         store: String,
+        prefs: String = "na",
+        prefsOther: String = "na",
+        prefsRaw: String = "na",
+        prefsAge: String = "na",
         session: String,
         managed: String,
         pendingImport: String,
@@ -255,6 +285,7 @@ class MainActivity : BaseActivity<MainDesign>() {
     ) {
         Log.i(
             "startup_route dest=$dest reason=$reason store=$store " +
+                "prefs=$prefs prefs_other=$prefsOther prefs_raw=$prefsRaw prefs_age_h=$prefsAge " +
                 "session=$session managed=$managed pending_import=$pendingImport " +
                 "imported=$imported backend=$backend",
         )
@@ -277,6 +308,13 @@ class MainActivity : BaseActivity<MainDesign>() {
                     hasSession = hasSession,
                     hasManagedProfile = hasManagedProfile,
                     hasPendingImport = hasPendingImport,
+                    prefsBackend = store.backendName,
+                    prefsOther = runCatching { flag01(store.otherPrefsFileExists()) }
+                        .getOrDefault("na"),
+                    prefsRaw = runCatching { store.rawEntryCount().toString() }
+                        .getOrDefault("na"),
+                    prefsAgeHours = runCatching { store.backingFileAgeHours().toString() }
+                        .getOrDefault("na"),
                 )
             }.getOrDefault(SessionRoutingSnapshot(storeOk = false))
         }
@@ -287,6 +325,14 @@ class MainActivity : BaseActivity<MainDesign>() {
         val hasSession: Boolean = false,
         val hasManagedProfile: Boolean = false,
         val hasPendingImport: Boolean = false,
+        /** Which pref file backed the store: enc|fallback|na. */
+        val prefsBackend: String = "na",
+        /** The pref file the store did not open exists on disk: 1|0|na. */
+        val prefsOther: String = "na",
+        /** Non-keyset entries physically in the backing file; -1 unparsable, na unread. */
+        val prefsRaw: String = "na",
+        /** Hours since the backing file was last written; -1 absent, na unread. */
+        val prefsAgeHours: String = "na",
     )
 
     private suspend fun MainDesign.fetch() {

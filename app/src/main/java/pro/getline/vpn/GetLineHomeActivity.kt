@@ -1236,10 +1236,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     /**
      * Product sign-out / remove-subscription (after confirm):
      * 1) stop VPN including an in-progress start (not only [GetLineVpnController.running])
-     * 2) clear native session tokens / managed binding — non-cancellable once confirmed
-     *    ([AccountAction.RemoveSubscription]: clear binding only after profile delete
-     *    succeeds so a failed delete does not orphan an imported profile without UI)
-     * 3) best-effort delete managed profile only (must not block session clear for SignOut)
+     * 2) clear native session tokens — non-cancellable once confirmed
+     * 3) delete the managed profile, then clear its binding only if the delete
+     *    succeeded (both actions): a failed delete keeps the binding so Home can
+     *    still refresh/remove the profile instead of orphaning it into Advanced
      * 4) leave app settings and any non-managed profiles alone
      * 5) open onboarding
      */
@@ -1292,10 +1292,12 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     setHomeHasActiveProfile(false)
                 }
             } else {
-                // SignOut: clear session first so late import cannot re-write binding.
+                // SignOut: tokens go first so a late import cannot re-write the binding.
+                // The binding itself outlives a failed delete — see
+                // ProductNavigationPolicy.clearBindingAfterSignOut.
                 withContext(NonCancellable) {
                     GetLineImportCoordinator.reset()
-                    sessionRepository.logout()
+                    sessionRepository.discardSessionKeepingSubscription()
                     accountPortalVisit.clear()
                     pendingForceSubscriptionRefresh.clear()
                     cancelSubscriptionJob()
@@ -1303,11 +1305,33 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     hasKnownActiveProfile = false
                     setHomeHasActiveProfile(false)
                 }
-                if (managedUuid != null) {
-                    // Best-effort; session is already cleared.
+                val deleted = if (managedUuid == null) {
+                    null
+                } else {
                     ProductNavigationPolicy.bestEffortAfterLogout {
-                        backend.subscriptions.deleteManaged(GetLineSubscriptionId(managedUuid))
+                        withContext(NonCancellable) {
+                            backend.subscriptions.deleteManaged(GetLineSubscriptionId(managedUuid))
+                        }
                     }
+                }
+                val clearBinding = ProductNavigationPolicy.clearBindingAfterSignOut(
+                    hadManagedProfile = managedUuid != null,
+                    deleteSucceeded = deleted is GetLineBackendResult.Success,
+                )
+                if (!clearBinding) {
+                    // Profile survived and only the binding can still address it.
+                    // Session is already gone: stay on Home as link-only so
+                    // "Remove subscription" remains, instead of orphaning the profile.
+                    scheduleApplySignedOutState()
+                    fetch(showLoading = false)
+                    showToast(
+                        GetLineUiR.string.get_line_remove_subscription_failed,
+                        ToastDuration.Long,
+                    )
+                    return
+                }
+                withContext(NonCancellable) {
+                    sessionRepository.logout()
                 }
             }
 

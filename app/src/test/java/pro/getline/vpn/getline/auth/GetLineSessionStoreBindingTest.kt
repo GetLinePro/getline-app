@@ -1,5 +1,7 @@
 package pro.getline.vpn.getline.auth
 
+import android.content.Context
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -191,5 +193,44 @@ class GetLineSessionStoreBindingTest {
         assertEquals("u", repo.managedProfileUuid())
         assertEquals("https://s", repo.managedProfileSource())
         assertTrue(repo.canRemoteRepair())
+    }
+
+    /**
+     * The forked-storage probe is only useful if it looks at the real pref path:
+     * a wrong path reports "no fork" forever and hides the failure it exists for.
+     */
+    @Test
+    fun otherPrefsFileExists_detectsTheFileTheStoreDidNotOpen() {
+        val app = RuntimeEnvironment.getApplication()
+        val store = GetLineSessionStore(app)
+        assertFalse(store.otherPrefsFileExists())
+
+        val other = if (store.backendName == GetLineSessionStore.BACKEND_ENCRYPTED) {
+            GetLineSessionStore.PREFS_FILE_FALLBACK
+        } else {
+            GetLineSessionStore.PREFS_FILE_ENCRYPTED
+        }
+        app.getSharedPreferences(other, Context.MODE_PRIVATE)
+            .edit()
+            .putString("refresh_token", "stranded")
+            .commit()
+
+        assertTrue(store.otherPrefsFileExists())
+    }
+
+    /**
+     * Counting must see real entries and ignore the Tink keysets, otherwise a
+     * silently re-keyed store still reports "empty" and the probe proves nothing.
+     */
+    @Test
+    fun rawEntryCount_countsStoredEntriesNotKeysets() {
+        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        store.clearAccountState()
+        assertEquals(0, store.rawEntryCount())
+
+        store.managedProfileUuid = "u"
+        store.subscriptionId = "s"
+
+        assertEquals(2, store.rawEntryCount())
     }
 }

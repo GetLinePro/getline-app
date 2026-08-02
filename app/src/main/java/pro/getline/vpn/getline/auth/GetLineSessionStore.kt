@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.File
 
 /**
  * Persists native session material and GetLine-managed VPN binding.
@@ -16,7 +17,57 @@ import androidx.security.crypto.MasterKey
  * [clearSessionKeepingBinding].
  */
 class GetLineSessionStore(context: Context) {
-    private val prefs: SharedPreferences = createPrefs(context.applicationContext)
+    private val appContext: Context = context.applicationContext
+    private val prefs: SharedPreferences
+    private val encrypted: Boolean
+
+    init {
+        var openedEncrypted = true
+        prefs = try {
+            createEncryptedPrefs(appContext)
+        } catch (_: Exception) {
+            // Fall back so auth remains usable if keystore is unavailable.
+            openedEncrypted = false
+            appContext.getSharedPreferences(FILE_NAME_FALLBACK, Context.MODE_PRIVATE)
+        }
+        encrypted = openedEncrypted
+    }
+
+    /**
+     * Diagnostics only: which pref file actually backs this store.
+     * The two files never migrate, so a switch between them reads as a wiped
+     * session while the material is still on disk in the other file.
+     */
+    val backendName: String
+        get() = if (encrypted) BACKEND_ENCRYPTED else BACKEND_FALLBACK
+
+    /**
+     * Diagnostics only: the pref file this store did *not* open exists on disk.
+     * True means storage forked — session material may be stranded there.
+     */
+    fun otherPrefsFileExists(): Boolean {
+        val other = if (encrypted) FILE_NAME_FALLBACK else FILE_NAME
+        return prefsFile(appContext, other).exists()
+    }
+
+    /**
+     * Diagnostics only: non-keyset entries physically present in the backing file.
+     *
+     * The encrypted store looks entries up by their SIV-encrypted key name. If the
+     * master keyset is ever replaced, the old entries stay on disk but can never be
+     * addressed again — through [SharedPreferences] that is indistinguishable from
+     * an empty store. A positive count next to null reads is that case.
+     * `-1` when the file exists but cannot be parsed.
+     */
+    fun rawEntryCount(): Int {
+        val file = prefsFile(appContext, if (encrypted) FILE_NAME else FILE_NAME_FALLBACK)
+        if (!file.exists()) return 0
+        return runCatching {
+            PREF_ENTRY_NAME
+                .findAll(file.readText())
+                .count { !it.groupValues[1].startsWith(TINK_KEYSET_PREFIX) }
+        }.getOrDefault(-1)
+    }
 
     var accessToken: String?
         get() = prefs.getString(KEY_ACCESS_TOKEN, null)
@@ -201,23 +252,34 @@ class GetLineSessionStore(context: Context) {
         return nowMs + skewMs < expiresAt
     }
 
-    private fun createPrefs(context: Context): SharedPreferences {
-        return try {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                context,
-                FILE_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-        } catch (_: Exception) {
-            // Fall back so auth remains usable if keystore is unavailable.
-            context.getSharedPreferences(FILE_NAME_FALLBACK, Context.MODE_PRIVATE)
-        }
+    private fun createEncryptedPrefs(context: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            context,
+            FILE_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
     }
+
+    /**
+     * Diagnostics only: hours since the backing file was last written, `-1` if absent.
+     * An APK update does not touch shared_prefs, so an age older than the install
+     * places the last write — including a clear — before that update.
+     */
+    fun backingFileAgeHours(nowMs: Long = System.currentTimeMillis()): Long {
+        val file = prefsFile(appContext, if (encrypted) FILE_NAME else FILE_NAME_FALLBACK)
+        val modified = file.lastModified()
+        if (modified <= 0L) return -1L
+        return (nowMs - modified) / 3_600_000L
+    }
+
+    /** `dataDir` is API 24; `filesDir.parentFile` is the same path on every level. */
+    private fun prefsFile(context: Context, name: String): File =
+        File(File(context.filesDir.parentFile, "shared_prefs"), "$name.xml")
 
     companion object {
         private const val FILE_NAME = "getline_native_session"
@@ -241,6 +303,14 @@ class GetLineSessionStore(context: Context) {
         /** Pref file names — e2e / debug probes may look for either. */
         const val PREFS_FILE_ENCRYPTED = FILE_NAME
         const val PREFS_FILE_FALLBACK = FILE_NAME_FALLBACK
+
+        /** [backendName] tokens for GL-19 breadcrumbs. */
+        const val BACKEND_ENCRYPTED = "enc"
+        const val BACKEND_FALLBACK = "fallback"
+
+        private const val TINK_KEYSET_PREFIX = "__androidx_security_crypto_"
+        private val PREF_ENTRY_NAME =
+            Regex("""<(?:string|long|int|boolean|float|set)\s+name="([^"]*)"""")
     }
 }
 
