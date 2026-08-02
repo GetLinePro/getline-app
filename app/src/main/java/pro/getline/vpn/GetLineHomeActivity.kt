@@ -48,6 +48,7 @@ import pro.getline.vpn.getline.servers.VpnServerStateHolder
 import pro.getline.vpn.getline.servers.VpnServerUiState
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -97,12 +98,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * after the in-flight request finishes so post-portal data is not dropped.
      */
     private val pendingForceSubscriptionRefresh = PendingForceSubscriptionRefresh()
-    /**
-     * Latest user-chosen server name while a patch or list load may still be in flight.
-     * Prevents a slower load from overwriting a newer optimistic selection.
-     */
-    private var userSelectIntent: String? = null
-
     override suspend fun main() {
         val design = GetLineHomeDesign(this)
 
@@ -173,6 +168,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             }
                         }
                         Event.ClashStart -> {
+                            // Observed state (may be external start), not always from our click.
+                            Log.i("vpn_state value=started")
                             connectionTimeout?.cancel()
                             connecting = false
                             design.fetch(showLoading = false)
@@ -184,6 +181,15 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         }
                         Event.ClashStop,
                         Event.ServiceRecreated -> {
+                            // Observed state — not a causal "disconnect succeeded".
+                            Log.i(
+                                "vpn_state value=" +
+                                    if (it == Event.ServiceRecreated) {
+                                        "service_recreated"
+                                    } else {
+                                        "stopped"
+                                    },
+                            )
                             connectionTimeout?.cancel()
                             connecting = false
                             if (it == Event.ServiceRecreated || !backendUnavailable) {
@@ -194,7 +200,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             }
                             // List needs live core; show stopped without opening Proxy UI.
                             serverLoadJob?.cancel()
-                            userSelectIntent = null
                             serverState.applyVpnStopped()
                             design.paintServersState()
                         }
@@ -205,11 +210,16 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     when (it) {
                         GetLineHomeDesign.Request.ToggleVpn -> {
                             if (backend.vpn.running) {
+                                Log.i("vpn_ui action=disconnect_clicked")
                                 connectionTimeout?.cancel()
                                 connecting = false
                                 backend.vpn.stop()
                             } else if (!connecting) {
+                                Log.i("vpn_ui action=connect_clicked")
                                 design.startVpn()
+                            } else {
+                                // Tap during in-flight connect — not "user never pressed".
+                                Log.i("vpn_ui action=connect_ignored reason=connecting")
                             }
                         }
                         GetLineHomeDesign.Request.SelectHome ->
@@ -356,18 +366,34 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private suspend fun repairVpnConfiguration(allowNetwork: Boolean): RepairOutcome {
         val managedUuid = sessionRepository.managedProfileUuid()
         val hasSession = sessionRepository.hasSession()
+        val hasManaged = !managedUuid.isNullOrBlank()
         val savedSource = sessionRepository.managedProfileSource()
         val online = hasValidatedInternetConnection()
+
+        // One GL-19 line for every exit, including startVpn()'s repair path.
+        // Enum/bool tokens only — no UUID, URL, or Exception text.
+        // session=/managed= aligned with startup_route (same hasRefreshToken / managed uuid).
+        // step= policy step when plan() ran; na before plan (local ready / backend down).
+        fun finish(outcome: RepairOutcome, step: String = "na"): RepairOutcome {
+            Log.i(
+                "repair_outcome outcome=${outcome.name} step=$step " +
+                    "online=${if (online) 1 else 0} " +
+                    "allow_net=${if (allowNetwork) 1 else 0} " +
+                    "session=${if (hasSession) 1 else 0} " +
+                    "managed=${if (hasManaged) 1 else 0}",
+            )
+            return outcome
+        }
 
         val local = when (
             val result = backend.subscriptions.repairLocalActive(managedUuid)
         ) {
-            GetLineBackendResult.Unavailable -> return RepairOutcome.BackendUnavailable
+            GetLineBackendResult.Unavailable -> return finish(RepairOutcome.BackendUnavailable)
             is GetLineBackendResult.Success -> result.value
         }
 
         if (local is LocalActiveRepair.Ready) {
-            return RepairOutcome.Ready
+            return finish(RepairOutcome.Ready)
         }
 
         val absent = local as LocalActiveRepair.ManagedAbsent
@@ -380,6 +406,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             allowNetwork = allowNetwork,
             online = online,
         )
+        val stepName = step.name
 
         return when (step) {
             VpnConfigurationRepairPolicy.Step.Done,
@@ -389,20 +416,23 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 if (absent.managedIsImported) {
                     when (val again = backend.subscriptions.repairLocalActive(managedUuid)) {
                         GetLineBackendResult.Unavailable ->
-                            return RepairOutcome.BackendUnavailable
+                            return finish(RepairOutcome.BackendUnavailable, stepName)
                         is GetLineBackendResult.Success ->
                             if (again.value is LocalActiveRepair.Ready) {
-                                return RepairOutcome.Ready
+                                return finish(RepairOutcome.Ready, stepName)
                             }
                     }
                 }
-                RepairOutcome.FailedPrepare
+                finish(RepairOutcome.FailedPrepare, stepName)
             }
-            VpnConfigurationRepairPolicy.Step.NeedsSetup -> RepairOutcome.NeedsSetup
-            VpnConfigurationRepairPolicy.Step.FailedLocalOnly -> RepairOutcome.FailedPrepare
-            VpnConfigurationRepairPolicy.Step.OfflineForRemote -> RepairOutcome.FailedRestore
+            VpnConfigurationRepairPolicy.Step.NeedsSetup ->
+                finish(RepairOutcome.NeedsSetup, stepName)
+            VpnConfigurationRepairPolicy.Step.FailedLocalOnly ->
+                finish(RepairOutcome.FailedPrepare, stepName)
+            VpnConfigurationRepairPolicy.Step.OfflineForRemote ->
+                finish(RepairOutcome.FailedRestore, stepName)
             VpnConfigurationRepairPolicy.Step.RemoteReprovision ->
-                reProvisionManagedProfile(managedUuid)
+                finish(reProvisionManagedProfile(managedUuid), stepName)
         }
     }
 
@@ -583,7 +613,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private fun GetLineHomeDesign.ensureServersLoaded() {
         if (!backend.vpn.running) {
             serverLoadJob?.cancel()
-            userSelectIntent = null
             serverState.applyVpnStopped()
             paintServersState()
             return
@@ -604,7 +633,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private fun GetLineHomeDesign.reconcileServersOnResume() {
         if (!backend.vpn.running) {
             serverLoadJob?.cancel()
-            userSelectIntent = null
             serverState.applyVpnStopped()
             paintServersState()
             return
@@ -630,7 +658,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private fun GetLineHomeDesign.refreshServersUi(force: Boolean) {
         if (!backend.vpn.running) {
             serverLoadJob?.cancel()
-            userSelectIntent = null
             serverState.applyVpnStopped()
             paintServersState()
             return
@@ -659,11 +686,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 }
                 if (!isActive) return@launch
                 serverState.applyLoadResult(result)
-                // A tap during load must win over the just-loaded core selection.
-                val intent = userSelectIntent
-                if (intent != null) {
-                    serverState.applySelected(intent)
-                }
                 paintServersState()
                 applyServerLocationFromState()
                 measureServerDelays()
@@ -700,7 +722,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         if (refreshed !is VpnServerLoadResult.Success) return
 
         serverState.applyLoadResult(refreshed)
-        userSelectIntent?.let { serverState.applySelected(it) }
         paintServersState()
     }
 
@@ -724,56 +745,43 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * Does not stop VPN or open legacy Proxy UI.
      *
      * Overlapping taps: optimistic UI updates immediately; Binder patchSelector
-     * runs under [serversIoMutex] and always applies [userSelectIntent] (latest tap)
-     * so an earlier call cannot win after a later tap.
+     * runs under [serversIoMutex]. [VpnServerStateHolder.Selection.generation]
+     * prevents an older success/failure from settling or clearing a newer tap.
      */
     private fun GetLineHomeDesign.selectServer(name: String) {
         val ready = serverState.state as? VpnServerUiState.Ready ?: return
         if (!ready.selectable) return
-        if (ready.selectedName == name && userSelectIntent == null) return
-        if (!serverState.applySelected(name)) return
+        if (serverState.isSelectionConfirmed(name)) {
+            returnToHomeAfterServerSelection()
+            return
+        }
+        if (serverState.beginSelection(name) == null) return
 
-        userSelectIntent = name
         paintServersState()
         launch { setLocation(name) }
 
         launch {
-            // Set only by the pass that settled the newest tap. Read outside the
-            // lock, so it cannot be recomputed there: a tap landing during the
-            // suspending paint below would flip the answer after the fact.
-            var settledLatest = false
-            val ok = serversIoMutex.withLock {
+            // Any queued worker may service the latest intent. A later worker sees
+            // no pending selection after it was settled and exits without a duplicate patch.
+            val attempted = serversIoMutex.withLock {
+                val selection = serverState.pendingSelection ?: return@withLock null
                 val current = serverState.state as? VpnServerUiState.Ready
-                    ?: return@withLock false
-                if (!current.selectable) return@withLock false
-                val target = userSelectIntent ?: current.selectedName
-                val success = backend.servers.select(current.groupName, target)
-                if (success) {
-                    if (userSelectIntent == target) {
-                        userSelectIntent = null
-                    }
-                    // Align Ready only if no newer tap is pending.
-                    if (userSelectIntent == null) {
-                        serverState.applySelected(target)
-                        settledLatest = true
-                    }
-                }
-                success
-            }
+                    ?: return@withLock selection to false
+                if (!current.selectable) return@withLock selection to false
+                selection to backend.servers.select(current.groupName, selection.name)
+            } ?: return@launch
             if (!isActive) return@launch
-            if (!ok) {
-                userSelectIntent = null
-                // Reconcile with Mihomo if patch failed.
-                refreshServersUi(force = true)
-            } else {
-                paintServersState()
-                applyServerLocationFromState()
-                // Only after the core acknowledged the patch, and only when this
-                // was the last pick: a tap that lands mid-request leaves a newer
-                // one in flight, and leaving early would hide its failure on a
-                // screen the user can no longer see. The failure branch above
-                // stays on Servers for the same reason.
-                if (settledLatest) {
+
+            when (serverState.completeSelection(attempted.first, attempted.second)) {
+                VpnServerStateHolder.SelectionCompletion.Stale -> Unit
+                VpnServerStateHolder.SelectionCompletion.LatestFailure -> {
+                    // Reconcile with Mihomo only when the failed command still owns
+                    // the latest intent. Stale failure leaves the newer tap alone.
+                    refreshServersUi(force = true)
+                }
+                VpnServerStateHolder.SelectionCompletion.LatestSuccess -> {
+                    paintServersState()
+                    applyServerLocationFromState()
                     returnToHomeAfterServerSelection()
                 }
             }
@@ -1488,22 +1496,39 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             val vpnRequest = backend.vpn.start()
 
             if (vpnRequest != null) {
+                Log.i("vpn_start stage=permission_needed")
                 val result = startActivityForResult(
                     ActivityResultContracts.StartActivityForResult(),
                     vpnRequest
                 )
 
                 if (result.resultCode == RESULT_OK) {
-                    backend.vpn.start()
-                    scheduleConnectionTimeout()
+                    Log.i("vpn_start stage=permission_result result=ok")
+                    // Second start may still return a consent intent — do not claim requested.
+                    val afterGrant = backend.vpn.start()
+                    if (afterGrant != null) {
+                        Log.w("vpn_start stage=permission_still_needed path=after_permission")
+                        connecting = false
+                        setVpnStatus(resolveStatus())
+                    } else {
+                        Log.i("vpn_start stage=requested path=after_permission")
+                        scheduleConnectionTimeout()
+                    }
                 } else {
+                    Log.i("vpn_start stage=permission_result result=denied")
                     connecting = false
                     setVpnStatus(resolveStatus())
                 }
             } else {
+                Log.i("vpn_start stage=requested path=direct")
                 scheduleConnectionTimeout()
             }
-        } catch (_: Exception) {
+        } catch (e: CancellationException) {
+            // Rotate/destroy while VPN consent dialog is open — not a start failure.
+            throw e
+        } catch (e: Exception) {
+            // kind only — Exception.message can carry paths/config.
+            Log.w("vpn_start stage=failed kind=${e::class.simpleName}")
             connectionTimeout?.cancel()
             connecting = false
             setVpnStatus(resolveStatus())
@@ -1521,6 +1546,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 setVpnStatus(resolveStatus())
 
                 if (!backend.vpn.running) {
+                    Log.w("vpn_start stage=timeout")
                     showToast(
                         GetLineUiR.string.get_line_vpn_start_timeout,
                         ToastDuration.Long,

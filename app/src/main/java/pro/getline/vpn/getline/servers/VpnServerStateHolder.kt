@@ -6,6 +6,17 @@ package pro.getline.vpn.getline.servers
  * Survives tab switches within the same Activity. Does not call Clash or touch VPN.
  */
 class VpnServerStateHolder {
+    data class Selection(
+        val name: String,
+        val generation: Long,
+    )
+
+    enum class SelectionCompletion {
+        LatestSuccess,
+        LatestFailure,
+        Stale,
+    }
+
     var state: VpnServerUiState = VpnServerUiState.Loading
         private set
 
@@ -13,6 +24,11 @@ class VpnServerStateHolder {
         private set
 
     private var lastHealthCheckAt: Long? = null
+
+    private var nextSelectionGeneration = 0L
+
+    var pendingSelection: Selection? = null
+        private set
 
     private val preferredByGroup = mutableMapOf<String, String>()
 
@@ -115,6 +131,7 @@ class VpnServerStateHolder {
 
     fun applyVpnStopped() {
         requestInFlight = false
+        pendingSelection = null
         state = VpnServerUiState.VpnStopped
         // Delays measured through a dead tunnel are meaningless on restart.
         lastHealthCheckAt = null
@@ -141,19 +158,54 @@ class VpnServerStateHolder {
             VpnServerLoadResult.Empty -> VpnServerUiState.Empty
             VpnServerLoadResult.Failed -> VpnServerUiState.Failed
         }
+        reapplyPendingSelection()
     }
 
     /**
-     * Optimistically mark [name] selected after a user tap.
-     * No-op when not Ready or name unknown.
+     * Start a latest-wins optimistic selection. Generation distinguishes A → B → A,
+     * where comparing names would let the first A settle the second A incorrectly.
      */
-    fun applySelected(name: String): Boolean {
-        val ready = state as? VpnServerUiState.Ready ?: return false
-        if (!ready.selectable) return false
-        if (ready.servers.none { it.name == name }) return false
+    fun beginSelection(name: String): Selection? {
+        val ready = state as? VpnServerUiState.Ready ?: return null
+        if (!ready.selectable) return null
+        if (ready.servers.none { it.name == name }) return null
+
+        val selection = Selection(
+            name = name,
+            generation = ++nextSelectionGeneration,
+        )
+        pendingSelection = selection
         state = ready.copy(selectedName = name)
         rememberChoice(name)
-        return true
+        return selection
+    }
+
+    fun isSelectionConfirmed(name: String): Boolean {
+        val ready = state as? VpnServerUiState.Ready ?: return false
+        return pendingSelection == null && ready.selectedName == name
+    }
+
+    /**
+     * Complete only the generation that is still current. A stale failure must not
+     * clear/reload over a newer tap; a stale success must not navigate away from it.
+     */
+    fun completeSelection(
+        selection: Selection,
+        success: Boolean,
+    ): SelectionCompletion {
+        if (pendingSelection?.generation != selection.generation) {
+            return SelectionCompletion.Stale
+        }
+
+        pendingSelection = null
+        return if (success) {
+            SelectionCompletion.LatestSuccess
+        } else {
+            // The selectedName was optimistic and must not become "confirmed" in
+            // the gap before Activity starts its authoritative reload.
+            state = VpnServerUiState.Loading
+            SelectionCompletion.LatestFailure
+        }
     }
 
     /**
@@ -169,6 +221,7 @@ class VpnServerStateHolder {
     /** Drop cached list so next ensure-load will fetch again. */
     fun invalidate() {
         requestInFlight = false
+        pendingSelection = null
         state = VpnServerUiState.Loading
         lastHealthCheckAt = null
     }
@@ -183,6 +236,14 @@ class VpnServerStateHolder {
         if (state is VpnServerUiState.Loading) {
             // Leave Loading; caller may re-trigger ensure.
         }
+    }
+
+    private fun reapplyPendingSelection() {
+        val selection = pendingSelection ?: return
+        val ready = state as? VpnServerUiState.Ready ?: return
+        if (ready.servers.none { it.name == selection.name }) return
+        state = ready.copy(selectedName = selection.name)
+        rememberChoice(selection.name)
     }
 
     private companion object {

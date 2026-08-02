@@ -2,6 +2,7 @@ package pro.getline.vpn.cmfa
 
 import android.app.Activity
 import android.content.Intent
+import android.os.SystemClock
 import pro.getline.vpn.GetLineHomeActivity
 import pro.getline.vpn.GetLineOnboardingActivity
 import com.github.kr328.clash.MainActivity
@@ -186,6 +187,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
                     reuseId = managedId,
                     onProgress = {},
                     activate = true,
+                    diagnosticOp = null,
                 )
             }
         }
@@ -196,16 +198,38 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         reuseId: GetLineSubscriptionId?,
         onProgress: suspend (GetLineImportStage) -> Unit,
     ): GetLineBackendResult<GetLineSubscriptionId> {
-        return callProfileBackend(timeoutMs = REIMPORT_TIMEOUT_MS) {
+        val op = UUID.randomUUID().toString().take(8)
+        val startedAt = SystemClock.elapsedRealtime()
+        var unavailableKind = "unknown"
+        Log.i("profile_import start op=$op reuse=${if (reuseId == null) 0 else 1}")
+
+        val result = callProfileBackend(
+            timeoutMs = REIMPORT_TIMEOUT_MS,
+            onUnavailable = { kind -> unavailableKind = kind },
+        ) {
             withProfile {
+                Log.i("profile_import stage=remote_acquired op=$op")
                 importPending(
                     draft = draft,
                     reuseId = reuseId,
                     onProgress = onProgress,
                     activate = false,
+                    diagnosticOp = op,
                 )
             }
         }
+
+        val elapsedMs = SystemClock.elapsedRealtime() - startedAt
+        when (result) {
+            is GetLineBackendResult.Success ->
+                Log.i("profile_import end op=$op outcome=ok elapsed_ms=$elapsedMs")
+            GetLineBackendResult.Unavailable ->
+                Log.w(
+                    "profile_import end op=$op outcome=unavailable " +
+                        "kind=$unavailableKind elapsed_ms=$elapsedMs",
+                )
+        }
+        return result
     }
 
     /**
@@ -218,6 +242,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         reuseId: GetLineSubscriptionId?,
         onProgress: suspend (GetLineImportStage) -> Unit,
         activate: Boolean,
+        diagnosticOp: String?,
     ): GetLineSubscriptionId {
         // File profiles ship an empty config.yaml; ProfileProcessor uses force=false
         // so commit never fetches draft.source and always fails. Advanced BrowseFiles
@@ -243,10 +268,18 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
                     null,
                 )
             }
+            diagnosticOp?.let {
+                Log.i(
+                    "profile_import stage=profile_prepared op=$it " +
+                        "reused=${if (existingUuid == null) 0 else 1}",
+                )
+            }
             // IFetchObserver.updateStatus is synchronous — do not launch on an
             // arbitrary scope (progress would outlive import cancellation).
+            diagnosticOp?.let { Log.i("profile_import stage=commit_begin op=$it") }
             coroutineScope {
                 val stages = Channel<GetLineImportStage>(Channel.CONFLATED)
+                var lastDiagnosticAction: FetchStatus.Action? = null
                 val progressJob = launch {
                     for (stage in stages) {
                         onProgress(stage)
@@ -255,6 +288,13 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
                 try {
                     commit(uuid) { status ->
                         Log.d(fetchStatusDiagnosticLine(status))
+                        if (diagnosticOp != null && status.action != lastDiagnosticAction) {
+                            lastDiagnosticAction = status.action
+                            Log.i(
+                                "profile_import fetch op=$diagnosticOp " +
+                                    "action=${status.action}",
+                            )
+                        }
                         mapFetchActionToImportStage(status.action)
                             ?.let { stages.trySend(it) }
                     }
@@ -263,8 +303,10 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
                     progressJob.join()
                 }
             }
+            diagnosticOp?.let { Log.i("profile_import stage=commit_returned op=$it") }
             val imported = queryByUUID(uuid)?.takeIf { it.imported }
                 ?: throw IllegalStateException("profile not imported after commit")
+            diagnosticOp?.let { Log.i("profile_import stage=verified op=$it") }
             if (activate) {
                 setActive(imported)
             }
@@ -276,12 +318,18 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
             if (orphan != null) {
                 // Parent may already be cancelled (withTimeout). Cleanup must not
                 // ride that cancellation or Binder delete is dropped silently.
-                withContext(NonCancellable) {
+                val cleanup = withContext(NonCancellable) {
                     runCatching {
                         withTimeout(ORPHAN_CLEANUP_TIMEOUT_MS) {
                             delete(orphan)
                         }
                     }
+                }
+                diagnosticOp?.let {
+                    Log.i(
+                        "profile_import cleanup op=$it " +
+                            "outcome=${if (cleanup.isSuccess) "ok" else "failed"}",
+                    )
                 }
             }
             throw e
@@ -345,6 +393,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
 
     private suspend fun <T> callProfileBackend(
         timeoutMs: Long = PROFILE_OPERATION_TIMEOUT_MS,
+        onUnavailable: ((String) -> Unit)? = null,
         block: suspend () -> T,
     ): GetLineBackendResult<T> {
         return try {
@@ -354,10 +403,12 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
                 }
             )
         } catch (_: TimeoutCancellationException) {
+            onUnavailable?.invoke("timeout")
             GetLineBackendResult.Unavailable
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            onUnavailable?.invoke(e::class.simpleName ?: "Exception")
             GetLineBackendResult.Unavailable
         }
     }

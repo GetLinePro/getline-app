@@ -2,6 +2,7 @@ package pro.getline.vpn.getline.servers
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -51,25 +52,128 @@ class VpnServerStateHolderTest {
     }
 
     @Test
-    fun applySelected_updatesReadyOnly() {
+    fun beginSelection_updatesReadyAndTracksPending() {
         val holder = VpnServerStateHolder()
         assertTrue(holder.beginInitialLoad())
         holder.applyLoadResult(sampleSuccess(selected = "A"))
-        assertTrue(holder.applySelected("B"))
+        val selection = holder.beginSelection("B")!!
         val ready = holder.state as VpnServerUiState.Ready
         assertEquals("B", ready.selectedName)
+        assertEquals(selection, holder.pendingSelection)
+        assertFalse(holder.isSelectionConfirmed("B"))
 
-        assertFalse(holder.applySelected("missing"))
+        assertNull(holder.beginSelection("missing"))
         holder.applyVpnStopped()
-        assertFalse(holder.applySelected("A"))
+        assertNull(holder.beginSelection("A"))
     }
 
     @Test
-    fun applySelected_rejectsWhenNotSelectable() {
+    fun beginSelection_rejectsWhenNotSelectable() {
         val holder = VpnServerStateHolder()
         assertTrue(holder.beginInitialLoad())
         holder.applyLoadResult(sampleSuccess(selectable = false))
-        assertFalse(holder.applySelected("B"))
+        assertNull(holder.beginSelection("B"))
+    }
+
+    @Test
+    fun staleFailure_doesNotClearNewerSelection() {
+        val holder = readyHolder()
+        val first = holder.beginSelection("B")!!
+        val second = holder.beginSelection("A")!!
+
+        assertEquals(
+            VpnServerStateHolder.SelectionCompletion.Stale,
+            holder.completeSelection(first, success = false),
+        )
+        assertEquals(second, holder.pendingSelection)
+        assertEquals("A", (holder.state as VpnServerUiState.Ready).selectedName)
+    }
+
+    @Test
+    fun staleSuccess_doesNotSettleNewerSelection() {
+        val holder = readyHolder()
+        val first = holder.beginSelection("B")!!
+        val second = holder.beginSelection("A")!!
+
+        assertEquals(
+            VpnServerStateHolder.SelectionCompletion.Stale,
+            holder.completeSelection(first, success = true),
+        )
+        assertEquals(second, holder.pendingSelection)
+        assertFalse(holder.isSelectionConfirmed("A"))
+    }
+
+    @Test
+    fun latestSuccess_confirmsSelection() {
+        val holder = readyHolder()
+        val selection = holder.beginSelection("B")!!
+
+        assertEquals(
+            VpnServerStateHolder.SelectionCompletion.LatestSuccess,
+            holder.completeSelection(selection, success = true),
+        )
+        assertNull(holder.pendingSelection)
+        assertTrue(holder.isSelectionConfirmed("B"))
+    }
+
+    @Test
+    fun latestFailure_clearsOptimisticSelectionForReload() {
+        val holder = readyHolder()
+        val selection = holder.beginSelection("B")!!
+
+        assertEquals(
+            VpnServerStateHolder.SelectionCompletion.LatestFailure,
+            holder.completeSelection(selection, success = false),
+        )
+        assertNull(holder.pendingSelection)
+        assertTrue(holder.state is VpnServerUiState.Loading)
+        assertFalse(holder.isSelectionConfirmed("B"))
+    }
+
+    @Test
+    fun loadResult_reappliesPendingSelection() {
+        val holder = readyHolder()
+        val pending = holder.beginSelection("B")!!
+        assertTrue(holder.beginReconcile())
+
+        holder.applyLoadResult(sampleSuccess(selected = "A"))
+
+        assertEquals(pending, holder.pendingSelection)
+        assertEquals("B", (holder.state as VpnServerUiState.Ready).selectedName)
+    }
+
+    @Test
+    fun generation_distinguishesAtoBtoA() {
+        val holder = readyHolder()
+        val firstA = holder.beginSelection("A")!!
+        holder.beginSelection("B")!!
+        val secondA = holder.beginSelection("A")!!
+
+        assertTrue(firstA.generation != secondA.generation)
+        assertEquals(
+            VpnServerStateHolder.SelectionCompletion.Stale,
+            holder.completeSelection(firstA, success = true),
+        )
+        assertEquals(secondA, holder.pendingSelection)
+    }
+
+    @Test
+    fun vpnStopAndInvalidate_makePendingCompletionStale() {
+        val holder = readyHolder()
+        val stopped = holder.beginSelection("B")!!
+        holder.applyVpnStopped()
+        assertEquals(
+            VpnServerStateHolder.SelectionCompletion.Stale,
+            holder.completeSelection(stopped, success = true),
+        )
+
+        holder.applyLoadResult(sampleSuccess())
+        val invalidated = holder.beginSelection("B")!!
+        holder.invalidate()
+        assertEquals(
+            VpnServerStateHolder.SelectionCompletion.Stale,
+            holder.completeSelection(invalidated, success = false),
+        )
     }
 
     @Test
@@ -184,9 +288,17 @@ class VpnServerStateHolderTest {
             servers = listOf(
                 VpnServerItem("A", "A"),
                 VpnServerItem("B", "B"),
+                VpnServerItem("C", "C"),
             ),
             selectedName = selected,
             selectable = selectable,
         )
+    }
+
+    private fun readyHolder(): VpnServerStateHolder {
+        return VpnServerStateHolder().apply {
+            beginInitialLoad()
+            applyLoadResult(sampleSuccess(selected = "C"))
+        }
     }
 }

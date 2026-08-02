@@ -33,6 +33,116 @@ class DiagnosticReportBuilderTest {
     }
 
     @Test
+    fun allowlist_keepsStartupRouteAndRepair_slice1() {
+        // Typical double-login / cold-start report: prior auth → route → repair.
+        // Fields not evaluated on a branch stay literal "na" (not fabricated).
+        // store=err vs session=0: keystore/store failure is not an empty session.
+        // session=/managed= shared key names with repair_outcome.
+        val raw = """
+            08-01 12:00:01.000  1000  1001 I GetLineVPN: session_established has_refresh=true binding=true
+            08-01 12:00:02.000  1000  1001 I GetLineVPN: import_terminal success verdict=Consistent
+            08-01 12:00:03.000  1000  1001 I GetLineVPN: startup_route dest=home reason=managed_profile store=ok session=1 managed=1 pending_import=0 imported=na backend=na
+            08-01 12:00:04.000  1000  1001 I GetLineVPN: repair_outcome outcome=Ready step=na online=1 allow_net=0 session=1 managed=1
+            08-01 12:00:05.000  1000  1001 I GetLineVPN: NetworkObserve onAvailable network=123
+            08-01 12:00:06.000  1000  1001 I GetLineVPN: startup_route dest=onboarding reason=no_import store=ok session=0 managed=0 pending_import=0 imported=0 backend=ok
+            08-01 12:00:07.000  1000  1001 I GetLineVPN: startup_route dest=home reason=backend_unavailable store=ok session=1 managed=0 pending_import=0 imported=na backend=unavailable
+            08-01 12:00:08.000  1000  1001 I GetLineVPN: repair_outcome outcome=FailedRestore step=OfflineForRemote online=0 allow_net=1 session=1 managed=0
+            08-01 12:00:09.000  1000  1001 I GetLineVPN: repair_outcome outcome=FailedRestore step=RemoteReprovision online=1 allow_net=1 session=1 managed=1
+            08-01 12:00:10.000  1000  1001 I GetLineVPN: startup_route dest=onboarding reason=no_import store=err session=0 managed=0 pending_import=0 imported=0 backend=ok
+            08-01 12:00:11.000  1000  1001 I GetLineVPN: repair something else noise
+        """.trimIndent()
+
+        val lines = DiagnosticReportBuilder.selectEventLines(raw)
+        assertEquals(9, lines.size)
+        assertTrue(lines[0].contains("session_established"))
+        assertTrue(lines[1].contains("import_terminal"))
+        assertTrue(lines[2].contains("startup_route dest=home reason=managed_profile store=ok"))
+        assertTrue(lines[2].contains("imported=na backend=na"))
+        assertTrue(lines[3].contains("repair_outcome outcome=Ready step=na"))
+        assertTrue(lines[3].contains("session=1 managed=1"))
+        assertTrue(lines[4].contains("startup_route dest=onboarding reason=no_import store=ok"))
+        assertTrue(lines[5].contains("startup_route dest=home reason=backend_unavailable"))
+        assertTrue(lines[6].contains("repair_outcome outcome=FailedRestore step=OfflineForRemote"))
+        assertTrue(lines[7].contains("repair_outcome outcome=FailedRestore step=RemoteReprovision"))
+        assertTrue(lines[8].contains("store=err session=0"))
+        assertEquals(4, lines.count { it.contains("startup_route") })
+        assertEquals(3, lines.count { it.contains("repair_outcome") })
+        assertFalse(lines.any { it.contains("NetworkObserve") })
+        // Bare "repair …" must not match the compound event name.
+        assertFalse(lines.any { it.contains("repair something else") })
+    }
+
+    @Test
+    fun allowlist_keepsVpnConnectChain_slice2() {
+        // connect → permission → requested → started, or timeout / failed.
+        // vpn_state is observed (not causal); bare ui noise stays out.
+        val raw = """
+            08-01 13:00:01.000  1000  1001 I GetLineVPN: vpn_ui action=connect_clicked
+            08-01 13:00:02.000  1000  1001 I GetLineVPN: repair_outcome outcome=Ready step=na online=1 allow_net=1 session=1 managed=1
+            08-01 13:00:03.000  1000  1001 I GetLineVPN: vpn_start stage=permission_needed
+            08-01 13:00:04.000  1000  1001 I GetLineVPN: vpn_start stage=permission_result result=ok
+            08-01 13:00:05.000  1000  1001 I GetLineVPN: vpn_start stage=requested path=after_permission
+            08-01 13:00:06.000  1000  1001 I GetLineVPN: vpn_state value=started
+            08-01 13:00:07.000  1000  1001 I GetLineVPN: vpn_ui action=disconnect_clicked
+            08-01 13:00:08.000  1000  1001 I GetLineVPN: vpn_state value=stopped
+            08-01 13:00:09.000  1000  1001 I GetLineVPN: vpn_start stage=requested path=direct
+            08-01 13:00:10.000  1000  1001 W GetLineVPN: vpn_start stage=timeout
+            08-01 13:00:11.000  1000  1001 W GetLineVPN: vpn_start stage=failed kind=SecurityException
+            08-01 13:00:12.000  1000  1001 I GetLineVPN: vpn_state value=service_recreated
+            08-01 13:00:13.000  1000  1001 I GetLineVPN: vpn_ui action=connect_ignored reason=connecting
+            08-01 13:00:14.000  1000  1001 W GetLineVPN: vpn_start stage=permission_still_needed path=after_permission
+            08-01 13:00:15.000  1000  1001 I GetLineVPN: ui connect_clicked
+            08-01 13:00:16.000  1000  1001 I GetLineVPN: Create clash runtime: secret path
+        """.trimIndent()
+
+        val lines = DiagnosticReportBuilder.selectEventLines(raw)
+        assertEquals(14, lines.size)
+        assertTrue(lines[0].contains("vpn_ui action=connect_clicked"))
+        assertTrue(lines[1].contains("repair_outcome outcome=Ready"))
+        assertTrue(lines[2].contains("vpn_start stage=permission_needed"))
+        assertTrue(lines[4].contains("stage=requested path=after_permission"))
+        assertTrue(lines[5].contains("vpn_state value=started"))
+        assertTrue(lines[6].contains("vpn_ui action=disconnect_clicked"))
+        assertTrue(lines[7].contains("vpn_state value=stopped"))
+        assertTrue(lines[8].contains("path=direct"))
+        assertTrue(lines[9].contains("vpn_start stage=timeout"))
+        assertTrue(lines[10].contains("vpn_start stage=failed kind=SecurityException"))
+        assertTrue(lines[11].contains("vpn_state value=service_recreated"))
+        assertTrue(lines[12].contains("vpn_ui action=connect_ignored reason=connecting"))
+        assertTrue(lines[13].contains("vpn_start stage=permission_still_needed"))
+        assertEquals(3, lines.count { it.contains("vpn_ui ") })
+        assertEquals(7, lines.count { it.contains("vpn_start ") })
+        assertEquals(3, lines.count { it.contains("vpn_state ") })
+        assertFalse(lines.any { Regex("""(?<!vpn_)ui connect_clicked""").containsMatchIn(it) })
+        assertFalse(lines.any { it.contains("Create clash runtime") })
+        assertFalse(lines.any { it.contains("secret path") })
+    }
+
+    @Test
+    fun allowlist_keepsSafeProfileImportStages_butDropsRawFetchArgs() {
+        val raw = """
+            08-02 12:52:25.300  1000  1001 I GetLineVPN: profile_import start op=12ab34cd reuse=0
+            08-02 12:52:25.400  1000  1001 I GetLineVPN: profile_import stage=remote_acquired op=12ab34cd
+            08-02 12:52:25.500  1000  1001 I GetLineVPN: profile_import stage=profile_prepared op=12ab34cd reused=0
+            08-02 12:52:25.600  1000  1001 I GetLineVPN: profile_import stage=commit_begin op=12ab34cd
+            08-02 12:52:25.700  1000  1001 D GetLineVPN: fetch action=FetchConfiguration args=https://secret.example/sub progress=1/2
+            08-02 12:52:25.800  1000  1001 I GetLineVPN: profile_import fetch op=12ab34cd action=FetchConfiguration
+            08-02 12:52:31.900  1000  1001 I GetLineVPN: profile_import cleanup op=12ab34cd outcome=ok
+            08-02 12:52:32.000  1000  1001 W GetLineVPN: profile_import end op=12ab34cd outcome=unavailable kind=IOException elapsed_ms=6700
+        """.trimIndent()
+
+        val lines = DiagnosticReportBuilder.selectEventLines(raw)
+        assertEquals(7, lines.size)
+        assertTrue(lines.first().contains("profile_import start op=12ab34cd"))
+        assertTrue(lines.any { it.contains("stage=commit_begin") })
+        assertTrue(lines.any { it.contains("action=FetchConfiguration") })
+        assertTrue(lines.any { it.contains("cleanup op=12ab34cd outcome=ok") })
+        assertTrue(lines.last().contains("outcome=unavailable kind=IOException"))
+        assertFalse(lines.any { it.contains("args=") })
+        assertFalse(lines.any { it.contains("secret.example") })
+    }
+
+    @Test
     fun allowlist_dropsUnlistedAppNoise() {
         val raw = """
             08-01 12:00:01.000  1000  1001 I GetLineVPN: App becomes visible

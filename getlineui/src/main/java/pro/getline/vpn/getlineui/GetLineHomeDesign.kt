@@ -199,9 +199,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     /** Country groups the user opened. UI-only; reset when a group disappears. */
     private val expandedGroupKeys = mutableSetOf<String>()
 
-    /** Raw name Mihomo reports as active — used to skip no-op reselection. */
-    private var currentSelectedServerName: String? = null
-
     /** Session traffic for the connect ring; product bytes, not CMFA packed Traffic. */
     private var sessionTraffic: GetLineTraffic = GetLineTraffic.Zero
     private var sessionDurationMs: Long? = null
@@ -605,10 +602,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 binding.serversStateView.hide()
                 binding.serversAvailableLabel.visibility = View.VISIBLE
                 binding.serversList.visibility = View.VISIBLE
-                currentSelectedServerName = screen.groups
-                    .flatMap { it.variants }
-                    .firstOrNull { it.selected }
-                    ?.name
                 bindServerGroups(screen.groups, screen.selectable)
             }
             is ServersScreen.Empty -> {
@@ -690,15 +683,9 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             )
             if (selectable) {
                 selectArea.setOnClickListener {
-                    // Tapping the active country selects nothing: primaryName is
-                    // already it. It is still an answer to "which one?", so a
-                    // user who came from Home goes back rather than seeing the
-                    // tap do nothing at all.
-                    if (group.primaryName != currentSelectedServerName) {
-                        requestSelectServer(group.primaryName)
-                    } else {
-                        returnToHomeAfterServerSelection()
-                    }
+                    // Host distinguishes a core-confirmed choice from an optimistic
+                    // in-flight one before deciding whether to return Home.
+                    requestSelectServer(group.primaryName)
                 }
             } else {
                 selectArea.setOnClickListener(null)
@@ -791,11 +778,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         )
         if (selectable) {
             row.setOnClickListener {
-                if (!variant.selected) {
-                    requestSelectServer(variant.name)
-                } else {
-                    returnToHomeAfterServerSelection()
-                }
+                requestSelectServer(variant.name)
             }
         } else {
             row.setOnClickListener(null)

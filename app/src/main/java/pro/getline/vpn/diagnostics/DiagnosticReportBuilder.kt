@@ -26,6 +26,15 @@ object DiagnosticReportBuilder {
         "import_waiter_cancelled",
         "trial_provision",
         "subscription_ui",
+        // Slice 1: startup decision + repair ladder (daily double-login / Home state).
+        "startup_route",
+        "repair_outcome",
+        // Slice 2: VPN connect chain (permission / start / observed core state).
+        "vpn_ui",
+        "vpn_start",
+        "vpn_state",
+        // Import boundary only: safe stages/kinds, never raw fetch args or profile data.
+        "profile_import",
     )
 
     private val uuidRegex = Regex(
