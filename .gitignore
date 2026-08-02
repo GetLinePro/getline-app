@@ -82,6 +82,9 @@ google-services.json
 # Only distilled contracts belong in docs/.
 /docs/internal/
 
+# External API dumps (OpenAPI/Scalar scrapes). Local reference only.
+/docs/external/
+
 # Local agent instructions. Kept out of the repo on purpose: working methods are
 # the author's own, not a project artifact. Agents read it from the checkout.
 # Both names point at one file outside the repo, so the tools cannot drift apart.
