@@ -36,8 +36,13 @@ object DiagnosticReportBuilder {
         "vpn_ui",
         "vpn_start",
         "vpn_state",
-        // Import boundary only: safe stages/kinds, never raw fetch args or profile data.
+        // Import boundary: stages/kinds plus a bounded exception message on failure
+        // (needed to tell a rejected value from a network fault). Never raw fetch
+        // args or profile data; URL/token redaction below is the backstop.
         "profile_import",
+        // Same boundary for the paths that carry no progress reporting of their
+        // own (subscription refresh, managed delete): failure line only.
+        "profile_backend",
     )
 
     private val uuidRegex = Regex(

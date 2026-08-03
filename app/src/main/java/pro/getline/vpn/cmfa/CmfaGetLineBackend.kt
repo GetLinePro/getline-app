@@ -180,7 +180,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         managedId: GetLineSubscriptionId?,
     ): GetLineBackendResult<GetLineSubscriptionId> {
         // activate=true keeps orphan cleanup across setActive (same try block as commit).
-        return callProfileBackend(timeoutMs = REIMPORT_TIMEOUT_MS) {
+        return callProfileBackend(op = "reimport", timeoutMs = REIMPORT_TIMEOUT_MS) {
             withProfile {
                 importPending(
                     draft = draft,
@@ -225,8 +225,9 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
                 Log.i("profile_import end op=$op outcome=ok elapsed_ms=$elapsedMs")
             GetLineBackendResult.Unavailable ->
                 Log.w(
+                    // kind last: it now carries free-form message text.
                     "profile_import end op=$op outcome=unavailable " +
-                        "kind=$unavailableKind elapsed_ms=$elapsedMs",
+                        "elapsed_ms=$elapsedMs kind=$unavailableKind",
                 )
         }
         return result
@@ -365,7 +366,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         id: GetLineSubscriptionId,
     ): GetLineBackendResult<Unit> {
         // Same network budget as reimport: silent path runs ProfileProcessor inline.
-        return callProfileBackend(timeoutMs = REIMPORT_TIMEOUT_MS) {
+        return callProfileBackend(op = "config_update", timeoutMs = REIMPORT_TIMEOUT_MS) {
             withProfile {
                 val profile = queryByUUID(id.toUuid()) ?: return@withProfile
                 // File profiles have no remote source; Url/External can be re-fetched.
@@ -379,7 +380,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
     override suspend fun deleteManaged(
         id: GetLineSubscriptionId,
     ): GetLineBackendResult<Unit> {
-        return callProfileBackend {
+        return callProfileBackend(op = "delete_managed") {
             withProfile {
                 val uuid = id.toUuid()
                 // Missing is success — logout must still clear session.
@@ -391,11 +392,24 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         }
     }
 
+    /**
+     * [op] names the caller in the failure line. Callers that report the failure
+     * themselves (import) pass [onUnavailable] instead, so the event is not
+     * logged twice under two different names.
+     */
     private suspend fun <T> callProfileBackend(
+        op: String? = null,
         timeoutMs: Long = PROFILE_OPERATION_TIMEOUT_MS,
         onUnavailable: ((String) -> Unit)? = null,
         block: suspend () -> T,
     ): GetLineBackendResult<T> {
+        fun unavailable(kind: String): GetLineBackendResult<Nothing> {
+            onUnavailable?.invoke(kind)
+            // Silent paths reported nothing at all: a failed subscription refresh
+            // or managed delete left no trace in the shareable report.
+            op?.let { Log.w("profile_backend op=$it outcome=unavailable kind=$kind") }
+            return GetLineBackendResult.Unavailable
+        }
         return try {
             GetLineBackendResult.Success(
                 withTimeout(timeoutMs) {
@@ -403,13 +417,32 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
                 }
             )
         } catch (_: TimeoutCancellationException) {
-            onUnavailable?.invoke("timeout")
-            GetLineBackendResult.Unavailable
+            unavailable("timeout")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            onUnavailable?.invoke(e::class.simpleName ?: "Exception")
-            GetLineBackendResult.Unavailable
+            unavailable(describeFailure(e))
+        }
+    }
+
+    /**
+     * A bare class name (`IllegalArgumentException`) does not say which value was
+     * rejected, and the import path is the only report of a failed fetch we get.
+     * Keep the message bounded and on one line; the diagnostic report redacts
+     * URLs/tokens on top of this.
+     */
+    private fun describeFailure(e: Throwable): String {
+        val kind = e::class.simpleName ?: "Exception"
+        val cause = e.cause?.let { it::class.simpleName }
+        val detail = e.message
+            .orEmpty()
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(MAX_FAILURE_DETAIL)
+        return buildString {
+            append(kind)
+            if (cause != null) append(" cause=$cause")
+            if (detail.isNotEmpty()) append(" msg=$detail")
         }
     }
 
@@ -437,6 +470,8 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         private const val REIMPORT_TIMEOUT_MS = 60_000L
         /** Bounded non-cancellable orphan delete after failed re-provision. */
         private const val ORPHAN_CLEANUP_TIMEOUT_MS = 5_000L
+        /** Exception message budget in the import failure line. */
+        private const val MAX_FAILURE_DETAIL = 160
     }
 }
 
