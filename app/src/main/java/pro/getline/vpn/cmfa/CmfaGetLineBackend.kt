@@ -120,7 +120,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
     override suspend fun activateIfImported(
         id: GetLineSubscriptionId,
     ): GetLineBackendResult<Boolean> {
-        return callProfileBackend {
+        return callProfileBackend(op = "activate") {
             withProfile {
                 queryByUUID(id.toUuid())
                     ?.takeIf { it.imported }

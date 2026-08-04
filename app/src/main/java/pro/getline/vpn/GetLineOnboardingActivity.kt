@@ -21,6 +21,7 @@ import pro.getline.vpn.getline.GetLineImportCoordinator
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
+import pro.getline.vpn.getline.activateImportedProfileWhenForeground
 import pro.getline.vpn.getline.runPendingManagedProfileCleanup
 import pro.getline.vpn.getline.auth.AuthCallbackParser
 import pro.getline.vpn.getline.auth.BrowserAuthLauncher
@@ -999,6 +1000,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
      * @return true if a replacement import was started (caller must not open Home).
      */
     private suspend fun drainAndContinueImport(design: GetLineOnboardingDesign): Boolean {
+        // Keep the no-draft path non-suspending: finishImportToHome calls this
+        // immediately after awaitActivityStarted to close the foreground/navigation race.
         var latest: GetLineSubscriptionDraft? = pendingExternalImport
         pendingExternalImport = null
         while (true) {
@@ -1036,6 +1039,14 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         if (drainAndContinueImport(design)) {
             return
         }
+        // Import/activation can finish while HOME has this Activity stopped.
+        // Do not launch permission UI or navigate until it is foregrounded again.
+        awaitActivityStarted()
+        // Waiting for foreground is another suspension point where onNewIntent
+        // can enqueue a newer import; it still wins over the Home handoff.
+        if (drainAndContinueImport(design)) {
+            return
+        }
         design.setProductState(GetLineProductState.Loading)
         startVpnWithPermission()
         // onNewIntent during permission/start lands in [imports] while we were
@@ -1043,8 +1054,23 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         if (drainAndContinueImport(design)) {
             return
         }
+        awaitActivityStarted()
+        if (drainAndContinueImport(design)) {
+            return
+        }
         backend.navigation.openHome()
         finish()
+    }
+
+    /**
+     * Suspend UI-bound continuation while the Activity is stopped. Events other
+     * than ActivityStart are irrelevant on Onboarding and may be safely drained.
+     * Activity destruction cancels this waiter through the Activity MainScope.
+     */
+    private suspend fun awaitActivityStarted() {
+        while (!activityStarted) {
+            events.receive()
+        }
     }
 
     /** Resume in-progress email login (OTP preferred when a code was already sent). */
@@ -1129,7 +1155,13 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         retryTarget = RetryTarget.Activate(id, request)
         design.setProductState(GetLineProductState.Loading)
 
-        when (val activated = backend.subscriptions.activateIfImported(id)) {
+        val activated = activateImportedProfileWhenForeground(
+            isForeground = { activityStarted },
+            awaitForeground = ::awaitActivityStarted,
+            activate = { backend.subscriptions.activateIfImported(id) },
+        )
+
+        when (activated) {
             is GetLineBackendResult.Success -> {
                 if (!activated.value) {
                     // request is non-null on all product import paths; reuse id on retry.
