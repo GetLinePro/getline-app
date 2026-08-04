@@ -19,7 +19,10 @@ import com.github.kr328.clash.common.util.ticker
 import com.github.kr328.clash.design.MainDesign
 import com.github.kr328.clash.design.ui.ToastDuration
 import pro.getline.vpn.getline.GetLineBackendProvider
-import pro.getline.vpn.getline.GetLineBackendResult
+import pro.getline.vpn.getline.LaunchRoute
+import pro.getline.vpn.getline.LaunchTarget
+import pro.getline.vpn.getline.SessionRoutingSnapshot
+import pro.getline.vpn.getline.StartupRoutingPolicy
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.GetLineHomeActivity
 import pro.getline.vpn.GetLineOnboardingActivity
@@ -46,7 +49,8 @@ class MainActivity : BaseActivity<MainDesign>() {
             )
         }
 
-        when (resolveLaunchTarget()) {
+        val route = resolveLaunchTarget()
+        when (route.target) {
             LaunchTarget.Onboarding -> {
                 startActivity(GetLineOnboardingActivity::class.intent)
                 finish()
@@ -56,7 +60,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                 startActivity(
                     GetLineHomeActivity::class.intent.putExtra(
                         GetLineHomeActivity.EXTRA_BACKEND_UNAVAILABLE,
-                        launchTargetBackendUnavailable,
+                        route.backendUnavailable,
                     )
                 )
                 finish()
@@ -120,178 +124,57 @@ class MainActivity : BaseActivity<MainDesign>() {
         }
     }
 
-    private enum class LaunchTarget {
-        Onboarding,
-        Home,
-        Advanced,
-    }
-
-    private var launchTargetBackendUnavailable = false
-
     /**
      * Route GetLine UI without hanging forever if `:background` / RemoteService is dead.
      * Failure opens GetLine home in a recoverable state instead of exposing a blank screen.
+     *
+     * The decision itself lives in [StartupRoutingPolicy]; this only supplies the
+     * two inputs and prints the breadcrumb.
      */
-    private suspend fun resolveLaunchTarget(): LaunchTarget {
-        if (intent.getBooleanExtra(EXTRA_OPEN_ADVANCED, false)) {
-            // Store/backend not opened on this branch — do not invent flags for the log.
-            logStartupRoute(
-                dest = "advanced",
-                reason = "open_advanced",
-                store = "na",
-                session = "na",
-                managed = "na",
-                pendingImport = "na",
-                imported = "na",
-                backend = "na",
-            )
-            return LaunchTarget.Advanced
-        }
-
-        launchTargetBackendUnavailable = false
-
-        val sessionSnapshot = readSessionRoutingSnapshot()
-        // store=err: EncryptedSharedPreferences/keystore failed — false flags are defaults,
-        // not a proven empty session (see readSessionRoutingSnapshot).
-        val store = if (sessionSnapshot.storeOk) "ok" else "err"
-        val prefs = sessionSnapshot.prefsBackend
-        val prefsOther = sessionSnapshot.prefsOther
-        val prefsRaw = sessionSnapshot.prefsRaw
-        val prefsAge = sessionSnapshot.prefsAgeHours
-        val session = flag01(sessionSnapshot.hasSession)
-        val managed = flag01(sessionSnapshot.hasManagedProfile)
-        val pendingImport = flag01(sessionSnapshot.hasPendingImport)
-
-        // In-flight durable import (first-time or UseAccount) resumes on Onboarding.
-        // Checked before managed-profile → Home so a mid-import cold start does not
-        // drop the pending UseAccount orphan-cleanup payload.
-        if (sessionSnapshot.hasPendingImport) {
-            logStartupRoute(
-                dest = "onboarding",
-                reason = "pending_import",
-                store = store,
-                prefs = prefs,
-                prefsOther = prefsOther,
-                prefsRaw = prefsRaw,
-                prefsAge = prefsAge,
-                session = session,
-                managed = managed,
-                pendingImport = pendingImport,
-                imported = "na",
-                backend = "na",
-            )
-            return LaunchTarget.Onboarding
-        }
-
-        // Managed binding wins. Do NOT force Onboarding solely because the post-login
-        // step is incomplete (session + still-link-only): permanent failures
-        // (no importable subscription / offline) would trap a working VPN profile
-        // forever with only Retry/Diagnostics. Mid-dialog process death may land
-        // Home with a temporary session+link-only mix; VPN stays reachable.
-        if (sessionSnapshot.hasManagedProfile) {
-            logStartupRoute(
-                dest = "home",
-                reason = "managed_profile",
-                store = store,
-                prefs = prefs,
-                prefsOther = prefsOther,
-                prefsRaw = prefsRaw,
-                prefsAge = prefsAge,
-                session = session,
-                managed = managed,
-                pendingImport = pendingImport,
-                imported = "na",
-                backend = "na",
-            )
-            return LaunchTarget.Home
-        }
-
-        return when (val hasImported = getLineBackend.subscriptions.hasImported()) {
-            GetLineBackendResult.Unavailable -> {
-                launchTargetBackendUnavailable = true
-                logStartupRoute(
-                    dest = "home",
-                    reason = "backend_unavailable",
-                    store = store,
-                    prefs = prefs,
-                    prefsOther = prefsOther,
-                    prefsRaw = prefsRaw,
-                    prefsAge = prefsAge,
-                    session = session,
-                    managed = managed,
-                    pendingImport = pendingImport,
-                    imported = "na",
-                    backend = "unavailable",
-                )
-                LaunchTarget.Home
-            }
-            is GetLineBackendResult.Success ->
-                if (hasImported.value) {
-                    logStartupRoute(
-                        dest = "home",
-                        reason = "has_import",
-                        store = store,
-                        prefs = prefs,
-                        prefsOther = prefsOther,
-                        prefsRaw = prefsRaw,
-                        prefsAge = prefsAge,
-                        session = session,
-                        managed = managed,
-                        pendingImport = pendingImport,
-                        imported = "1",
-                        backend = "ok",
-                    )
-                    LaunchTarget.Home
-                } else {
-                    logStartupRoute(
-                        dest = "onboarding",
-                        reason = "no_import",
-                        store = store,
-                        prefs = prefs,
-                        prefsOther = prefsOther,
-                        prefsRaw = prefsRaw,
-                        prefsAge = prefsAge,
-                        session = session,
-                        managed = managed,
-                        pendingImport = pendingImport,
-                        imported = "0",
-                        backend = "ok",
-                    )
-                    LaunchTarget.Onboarding
-                }
-        }
+    private suspend fun resolveLaunchTarget(): LaunchRoute {
+        val route = StartupRoutingPolicy.decide(
+            openAdvanced = intent.getBooleanExtra(EXTRA_OPEN_ADVANCED, false),
+            readSnapshot = ::readSessionRoutingSnapshot,
+            hasImported = { getLineBackend.subscriptions.hasImported() },
+        )
+        logStartupRoute(route)
+        return route
     }
 
     /**
      * Safe GL-19 breadcrumb: enum/bool tokens only (no UUID, URL, or Exception text).
-     * Fields not evaluated on this branch are [na] — never call backend solely for logging.
-     * [store] is ok|err|na: err means snapshot defaults, not a proven empty session.
-     * [prefs]/[prefsOther] expose the store's pref file (enc|fallback) and whether the
-     * other one exists: store=ok with a forked file is an empty read, not a wiped session.
+     * Fields not evaluated on this branch are `na` — never call backend solely for
+     * logging, which is why an unread snapshot prints `na` instead of zeros.
+     * `store=err` means snapshot defaults, not a proven empty session.
+     * `prefs`/`prefs_other` expose the store's pref file (enc|fallback) and whether
+     * the other one exists: store=ok with a forked file is an empty read, not a
+     * wiped session.
      */
-    private fun logStartupRoute(
-        dest: String,
-        reason: String,
-        store: String,
-        prefs: String = "na",
-        prefsOther: String = "na",
-        prefsRaw: String = "na",
-        prefsAge: String = "na",
-        session: String,
-        managed: String,
-        pendingImport: String,
-        imported: String,
-        backend: String,
-    ) {
+    private fun logStartupRoute(route: LaunchRoute) {
+        val snapshot = route.snapshot
+        val store = when {
+            snapshot == null -> "na"
+            snapshot.storeOk -> "ok"
+            else -> "err"
+        }
         Log.i(
-            "startup_route dest=$dest reason=$reason store=$store " +
-                "prefs=$prefs prefs_other=$prefsOther prefs_raw=$prefsRaw prefs_age_h=$prefsAge " +
-                "session=$session managed=$managed pending_import=$pendingImport " +
-                "imported=$imported backend=$backend",
+            "startup_route dest=${route.target.name.lowercase()} reason=${route.reason} " +
+                "store=$store prefs=${snapshot?.prefsBackend ?: "na"} " +
+                "prefs_other=${snapshot?.prefsOther ?: "na"} " +
+                "prefs_raw=${snapshot?.prefsRaw ?: "na"} " +
+                "prefs_age_h=${snapshot?.prefsAgeHours ?: "na"} " +
+                "session=${flag01(snapshot?.hasSession)} " +
+                "managed=${flag01(snapshot?.hasManagedProfile)} " +
+                "pending_import=${flag01(snapshot?.hasPendingImport)} " +
+                "imported=${route.imported} backend=${route.backend}",
         )
     }
 
-    private fun flag01(value: Boolean): String = if (value) "1" else "0"
+    private fun flag01(value: Boolean?): String = when (value) {
+        null -> "na"
+        true -> "1"
+        false -> "0"
+    }
 
     /** One store init per launch route (MasterKey is not free). */
     private suspend fun readSessionRoutingSnapshot(): SessionRoutingSnapshot =
@@ -318,22 +201,6 @@ class MainActivity : BaseActivity<MainDesign>() {
                 )
             }.getOrDefault(SessionRoutingSnapshot(storeOk = false))
         }
-
-    private data class SessionRoutingSnapshot(
-        /** false when [GetLineSessionStore] construction/routing reads failed (e.g. keystore). */
-        val storeOk: Boolean = false,
-        val hasSession: Boolean = false,
-        val hasManagedProfile: Boolean = false,
-        val hasPendingImport: Boolean = false,
-        /** Which pref file backed the store: enc|fallback|na. */
-        val prefsBackend: String = "na",
-        /** The pref file the store did not open exists on disk: 1|0|na. */
-        val prefsOther: String = "na",
-        /** Non-keyset entries physically in the backing file; -1 unparsable, na unread. */
-        val prefsRaw: String = "na",
-        /** Hours since the backing file was last written; -1 absent, na unread. */
-        val prefsAgeHours: String = "na",
-    )
 
     private suspend fun MainDesign.fetch() {
         setClashRunning(clashRunning)

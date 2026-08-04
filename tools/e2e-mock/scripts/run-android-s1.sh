@@ -3,7 +3,7 @@
 #
 # Automates what previously needed manual taps:
 #   A) Subscription link (no auth):
-#        clear/install → "I have a subscription link" → stage YAML URL
+#        clear/install → "Enter link manually" → stage YAML URL
 #        → dialog must not ClassCastException → Home (e2e-direct)
 #   B) Google Auth Tab (existing S1):
 #        clear → Sign in with Google → Success on mock page
@@ -48,6 +48,8 @@ PACKAGE="${PACKAGE:-pro.getline.vpn.alpha.e2e.debug}"
 DOCKER_CONTAINER="${DOCKER_CONTAINER:-e2e-mock}"
 HOME_TIMEOUT_S="${HOME_TIMEOUT_S:-90}"
 SUB_LINK_URL="${SUB_LINK_URL:-https://app.stage.getline.pro/sub/e2e}"
+# Onboarding button that opens the manual URL dialog (get_line_onboarding_enter_link).
+LINK_ENTRY_TEXT="${LINK_ENTRY_TEXT:-Enter link manually}"
 ADB="${ADB:-adb}"
 if [[ -z "${REQUIRE_ENCRYPTED_SESSION_PREFS+x}" ]]; then
   if [[ "${SKIP_CLEAR:-0}" == "1" ]]; then
@@ -307,8 +309,11 @@ flow_subscription_link() {
 
   launch_app
 
-  if ! wait_ui_text "I have a subscription link" 30; then
-    fail "onboarding: I have a subscription link not visible"
+  # Onboarding copy: "I have a subscription link" until #62, "Enter link
+  # manually" since QR import landed. Matching only the old text made this whole
+  # flow fail on every run from #62 on.
+  if ! wait_ui_text "$LINK_ENTRY_TEXT" 30; then
+    fail "onboarding: $LINK_ENTRY_TEXT not visible"
     ui_texts || true
     return 1
   fi
@@ -316,8 +321,8 @@ flow_subscription_link() {
 
   export E2E_SERIAL="$SERIAL"
   export E2E_ADB="$ADB"
-  ui_tap_exact "I have a subscription link" || {
-    fail "tap I have a subscription link"
+  ui_tap_exact "$LINK_ENTRY_TEXT" || {
+    fail "tap $LINK_ENTRY_TEXT"
     return 1
   }
   sleep 1
@@ -702,12 +707,20 @@ main() {
       SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
       echo "SINCE(google)=$SINCE"
     fi
-    flow_login || true
+    # Gate persistence on the login flow itself, not on the global FAIL: any
+    # earlier failure — including one in the unrelated link path — used to skip
+    # the relaunch check silently, and it stayed skipped for several PRs.
+    # Markers are advisory (they no-op when docker is not on this machine) and
+    # must not gate it either.
+    login_ok=0
+    if flow_login; then
+      login_ok=1
+    fi
     check_server_markers || true
-    if [[ "$FAIL" -eq 0 ]]; then
+    if [[ "$login_ok" -eq 1 ]]; then
       flow_persistence || true
     else
-      yellow "SKIP persistence — login/markers already failed"
+      yellow "SKIP persistence — login flow failed"
     fi
   fi
 
