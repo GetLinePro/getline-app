@@ -31,6 +31,7 @@ import pro.getline.vpn.getline.auth.GetLineAuthException
 import pro.getline.vpn.diagnostics.DiagnosticReportShare
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
+import pro.getline.vpn.getline.auth.GetLineSessionStorageException
 import pro.getline.vpn.getline.auth.LinkOnlyBindingPolicy
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
 import pro.getline.vpn.getline.auth.SubscriptionLinkMatcher
@@ -47,10 +48,11 @@ import kotlinx.coroutines.selects.select
 class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private val backend by lazy { GetLineBackendProvider.create(this) }
     private val authApi by lazy { RwpGetLineAuthApi() }
+    private val sessionStore by lazy { GetLineSessionStore(this) }
     private val sessionRepository by lazy {
         GetLineSessionRepository(
             api = authApi,
-            store = GetLineSessionStore(this),
+            store = sessionStore,
         )
     }
     private val browserAuthLauncher = BrowserAuthLauncher()
@@ -82,10 +84,22 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         design.setLinkOnlySignIn(linkOnlySignIn)
         // Resumed post-login step (mismatch dialog / import) starts with a live
         // session — login controls must stay hidden on its error states too.
-        design.setSessionEstablished(sessionRepository.hasSession())
+        val initialHasSession = try {
+            sessionRepository.hasSession()
+        } catch (_: GetLineSessionStorageException) {
+            waitForSecureSessionStorage(design)
+            return
+        }
+        design.setSessionEstablished(initialHasSession)
 
         val initialImport = intent.importRequest
         when {
+            intent.getBooleanExtra(EXTRA_SESSION_STORAGE_RECOVERED, false) ||
+                sessionStore.recoveredFromStorageFailure -> {
+                retryTarget = RetryTarget.Refresh
+                design.showProviders()
+                design.setProductState(GetLineProductState.SessionStorageRecovered)
+            }
             // Explicit external / deep-link import replaces any stale pending work.
             initialImport != null -> importSubscription(design, initialImport)
             // Resume durable import after HOME / process death. Prefer pending over
@@ -198,6 +212,47 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     enqueueOrStartImport(design, it)
                 }
             }
+        }
+    }
+
+    /**
+     * Persistent Keystore failure: remain usable as an error surface instead of
+     * crash-looping. Each Retry is user-driven and performs one fresh open/reset.
+     */
+    private suspend fun waitForSecureSessionStorage(design: GetLineOnboardingDesign) {
+        Log.w("session_storage outcome=unavailable")
+        design.setProductState(GetLineProductState.SessionStorageUnavailable)
+        while (isActive) {
+            val reopened = select<Boolean> {
+                events.onReceive { false }
+                design.requests.onReceive { request ->
+                    when (request) {
+                        GetLineOnboardingDesign.Request.Retry -> {
+                            try {
+                                sessionRepository.hasSession()
+                                true
+                            } catch (_: GetLineSessionStorageException) {
+                                false
+                            }
+                        }
+                        GetLineOnboardingDesign.Request.OpenHelp -> {
+                            startActivity(HelpActivity::class.intent)
+                            false
+                        }
+                        GetLineOnboardingDesign.Request.OpenAdvanced -> {
+                            openAdvanced()
+                            false
+                        }
+                        else -> false
+                    }
+                }
+            }
+            if (reopened) {
+                intent.putExtra(EXTRA_SESSION_STORAGE_RECOVERED, true)
+                recreate()
+                return
+            }
+            design.setProductState(GetLineProductState.SessionStorageUnavailable)
         }
     }
 
@@ -558,6 +613,15 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         preSessionTarget: RetryTarget,
         error: Exception?,
     ) {
+        if (error is GetLineSessionStorageException) {
+            // saveSession already discarded and reopened the ambiguous store.
+            // The web token remains memory-only; do not silently retry/mint keys.
+            retryTarget = RetryTarget.Refresh
+            design.setSessionEstablished(false)
+            design.showProviders()
+            design.setProductState(GetLineProductState.SessionStorageRecovered)
+            return
+        }
         // Never interpolate preSessionTarget: EmailSend carries an address.
         if (!sessionRepository.hasSession()) {
             // Used to be silent: every pre-session failure reached the user as a
@@ -1252,6 +1316,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
          */
         const val EXTRA_LINK_ONLY_SIGN_IN =
             "pro.getline.vpn.extra.GET_LINE_LINK_ONLY_SIGN_IN"
+
+        internal const val EXTRA_SESSION_STORAGE_RECOVERED =
+            "pro.getline.vpn.extra.GET_LINE_SESSION_STORAGE_RECOVERED"
 
         private const val EXTRA_IMPORT_TYPE =
             "pro.getline.vpn.extra.GET_LINE_IMPORT_TYPE"

@@ -52,7 +52,12 @@ class MainActivity : BaseActivity<MainDesign>() {
         val route = resolveLaunchTarget()
         when (route.target) {
             LaunchTarget.Onboarding -> {
-                startActivity(GetLineOnboardingActivity::class.intent)
+                startActivity(
+                    GetLineOnboardingActivity::class.intent.putExtra(
+                        GetLineOnboardingActivity.EXTRA_SESSION_STORAGE_RECOVERED,
+                        route.snapshot?.sessionStorageRecovered == true,
+                    ),
+                )
                 finish()
                 return
             }
@@ -61,7 +66,10 @@ class MainActivity : BaseActivity<MainDesign>() {
                     GetLineHomeActivity::class.intent.putExtra(
                         GetLineHomeActivity.EXTRA_BACKEND_UNAVAILABLE,
                         route.backendUnavailable,
-                    )
+                    ).putExtra(
+                        GetLineHomeActivity.EXTRA_SESSION_STORAGE_RECOVERED,
+                        route.snapshot?.sessionStorageRecovered == true,
+                    ),
                 )
                 finish()
                 return
@@ -146,9 +154,8 @@ class MainActivity : BaseActivity<MainDesign>() {
      * Fields not evaluated on this branch are `na` — never call backend solely for
      * logging, which is why an unread snapshot prints `na` instead of zeros.
      * `store=err` means snapshot defaults, not a proven empty session.
-     * `prefs`/`prefs_other` expose the store's pref file (enc|fallback) and whether
-     * the other one exists: store=ok with a forked file is an empty read, not a
-     * wiped session.
+     * `prefs` reports the encrypted backend; `prefs_other` reports whether the
+     * removed plaintext legacy file somehow still exists.
      */
     private fun logStartupRoute(route: LaunchRoute) {
         val snapshot = route.snapshot
@@ -163,6 +170,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                 "prefs_other=${snapshot?.prefsOther ?: "na"} " +
                 "prefs_raw=${snapshot?.prefsRaw ?: "na"} " +
                 "prefs_age_h=${snapshot?.prefsAgeHours ?: "na"} " +
+                "prefs_reset=${flag01(snapshot?.sessionStorageRecovered)} " +
                 "session=${flag01(snapshot?.hasSession)} " +
                 "managed=${flag01(snapshot?.hasManagedProfile)} " +
                 "pending_import=${flag01(snapshot?.hasPendingImport)} " +
@@ -191,6 +199,7 @@ class MainActivity : BaseActivity<MainDesign>() {
                     hasSession = hasSession,
                     hasManagedProfile = hasManagedProfile,
                     hasPendingImport = hasPendingImport,
+                    sessionStorageRecovered = store.recoveredFromStorageFailure,
                     prefsBackend = store.backendName,
                     prefsOther = runCatching { flag01(store.otherPrefsFileExists()) }
                         .getOrDefault("na"),

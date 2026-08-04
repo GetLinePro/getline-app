@@ -2,10 +2,12 @@ package pro.getline.vpn.getline.auth
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.io.File
+import java.security.KeyStore
 
 /**
  * Persists native session material and GetLine-managed VPN binding.
@@ -16,39 +18,47 @@ import java.io.File
  * Full clear: [clearAccountState]. Session-only clear keeping managed binding:
  * [clearSessionKeepingBinding].
  */
-class GetLineSessionStore(context: Context) {
+class GetLineSessionStore internal constructor(
+    context: Context,
+    private val encryptedPrefsFactory: (Context) -> SharedPreferences,
+    private val encryptedStorageResetter: (Context) -> Unit,
+    private val prefsDeleter: (Context, String) -> Unit = ::deletePrefs,
+) {
+    constructor(context: Context) : this(
+        context = context,
+        encryptedPrefsFactory = ::createEncryptedPrefs,
+        encryptedStorageResetter = ::resetEncryptedStorage,
+    )
+
     private val appContext: Context = context.applicationContext
-    private val prefs: SharedPreferences
-    private val encrypted: Boolean
+    private var prefs: SharedPreferences
+
+    /** True only when this instance discarded an unreadable encrypted session. */
+    var recoveredFromStorageFailure: Boolean = false
+        private set
 
     init {
-        var openedEncrypted = true
+        deleteLegacySessionStores()
         prefs = try {
-            createEncryptedPrefs(appContext)
+            openValidatedEncryptedStorage()
         } catch (_: Exception) {
-            // Fall back so auth remains usable if keystore is unavailable.
-            openedEncrypted = false
-            appContext.getSharedPreferences(FILE_NAME_FALLBACK, Context.MODE_PRIVATE)
+            recoveredFromStorageFailure = true
+            resetAndReopenEncryptedStorage()
         }
-        encrypted = openedEncrypted
     }
 
     /**
-     * Diagnostics only: which pref file actually backs this store.
-     * The two files never migrate, so a switch between them reads as a wiped
-     * session while the material is still on disk in the other file.
+     * Diagnostics only. A usable store is always encrypted; plaintext fallback
+     * is legacy data that is deleted without being read.
      */
     val backendName: String
-        get() = if (encrypted) BACKEND_ENCRYPTED else BACKEND_FALLBACK
+        get() = BACKEND_ENCRYPTED
 
     /**
-     * Diagnostics only: the pref file this store did *not* open exists on disk.
-     * True means storage forked — session material may be stranded there.
+     * Diagnostics only: a legacy plaintext session file still exists on disk.
+     * A usable store should always report false because initialization deletes it.
      */
-    fun otherPrefsFileExists(): Boolean {
-        val other = if (encrypted) FILE_NAME_FALLBACK else FILE_NAME
-        return prefsFile(appContext, other).exists()
-    }
+    fun otherPrefsFileExists(): Boolean = prefsFile(appContext, FILE_NAME_FALLBACK).exists()
 
     /**
      * Diagnostics only: non-keyset entries physically present in the backing file.
@@ -60,7 +70,7 @@ class GetLineSessionStore(context: Context) {
      * `-1` when the file exists but cannot be parsed.
      */
     fun rawEntryCount(): Int {
-        val file = prefsFile(appContext, if (encrypted) FILE_NAME else FILE_NAME_FALLBACK)
+        val file = prefsFile(appContext, FILE_NAME)
         if (!file.exists()) return 0
         return runCatching {
             PREF_ENTRY_NAME
@@ -71,11 +81,11 @@ class GetLineSessionStore(context: Context) {
 
     var accessToken: String?
         get() = prefs.getString(KEY_ACCESS_TOKEN, null)
-        set(value) = prefs.edit { putString(KEY_ACCESS_TOKEN, value) }
+        private set(value) = prefs.edit { putString(KEY_ACCESS_TOKEN, value) }
 
     var refreshToken: String?
         get() = prefs.getString(KEY_REFRESH_TOKEN, null)
-        set(value) = prefs.edit { putString(KEY_REFRESH_TOKEN, value) }
+        private set(value) = prefs.edit { putString(KEY_REFRESH_TOKEN, value) }
 
     var accessTokenExpiresAtEpochMs: Long
         get() = prefs.getLong(KEY_ACCESS_EXPIRES_AT, 0L)
@@ -140,13 +150,27 @@ class GetLineSessionStore(context: Context) {
     fun hasRefreshToken(): Boolean = !refreshToken.isNullOrBlank()
 
     fun saveSession(session: NativeSession, nowMs: Long = System.currentTimeMillis()) {
-        prefs.edit {
-            putString(KEY_ACCESS_TOKEN, session.accessToken)
-            putString(KEY_REFRESH_TOKEN, session.refreshToken)
-            putLong(
-                KEY_ACCESS_EXPIRES_AT,
-                nowMs + session.expiresInSeconds.coerceAtLeast(0L) * 1000L,
-            )
+        val expiresAt = nowMs + session.expiresInSeconds.coerceAtLeast(0L) * 1000L
+        try {
+            val committed = prefs.edit()
+                .putString(KEY_ACCESS_TOKEN, session.accessToken)
+                .putString(KEY_REFRESH_TOKEN, session.refreshToken)
+                .putLong(KEY_ACCESS_EXPIRES_AT, expiresAt)
+                .commit()
+            if (!committed ||
+                prefs.getString(KEY_ACCESS_TOKEN, null) != session.accessToken ||
+                prefs.getString(KEY_REFRESH_TOKEN, null) != session.refreshToken ||
+                prefs.getLong(KEY_ACCESS_EXPIRES_AT, 0L) != expiresAt
+            ) {
+                throw SessionStorageWriteFailed()
+            }
+        } catch (_: Exception) {
+            // SharedPreferences commits one complete file. If encryption or the
+            // disk write failed, discard the store before reporting auth failure;
+            // callers must never continue with an in-memory partial session.
+            recoveredFromStorageFailure = true
+            prefs = resetAndReopenEncryptedStorage()
+            throw GetLineSessionStorageException()
         }
     }
 
@@ -204,7 +228,7 @@ class GetLineSessionStore(context: Context) {
     fun hasPendingImport(): Boolean = pendingImport() != null
 
     fun clearAccountState() {
-        prefs.edit {
+        commitCleanupOrReset {
             remove(KEY_ACCESS_TOKEN)
             remove(KEY_REFRESH_TOKEN)
             remove(KEY_ACCESS_EXPIRES_AT)
@@ -221,6 +245,7 @@ class GetLineSessionStore(context: Context) {
             remove(KEY_PENDING_IMPORT_INTERVAL)
             remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
         }
+        deleteLegacySessionStoresBestEffort()
     }
 
     /**
@@ -229,7 +254,7 @@ class GetLineSessionStore(context: Context) {
      * the profile stays theirs to refresh and remove.
      */
     fun clearSessionKeepingBinding() {
-        prefs.edit {
+        commitCleanupOrReset {
             remove(KEY_ACCESS_TOKEN)
             remove(KEY_REFRESH_TOKEN)
             remove(KEY_ACCESS_EXPIRES_AT)
@@ -244,6 +269,7 @@ class GetLineSessionStore(context: Context) {
             remove(KEY_PENDING_IMPORT_INTERVAL)
             remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
         }
+        deleteLegacySessionStoresBestEffort()
     }
 
     /**
@@ -259,7 +285,7 @@ class GetLineSessionStore(context: Context) {
             !managedProfileUuid.isNullOrBlank() &&
                 !managedProfileSource.isNullOrBlank() &&
                 subscriptionId.isNullOrBlank()
-        prefs.edit {
+        commitCleanupOrReset {
             remove(KEY_ACCESS_TOKEN)
             remove(KEY_REFRESH_TOKEN)
             remove(KEY_ACCESS_EXPIRES_AT)
@@ -275,6 +301,7 @@ class GetLineSessionStore(context: Context) {
             remove(KEY_PENDING_IMPORT_INTERVAL)
             remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
         }
+        deleteLegacySessionStoresBestEffort()
     }
 
     fun isAccessTokenValid(nowMs: Long = System.currentTimeMillis(), skewMs: Long = 60_000L): Boolean {
@@ -285,17 +312,65 @@ class GetLineSessionStore(context: Context) {
         return nowMs + skewMs < expiresAt
     }
 
-    private fun createEncryptedPrefs(context: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            FILE_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+    private fun commitCleanupOrReset(block: SharedPreferences.Editor.() -> Unit) {
+        val committed = try {
+            prefs.edit().apply(block).commit()
+        } catch (_: Exception) {
+            false
+        }
+        if (!committed) {
+            // Losing binding metadata is preferable to leaving credentials after
+            // logout/rejection. The imported VPN profile lives in another store.
+            recoveredFromStorageFailure = true
+            prefs = resetAndReopenEncryptedStorage()
+        }
+    }
+
+    private fun resetAndReopenEncryptedStorage(): SharedPreferences {
+        try {
+            encryptedStorageResetter(appContext)
+            deleteLegacySessionStores()
+            return openValidatedEncryptedStorage()
+        } catch (_: Exception) {
+            // Fixed text, no original exception/cause: crypto providers are not
+            // allowed to leak values into auth logs or diagnostic reports.
+            throw GetLineSessionStorageException()
+        }
+    }
+
+    /** Force lazy key/value decryption now so corruption enters the recovery path. */
+    private fun openValidatedEncryptedStorage(): SharedPreferences {
+        val opened = encryptedPrefsFactory(appContext)
+        opened.all
+        return opened
+    }
+
+    private fun deleteLegacySessionStores() {
+        for (name in LEGACY_SESSION_PREFS) {
+            try {
+                prefsDeleter(appContext, name)
+            } catch (_: Exception) {
+                throw GetLineSessionStorageException()
+            }
+            if (prefsFile(appContext, name).exists() ||
+                prefsBackupFile(appContext, name).exists()
+            ) {
+                throw GetLineSessionStorageException()
+            }
+        }
+    }
+
+    /**
+     * Credentials are already gone from the encrypted store at this point.
+     * A stubborn legacy file must not crash logout or replace the original auth
+     * failure; the next store open retries strict deletion and fails closed.
+     */
+    private fun deleteLegacySessionStoresBestEffort() {
+        try {
+            deleteLegacySessionStores()
+        } catch (_: GetLineSessionStorageException) {
+            // Retried strictly during the next GetLineSessionStore construction.
+        }
     }
 
     /**
@@ -304,15 +379,11 @@ class GetLineSessionStore(context: Context) {
      * places the last write — including a clear — before that update.
      */
     fun backingFileAgeHours(nowMs: Long = System.currentTimeMillis()): Long {
-        val file = prefsFile(appContext, if (encrypted) FILE_NAME else FILE_NAME_FALLBACK)
+        val file = prefsFile(appContext, FILE_NAME)
         val modified = file.lastModified()
         if (modified <= 0L) return -1L
         return (nowMs - modified) / 3_600_000L
     }
-
-    /** `dataDir` is API 24; `filesDir.parentFile` is the same path on every level. */
-    private fun prefsFile(context: Context, name: String): File =
-        File(File(context.filesDir.parentFile, "shared_prefs"), "$name.xml")
 
     companion object {
         private const val FILE_NAME = "getline_native_session"
@@ -336,19 +407,81 @@ class GetLineSessionStore(context: Context) {
         private const val KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID =
             "pending_import_previous_managed_uuid"
 
-        /** Pref file names — e2e / debug probes may look for either. */
+        /** Pref file names — e2e/debug probes reject the legacy plaintext one. */
         const val PREFS_FILE_ENCRYPTED = FILE_NAME
         const val PREFS_FILE_FALLBACK = FILE_NAME_FALLBACK
 
-        /** [backendName] tokens for GL-19 breadcrumbs. */
+        /** [backendName] token for GL-19 breadcrumbs. */
         const val BACKEND_ENCRYPTED = "enc"
-        const val BACKEND_FALLBACK = "fallback"
+
+        private val LEGACY_SESSION_PREFS = listOf(FILE_NAME_FALLBACK)
 
         private const val TINK_KEYSET_PREFIX = "__androidx_security_crypto_"
         private val PREF_ENTRY_NAME =
             Regex("""<(?:string|long|int|boolean|float|set)\s+name="([^"]*)"""")
+
+        private fun createEncryptedPrefs(context: Context): SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                FILE_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
+
+        private fun resetEncryptedStorage(context: Context) {
+            deletePrefs(context, FILE_NAME)
+            if (prefsFile(context, FILE_NAME).exists() ||
+                prefsBackupFile(context, FILE_NAME).exists()
+            ) {
+                throw GetLineSessionStorageException()
+            }
+            val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
+            if (keyStore.containsAlias(MasterKey.DEFAULT_MASTER_KEY_ALIAS)) {
+                keyStore.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+            }
+        }
+
+        /**
+         * Context.deleteSharedPreferences is API 24. API 23 must first clear the
+         * process-cached instance, then remove both disk copies.
+         */
+        private fun deletePrefs(context: Context, name: String) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                context.deleteSharedPreferences(name)
+                return
+            }
+            val cleared = context.getSharedPreferences(name, Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .commit()
+            if (!cleared) {
+                throw GetLineSessionStorageException()
+            }
+            prefsFile(context, name).delete()
+            prefsBackupFile(context, name).delete()
+        }
+
+        /** `dataDir` is API 24; `filesDir.parentFile` works on every supported API. */
+        private fun prefsFile(context: Context, name: String): File =
+            File(File(context.filesDir.parentFile, "shared_prefs"), "$name.xml")
+
+        private fun prefsBackupFile(context: Context, name: String): File =
+            File(prefsFile(context, name).path + ".bak")
+
+        private const val ANDROID_KEY_STORE = "AndroidKeyStore"
     }
 }
+
+/** Sanitized fail-closed signal; never carries crypto/provider messages. */
+class GetLineSessionStorageException : Exception("Secure session storage unavailable")
+
+/** Internal control-flow marker for a false SharedPreferences commit. */
+private class SessionStorageWriteFailed : Exception()
 
 /**
  * Durable in-flight import request (URL path only for product flows).

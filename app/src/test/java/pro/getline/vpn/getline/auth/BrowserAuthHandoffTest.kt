@@ -20,7 +20,7 @@ class BrowserAuthHandoffTest {
     @Test
     fun establishFromWebToken_usesDeviceKeyFlowOnce() = runBlocking {
         val api = RecordingAuthApi()
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         val repo = GetLineSessionRepository(api, store)
 
@@ -40,7 +40,7 @@ class BrowserAuthHandoffTest {
     @Test
     fun establishFromWebToken_doesNotPersistOnGenerateFailure() = runBlocking {
         val api = RecordingAuthApi(failGenerate = true)
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         val repo = GetLineSessionRepository(api, store)
 

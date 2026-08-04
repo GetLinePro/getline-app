@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 class GetLineSessionStoreBindingTest {
     @Test
     fun clearSessionKeepingBinding_dropsTokensKeepsManagedBinding() {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.saveSession(
             NativeSession(
@@ -60,7 +60,7 @@ class GetLineSessionStoreBindingTest {
 
     @Test
     fun clearRejectedSession_accountBindingKeepsIdentityButDropsRemoteSource() {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.saveSession(
             NativeSession(
@@ -92,7 +92,7 @@ class GetLineSessionStoreBindingTest {
 
     @Test
     fun clearRejectedSession_linkOnlyBindingKeepsItsSource() {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.saveSession(
             NativeSession(
@@ -121,7 +121,7 @@ class GetLineSessionStoreBindingTest {
 
     @Test
     fun pendingImport_persistsPreviousManagedUuidToDelete() {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.savePendingImport(
             PendingImport(
@@ -145,7 +145,7 @@ class GetLineSessionStoreBindingTest {
 
     @Test
     fun pendingProfileCleanup_keepsMultipleUuids_andClearsOnlyExpectedUuid() {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.rememberPendingProfileCleanup("old-profile-uuid")
         store.rememberPendingProfileCleanup("newer-old-profile-uuid")
@@ -177,7 +177,7 @@ class GetLineSessionStoreBindingTest {
 
     @Test
     fun clearAccountState_stillClearsBinding() {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.managedProfileUuid = "profile-uuid"
         store.managedProfileSource = "https://sub.example.com/link"
@@ -200,7 +200,7 @@ class GetLineSessionStoreBindingTest {
 
     @Test
     fun discardSessionKeepingSubscription_repoDelegates() {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.saveSession(
             NativeSession(
@@ -232,20 +232,16 @@ class GetLineSessionStoreBindingTest {
     }
 
     /**
-     * The forked-storage probe is only useful if it looks at the real pref path:
-     * a wrong path reports "no fork" forever and hides the failure it exists for.
+     * The legacy-storage probe is only useful if it looks at the real pref path:
+     * a wrong path reports "clean" forever and hides stranded plaintext material.
      */
     @Test
-    fun otherPrefsFileExists_detectsTheFileTheStoreDidNotOpen() {
+    fun otherPrefsFileExists_detectsLegacyPlaintextFile() {
         val app = RuntimeEnvironment.getApplication()
-        val store = GetLineSessionStore(app)
+        val store = testSessionStore(app)
         assertFalse(store.otherPrefsFileExists())
 
-        val other = if (store.backendName == GetLineSessionStore.BACKEND_ENCRYPTED) {
-            GetLineSessionStore.PREFS_FILE_FALLBACK
-        } else {
-            GetLineSessionStore.PREFS_FILE_ENCRYPTED
-        }
+        val other = GetLineSessionStore.PREFS_FILE_FALLBACK
         app.getSharedPreferences(other, Context.MODE_PRIVATE)
             .edit()
             .putString("refresh_token", "stranded")
@@ -260,7 +256,7 @@ class GetLineSessionStoreBindingTest {
      */
     @Test
     fun rawEntryCount_countsStoredEntriesNotKeysets() {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         assertEquals(0, store.rawEntryCount())
 

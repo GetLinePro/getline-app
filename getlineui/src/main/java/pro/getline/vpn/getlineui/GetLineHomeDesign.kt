@@ -1190,7 +1190,9 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             GetLineProductState.AuthOtpExpired,
             GetLineProductState.AuthEmailDomainNotAllowed,
             GetLineProductState.AuthNoAccount,
-            GetLineProductState.AuthRateLimited -> GetLineRecoveryAction.None
+            GetLineProductState.AuthRateLimited,
+            GetLineProductState.SessionStorageRecovered,
+            GetLineProductState.SessionStorageUnavailable -> GetLineRecoveryAction.None
             GetLineProductState.NoProfile -> GetLineRecoveryAction.ImportSubscription
             GetLineProductState.ConnectionRepairFailed,
             GetLineProductState.ConnectionRestoreFailed -> GetLineRecoveryAction.Retry

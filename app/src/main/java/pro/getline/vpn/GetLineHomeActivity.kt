@@ -32,6 +32,7 @@ import pro.getline.vpn.getline.accountportal.PendingForceSubscriptionRefresh
 import pro.getline.vpn.diagnostics.DiagnosticReportShare
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
+import pro.getline.vpn.getline.auth.GetLineSessionStorageException
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
 import pro.getline.vpn.getline.auth.LinkOnlyPresentation
 import pro.getline.vpn.getline.auth.SubscriptionLoadResult
@@ -66,10 +67,11 @@ import pro.getline.vpn.getlineui.R as GetLineUiR
 
 class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private val backend by lazy { GetLineBackendProvider.create(this) }
+    private val sessionStore by lazy { GetLineSessionStore(this) }
     private val sessionRepository by lazy {
         GetLineSessionRepository(
             api = RwpGetLineAuthApi(),
-            store = GetLineSessionStore(this),
+            store = sessionStore,
         )
     }
     /** Survives tab switches; cleared only when Activity is destroyed. */
@@ -105,6 +107,21 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         val design = GetLineHomeDesign(this)
 
         setContentDesign(design)
+        val sessionStorageRecovered = try {
+            sessionStore.recoveredFromStorageFailure
+        } catch (_: GetLineSessionStorageException) {
+            backend.navigation.openOnboarding()
+            if (!isFinishing) finish()
+            return
+        }
+        if (intent.getBooleanExtra(EXTRA_SESSION_STORAGE_RECOVERED, false) ||
+            sessionStorageRecovered
+        ) {
+            design.showToast(
+                GetLineUiR.string.get_line_state_session_storage_recovered_explanation,
+                ToastDuration.Long,
+            )
+        }
         design.setTab(readPersistedTab())
         design.setVpnStatus(resolveStatus())
         if (intent.getBooleanExtra(EXTRA_BACKEND_UNAVAILABLE, false)) {
@@ -1812,6 +1829,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     companion object {
         internal const val EXTRA_BACKEND_UNAVAILABLE =
             "pro.getline.vpn.extra.GET_LINE_BACKEND_UNAVAILABLE"
+        internal const val EXTRA_SESSION_STORAGE_RECOVERED =
+            "pro.getline.vpn.extra.GET_LINE_SESSION_STORAGE_RECOVERED"
 
         private const val CONNECTION_START_TIMEOUT_MS = 20_000L
 

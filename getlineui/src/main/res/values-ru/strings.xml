@@ -150,6 +150,10 @@
     <string name="get_line_state_import_failed_explanation">Проверьте ссылку на подписку и повторите импорт.</string>
     <string name="get_line_state_auth_failed_title">Не удалось войти</string>
     <string name="get_line_state_auth_failed_explanation">Вход не завершён. Повторите попытку или добавьте ссылку на подписку.</string>
+    <string name="get_line_state_session_storage_recovered_title">Войдите снова</string>
+    <string name="get_line_state_session_storage_recovered_explanation">Защищённую сессию не удалось прочитать, поэтому она удалена. Профиль VPN не удалён.</string>
+    <string name="get_line_state_session_storage_unavailable_title">Защищённое хранилище недоступно</string>
+    <string name="get_line_state_session_storage_unavailable_explanation">Перезагрузите устройство и повторите попытку. Приложение не сохранит сессию без шифрования.</string>
     <string name="get_line_state_auth_email_entry_title">Вход по email</string>
     <string name="get_line_state_auth_email_entry_explanation">Введите email аккаунта GetLine Pro. Мы отправим одноразовый код для входа.</string>
     <string name="get_line_state_auth_email_otp_sent_title">Введите код из письма</string>

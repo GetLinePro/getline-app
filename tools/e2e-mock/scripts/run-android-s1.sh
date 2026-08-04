@@ -40,9 +40,6 @@
 #   FORCE_REINSTALL=1        run the install -r check even with SKIP_INSTALL=1
 #                            (installs the local APK over whatever is on device)
 #   SKIP_IMPORT_HOME=1       skip HOME mid-import survival check on link path
-#   REQUIRE_ENCRYPTED_SESSION_PREFS
-#                            default 1 after pm clear, 0 with SKIP_CLEAR=1;
-#                            set 0 explicitly for a supported fallback-store run
 #   SKIP_MARKERS=1           skip local docker log markers
 #   DOCKER_CONTAINER         default e2e-mock (local docker only)
 #   HOME_TIMEOUT_S           default 90
@@ -57,13 +54,6 @@ SUB_LINK_URL="${SUB_LINK_URL:-https://app.stage.getline.pro/sub/e2e}"
 # Onboarding button that opens the manual URL dialog (get_line_onboarding_enter_link).
 LINK_ENTRY_TEXT="${LINK_ENTRY_TEXT:-Enter link manually}"
 ADB="${ADB:-adb}"
-if [[ -z "${REQUIRE_ENCRYPTED_SESSION_PREFS+x}" ]]; then
-  if [[ "${SKIP_CLEAR:-0}" == "1" ]]; then
-    REQUIRE_ENCRYPTED_SESSION_PREFS=0
-  else
-    REQUIRE_ENCRYPTED_SESSION_PREFS=1
-  fi
-fi
 
 FAIL=0
 PASS_N=0
@@ -539,26 +529,15 @@ assert_session_subscription_consistent() {
   export E2E_SERIAL="$SERIAL"
   export E2E_ADB="$ADB"
 
-  # Encrypted prefs or keystore-fallback file after establishFromWebToken.
-  local session_prefs=""
-  if adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session.xml >/dev/null 2>&1; then
-    session_prefs="getline_native_session.xml"
-  elif adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session_fallback.xml >/dev/null 2>&1; then
-    session_prefs="getline_native_session_fallback.xml"
-  fi
-  if [[ -n "$session_prefs" ]]; then
-    ok "native session prefs present after login ($session_prefs)"
-  else
-    fail "bug3: neither getline_native_session.xml nor _fallback.xml after Google login"
+  local session_prefs="getline_native_session.xml"
+  if ! adb_s shell run-as "$PACKAGE" ls "shared_prefs/$session_prefs" >/dev/null 2>&1; then
+    fail "security: encrypted native session prefs missing after Google login"
     return 1
   fi
-  if [[ "$REQUIRE_ENCRYPTED_SESSION_PREFS" == "1" &&
-    "$session_prefs" != "getline_native_session.xml" ]]; then
-    fail "security: clean run used plaintext fallback session prefs"
+  ok "encrypted native session prefs present after login"
+  if adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session_fallback.xml >/dev/null 2>&1; then
+    fail "security: legacy plaintext fallback session prefs exist after login"
     return 1
-  fi
-  if [[ "$session_prefs" == "getline_native_session_fallback.xml" ]]; then
-    yellow "NOTE supported plaintext fallback session store is active"
   fi
 
   # Soft check: refresh_token key present (encrypted values not readable as plain).
@@ -693,18 +672,14 @@ flow_persistence() {
       fail "persistence: E2E Plan missing after relaunch (texts: $(echo "$texts" | tr '\n' ' ' | head -c 200))"
     fi
   fi
-  # Default clean-emulator run is also a keystore regression gate. A deliberate
-  # fallback test can set REQUIRE_ENCRYPTED_SESSION_PREFS=0.
+  # Every run is a keystore regression gate. Plaintext fallback is never supported.
   if adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session.xml >/dev/null 2>&1; then
     ok "encrypted native session prefs present"
-  elif adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session_fallback.xml >/dev/null 2>&1; then
-    if [[ "$REQUIRE_ENCRYPTED_SESSION_PREFS" == "1" ]]; then
-      fail "persistence security: clean run used plaintext fallback session prefs"
-    else
-      ok "fallback native session prefs present (explicitly allowed)"
-    fi
   else
-    fail "persistence: session prefs missing (neither encrypted nor fallback; run-as failed?)"
+    fail "persistence: encrypted session prefs missing"
+  fi
+  if adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session_fallback.xml >/dev/null 2>&1; then
+    fail "persistence security: legacy plaintext fallback session prefs exist"
   fi
 }
 
@@ -798,11 +773,10 @@ flow_background_death() {
   fi
 }
 
-# `install -r` keeps the data directory. The failure this guards is silent: the
-# session store lands on the plaintext fallback file, reads it empty, and the
-# user is asked to sign in again with nothing in the UI saying why. The
-# startup_route breadcrumb carries exactly the evidence needed to tell that apart
-# from a genuinely empty session.
+# `install -r` keeps the data directory. The failure this guards is silent loss
+# of the encrypted session or reintroduction of a second backing store. The
+# startup_route breadcrumb carries the evidence needed to distinguish that from
+# a genuinely empty session.
 #
 # The same APK is reinstalled on purpose: the failure is about surviving a
 # replace, not about a migration between two versions — there are none.
@@ -867,11 +841,15 @@ flow_reinstall() {
   assert_route_token "$route" "dest=home" || return 1
   assert_route_token "$route" "session=1" || return 1
   assert_route_token "$route" "managed=1" || return 1
-  # A forked store reads empty and is indistinguishable from a wiped session
-  # in the UI; prefs_other is the only place it shows.
-  assert_route_token "$route" "prefs_other=0" || return 1
-  if [[ "$REQUIRE_ENCRYPTED_SESSION_PREFS" == "1" ]]; then
-    assert_route_token "$route" "prefs=enc" || return 1
+  if adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session.xml >/dev/null 2>&1; then
+    ok "encrypted native session prefs survived reinstall"
+  else
+    fail "security: encrypted native session prefs missing after reinstall"
+    return 1
+  fi
+  if adb_s shell run-as "$PACKAGE" ls shared_prefs/getline_native_session_fallback.xml >/dev/null 2>&1; then
+    fail "security: legacy plaintext fallback session prefs survived reinstall"
+    return 1
   fi
 
   local profiles_after
@@ -897,7 +875,7 @@ main() {
   resolve_serial
   export E2E_SERIAL="$SERIAL"
   export E2E_ADB="$ADB"
-  echo "SERIAL=$SERIAL PACKAGE=$PACKAGE ADB=$ADB SUB_LINK_URL=$SUB_LINK_URL REQUIRE_ENCRYPTED_SESSION_PREFS=$REQUIRE_ENCRYPTED_SESSION_PREFS"
+  echo "SERIAL=$SERIAL PACKAGE=$PACKAGE ADB=$ADB SUB_LINK_URL=$SUB_LINK_URL"
   chrome_note
 
   if ! install_fresh; then

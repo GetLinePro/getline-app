@@ -156,12 +156,11 @@ class StartupRoutingPolicyTest {
 
     /**
      * A failed store read leaves every flag at its default `false`. Those defaults
-     * must not be mistaken for a proven-empty session: the backend still gets
-     * asked, and the breadcrumb still carries `storeOk = false` so the reading of
-     * the line is not ambiguous.
+     * must not be mistaken for a proven-empty session or sent into code that will
+     * reopen the same broken store without a recovery UI.
      */
     @Test
-    fun failedStoreRead_stillAsksTheBackend_andKeepsTheUncertaintyVisible() = runBlocking {
+    fun failedStoreRead_opensRecoverableStorageError_withoutAskingBackend() = runBlocking {
         val probe = Probe(
             snapshot = SessionRoutingSnapshot(storeOk = false),
             imported = GetLineBackendResult.Success(true),
@@ -169,9 +168,9 @@ class StartupRoutingPolicyTest {
 
         val route = StartupRoutingPolicy.decide(false, probe::snapshot, probe::imported)
 
-        assertEquals(LaunchTarget.Home, route.target)
-        assertEquals("has_import", route.reason)
-        assertEquals(1, probe.backendCalls)
+        assertEquals(LaunchTarget.Onboarding, route.target)
+        assertEquals("session_storage_unavailable", route.reason)
+        assertEquals(0, probe.backendCalls)
         assertFalse(route.snapshot!!.storeOk)
     }
 

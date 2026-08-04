@@ -20,9 +20,11 @@ internal data class SessionRoutingSnapshot(
     val hasSession: Boolean = false,
     val hasManagedProfile: Boolean = false,
     val hasPendingImport: Boolean = false,
-    /** Which pref file backed the store: enc|fallback|na. */
+    /** Encrypted session was unreadable and was reset once during this launch. */
+    val sessionStorageRecovered: Boolean = false,
+    /** Usable encrypted backend: enc|na. */
     val prefsBackend: String = "na",
-    /** The pref file the store did not open exists on disk: 1|0|na. */
+    /** Legacy plaintext pref file still exists on disk: 1|0|na. */
     val prefsOther: String = "na",
     /** Non-keyset entries physically in the backing file; -1 unparsable, na unread. */
     val prefsRaw: String = "na",
@@ -74,6 +76,16 @@ internal object StartupRoutingPolicy {
         }
 
         val snapshot = readSnapshot()
+
+        // Do not open Home/Onboarding flows that immediately construct the same
+        // broken store and crash. Onboarding owns the explicit retry UI.
+        if (!snapshot.storeOk) {
+            return LaunchRoute(
+                target = LaunchTarget.Onboarding,
+                reason = "session_storage_unavailable",
+                snapshot = snapshot,
+            )
+        }
 
         // In-flight durable import (first-time or UseAccount) resumes on Onboarding.
         // Checked before managed-profile → Home so a mid-import cold start does not

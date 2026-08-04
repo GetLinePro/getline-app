@@ -152,6 +152,10 @@
     <string name="get_line_state_import_failed_explanation">Check that the subscription link is correct, then try the import again.</string>
     <string name="get_line_state_auth_failed_title">Couldn’t sign in</string>
     <string name="get_line_state_auth_failed_explanation">Sign-in did not complete. Try again, or add a subscription link.</string>
+    <string name="get_line_state_session_storage_recovered_title">Sign in again</string>
+    <string name="get_line_state_session_storage_recovered_explanation">The secure session could not be read and was removed. Your VPN profile was not deleted.</string>
+    <string name="get_line_state_session_storage_unavailable_title">Secure storage is unavailable</string>
+    <string name="get_line_state_session_storage_unavailable_explanation">Restart the device and try again. The app will not save your session without encryption.</string>
     <string name="get_line_state_auth_email_entry_title">Sign in with email</string>
     <string name="get_line_state_auth_email_entry_explanation">Enter the email for your GetLine Pro account. We’ll send a one-time login code.</string>
     <string name="get_line_state_auth_email_otp_sent_title">Enter the code from your email</string>

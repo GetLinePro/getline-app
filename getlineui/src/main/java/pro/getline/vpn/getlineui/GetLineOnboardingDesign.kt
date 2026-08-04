@@ -504,7 +504,9 @@ class GetLineOnboardingDesign(context: Context) :
             GetLineProductState.Offline,
             GetLineProductState.BackendUnavailable,
             GetLineProductState.ImportFailed,
-            GetLineProductState.AuthFailed -> GetLineRecoveryAction.Retry
+            GetLineProductState.AuthFailed,
+            GetLineProductState.SessionStorageUnavailable -> GetLineRecoveryAction.Retry
+            GetLineProductState.SessionStorageRecovered,
             GetLineProductState.NoProfile -> GetLineRecoveryAction.None
             // Home-only repair; onboarding never shows these states.
             GetLineProductState.ConnectionRepairFailed,
@@ -549,6 +551,7 @@ class GetLineOnboardingDesign(context: Context) :
             GetLineProductState.NoProfile,
             GetLineProductState.Offline,
             GetLineProductState.AuthFailed,
+            GetLineProductState.SessionStorageRecovered,
             GetLineProductState.ImportFailed,
             GetLineProductState.BackendUnavailable -> true
             else -> false
@@ -591,6 +594,7 @@ class GetLineOnboardingDesign(context: Context) :
             GetLineProductState.AuthEmailEntry,
             GetLineProductState.AuthEmailOtpSent,
             GetLineProductState.AuthFailed,
+            GetLineProductState.SessionStorageRecovered,
             GetLineProductState.AuthInvalidOtp,
             GetLineProductState.AuthOtpExpired,
             GetLineProductState.AuthEmailDomainNotAllowed,

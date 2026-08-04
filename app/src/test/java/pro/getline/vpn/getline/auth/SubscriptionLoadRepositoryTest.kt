@@ -152,7 +152,7 @@ class SubscriptionLoadRepositoryTest {
     @Test
     fun loadSubscriptionForUi_noSession_signedOut() = runBlocking {
         val api = FakeAuthApi()
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         val repo = GetLineSessionRepository(api, store)
 
@@ -482,7 +482,7 @@ class SubscriptionLoadRepositoryTest {
     }
 
     private fun seededStore(): GetLineSessionStore {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.saveSession(
             NativeSession(

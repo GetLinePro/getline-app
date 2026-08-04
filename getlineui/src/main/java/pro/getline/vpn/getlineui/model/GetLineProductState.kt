@@ -54,6 +54,16 @@ enum class GetLineProductState(
         R.string.get_line_state_auth_failed_title,
         R.string.get_line_state_auth_failed_explanation,
     ),
+    /** Damaged encrypted session was removed; providers remain available. */
+    SessionStorageRecovered(
+        R.string.get_line_state_session_storage_recovered_title,
+        R.string.get_line_state_session_storage_recovered_explanation,
+    ),
+    /** Encrypted storage still cannot be opened after one safe reset attempt. */
+    SessionStorageUnavailable(
+        R.string.get_line_state_session_storage_unavailable_title,
+        R.string.get_line_state_session_storage_unavailable_explanation,
+    ),
     /** Email step: enter address to request a login code. */
     AuthEmailEntry(
         R.string.get_line_state_auth_email_entry_title,

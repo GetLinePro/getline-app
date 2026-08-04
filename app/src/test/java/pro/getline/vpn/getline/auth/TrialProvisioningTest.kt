@@ -184,7 +184,7 @@ class TrialProvisioningTest {
     }
 
     private fun seededStore(): GetLineSessionStore {
-        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.saveSession(
             NativeSession(

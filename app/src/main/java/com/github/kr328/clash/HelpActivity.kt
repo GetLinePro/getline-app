@@ -29,7 +29,9 @@ class HelpActivity : BaseActivity<HelpDesign>() {
                     // Keystore + EncryptedSharedPreferences only when the user asks —
                     // not on every Help open (main thread).
                     val hasSession = withContext(Dispatchers.IO) {
-                        GetLineSessionStore(this@HelpActivity).hasRefreshToken()
+                        runCatching {
+                            GetLineSessionStore(this@HelpActivity).hasRefreshToken()
+                        }.getOrDefault(false)
                     }
                     DiagnosticReportShare.present(
                         activity = this@HelpActivity,
