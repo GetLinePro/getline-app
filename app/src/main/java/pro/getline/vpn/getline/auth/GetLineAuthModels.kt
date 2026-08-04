@@ -81,11 +81,26 @@ data class SubscriptionsResponse(
     val autopayAvailable: Boolean,
     val subscriptions: List<SubscriptionItem>,
 ) {
-    fun selectPreferred(): SubscriptionItem? {
-        if (subscriptions.isEmpty()) return null
-        subscriptions.firstOrNull { !it.subscriptionLink.isNullOrBlank() && it.isPrimary }
-            ?.let { return it }
-        return subscriptions.firstOrNull { !it.subscriptionLink.isNullOrBlank() }
+    /**
+     * First primary subscription with a usable link, else the first usable one.
+     *
+     * [isUsable] filters candidates *during* selection rather than after it.
+     * The import path passes the environment allowlist: otherwise a first
+     * primary whose link is malformed or points at another environment wins the
+     * selection, fails the check that follows, and takes a perfectly good second
+     * subscription down with it — the whole login ends in ImportFailed while the
+     * account has a working subscription.
+     *
+     * UI callers keep the default. A subscription the app cannot import is still
+     * the user's subscription and has to stay on screen.
+     */
+    fun selectPreferred(
+        isUsable: (SubscriptionItem) -> Boolean = { true },
+    ): SubscriptionItem? {
+        val candidates = subscriptions.filter {
+            !it.subscriptionLink.isNullOrBlank() && isUsable(it)
+        }
+        return candidates.firstOrNull { it.isPrimary } ?: candidates.firstOrNull()
     }
 }
 

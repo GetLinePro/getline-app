@@ -98,6 +98,36 @@ class AuthCallbackParserTest {
         }
     }
 
+    /**
+     * The path the launcher registers with the Auth Tab and the path the parser
+     * accepts are two constants in two files. If they drift, the browser hands
+     * the callback back and the app rejects it — sign-in dies with no server
+     * involved, and nothing in the log says the two disagreed.
+     */
+    @Test
+    fun parse_acceptsExactlyTheLauncherRedirectPath() {
+        val uri = Uri.parse(
+            "https://${AppEnvironment.callbackHost}${BrowserAuthLauncher.REDIRECT_PATH}" +
+                "#/login?auth_token=contract-token&expires_in=60",
+        )
+
+        assertEquals("contract-token", AuthCallbackParser.parse(uri).authToken)
+    }
+
+    @Test
+    fun parse_otherPathOnTheCallbackHost_rejected() {
+        val uri = Uri.parse(
+            "https://${AppEnvironment.callbackHost}/auth/callback" +
+                "#/login?auth_token=token&expires_in=60",
+        )
+        try {
+            AuthCallbackParser.parse(uri)
+            fail("expected InvalidCallback")
+        } catch (_: GetLineAuthException.InvalidCallback) {
+            // expected
+        }
+    }
+
     @Test
     fun parse_nullUri_rejected() {
         try {

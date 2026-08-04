@@ -63,6 +63,92 @@ class SubscriptionLoadRepositoryTest {
         assertEquals(okLink, item.subscriptionLink)
     }
 
+    /**
+     * A first primary the app cannot import must not veto the account. The link
+     * check used to run after selection, so this shape ended the whole login in
+     * ImportFailed while a working subscription sat one element further down.
+     */
+    @Test
+    fun loadPreferredSubscription_skipsUnusablePrimary_andImportsTheWorkingOne() =
+        runBlocking {
+            val api = FakeAuthApi(
+                subscriptions = SubscriptionsResponse(
+                    false,
+                    listOf(
+                        item(id = "1", primary = true, link = foreignEnvironmentLink()),
+                        item(id = "2", primary = false, link = "not-a-url"),
+                        item(id = "3", primary = false, link = environmentLink()),
+                    ),
+                ),
+            )
+            val repo = GetLineSessionRepository(api, seededStore())
+
+            val selected = repo.loadPreferredSubscription()
+
+            assertEquals("3", selected.id)
+            assertEquals(environmentLink(), selected.subscriptionLink)
+        }
+
+    /**
+     * When nothing is importable the failure must still say *why*. "host not
+     * allowed for this environment" is the line that told us a prod build had
+     * been handed a stage link; the generic message would have hidden it.
+     */
+    @Test
+    fun loadPreferredSubscription_reportsTheRejectionReason_notJustAbsence() = runBlocking {
+        val api = FakeAuthApi(
+            subscriptions = SubscriptionsResponse(
+                false,
+                listOf(item(id = "1", primary = true, link = foreignEnvironmentLink())),
+            ),
+        )
+        val repo = GetLineSessionRepository(api, seededStore())
+
+        try {
+            repo.loadPreferredSubscription()
+            fail("must reject a subscription from another environment")
+        } catch (e: GetLineAuthException.Protocol) {
+            assertTrue(
+                "unexpected message: ${e.message}",
+                e.message.orEmpty().contains("host not allowed"),
+            )
+        }
+    }
+
+    @Test
+    fun loadPreferredSubscription_noLinkAtAll_keepsTheGenericMessage() = runBlocking {
+        val api = FakeAuthApi(
+            subscriptions = SubscriptionsResponse(
+                false,
+                listOf(item(id = "1", primary = true, link = null)),
+            ),
+        )
+        val repo = GetLineSessionRepository(api, seededStore())
+
+        try {
+            repo.loadPreferredSubscription()
+            fail("must fail when there is nothing to import")
+        } catch (e: GetLineAuthException.Protocol) {
+            assertEquals("No subscription with import URL", e.message)
+        }
+    }
+
+    /** Importable in this flavor. */
+    private fun environmentLink(): String =
+        if (pro.getline.vpn.GetLineControlPlaneHostPolicy.isE2e) {
+            "https://app.stage.getline.pro/sub/e2e"
+        } else {
+            "https://app.getline.pro/sub/user"
+        }
+
+    /** Well-formed https, but belongs to the other flavor's environment. */
+    private fun foreignEnvironmentLink(): String =
+        if (pro.getline.vpn.GetLineControlPlaneHostPolicy.isE2e) {
+            "https://app.getline.pro/sub/real"
+        } else {
+            "https://app.stage.getline.pro/sub/e2e"
+        }
+
     @Test
     fun loadSubscriptionForUi_noSession_signedOut() = runBlocking {
         val api = FakeAuthApi()

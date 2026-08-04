@@ -15,6 +15,22 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
+
+      # Unit tests and the native build share one standard hosted-runner disk.
+      # Keep the Android SDK/NDK, Java and Go; remove only preinstalled stacks
+      # this Android job never uses. This is the same proven budget relief as
+      # the signed release workflow.
+      - name: Free runner disk space
+        # Under act, docker prune would target the developer's Docker host.
+        if: ${{ !env.ACT }}
+        run: |
+          set -euo pipefail
+          echo "before:"; df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      /opt/hostedtoolcache/CodeQL || true
+          sudo docker system prune --all --force >/dev/null 2>&1 || true
+          sudo apt-get clean
+          echo "after:"; df -h / | tail -1
       
       - name: Checkout submodules
         run: git submodule update --init --recursive --force
@@ -67,7 +83,10 @@ jobs:
       # regression fails here in about a minute instead of after the ABI builds.
       - name: Unit tests
         if: success()
-        run: ./gradlew --no-daemon app:testAlphaProdReleaseUnitTest
+        run: |
+          df -h / | tail -1
+          ./gradlew --no-daemon app:testAlphaProdReleaseUnitTest
+          df -h / | tail -1
 
       - name: Build
         if: success()
@@ -78,7 +97,10 @@ jobs:
           # whole matrix — that is the escalation path for ABI-sensitive changes
           # (submodule bumps, cgo, build tags). docs/release-policy.md.
           ABI_ARGS: ${{ github.event_name == 'pull_request' && '-Pgetline.abis=arm64-v8a' || '' }}
-        run: ./gradlew --no-daemon $ABI_ARGS app:assembleAlphaProdRelease
+        run: |
+          df -h / | tail -1
+          ./gradlew --no-daemon $ABI_ARGS app:assembleAlphaProdRelease
+          df -h / | tail -1
           
       - name: Upload unsigned universal APK
         uses: actions/upload-artifact@v7

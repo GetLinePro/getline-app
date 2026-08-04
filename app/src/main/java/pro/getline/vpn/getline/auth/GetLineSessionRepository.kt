@@ -159,16 +159,18 @@ class GetLineSessionRepository(
         onProvisioningTrial: suspend () -> Unit = {},
     ): PreferredSubscriptionLoad {
         var response = getSubscriptionsAuthenticated()
-        var preferred = response.selectPreferred()
-        if (preferred == null && provisionTrialIfEmpty) {
+        // Trial provisioning still keys off "nothing to import at all", not off the
+        // allowlist: a rejected link means the account has a subscription, and
+        // asking the backend for a trial on top of it is not this call's business.
+        if (response.selectPreferred() == null && provisionTrialIfEmpty) {
             onProvisioningTrial()
             if (provisionTrial()) {
                 response = getSubscriptionsAuthenticated()
-                preferred = response.selectPreferred()
             }
         }
-        val selected = preferred
-            ?: throw GetLineAuthException.Protocol("No subscription with import URL")
+        val selected = response.selectPreferred(IMPORTABLE_SUBSCRIPTION)
+            ?: throwNoImportableSubscription(response)
+        // Enforcement point: selection only pre-filters, the allowlist is applied here.
         GetLineControlPlaneHostPolicy.requireSubscriptionUrl(selected.subscriptionLink)
         return PreferredSubscriptionLoad(
             preferred = selected,
@@ -467,4 +469,23 @@ internal fun isRejectedRefresh(code: Int, message: String?): Boolean {
     // body reaching this point is classified like an already-unwrapped one.
     val discriminator = RwpGetLineAuthApi.errorMessageOf(message.orEmpty()).trim()
     return discriminator.equals("invalid_grant", ignoreCase = true)
+}
+
+/** A candidate is importable only when its link passes the environment allowlist. */
+private val IMPORTABLE_SUBSCRIPTION: (SubscriptionItem) -> Boolean = {
+    GetLineControlPlaneHostPolicy.isAllowedSubscriptionUrl(it.subscriptionLink)
+}
+
+/**
+ * Nothing survived the allowlist. Report *why* when there was a link to reject:
+ * "host not allowed for this environment" is what separates a stage link on a
+ * prod build from an account that genuinely has no subscription, and that
+ * distinction is the whole content of the failure the user gets to send back.
+ */
+private fun throwNoImportableSubscription(response: SubscriptionsResponse): Nothing {
+    val rejected = response.selectPreferred()
+    if (rejected != null) {
+        GetLineControlPlaneHostPolicy.requireSubscriptionUrl(rejected.subscriptionLink)
+    }
+    throw GetLineAuthException.Protocol("No subscription with import URL")
 }

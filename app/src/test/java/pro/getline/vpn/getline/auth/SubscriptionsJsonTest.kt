@@ -122,6 +122,52 @@ class SubscriptionsJsonTest {
         assertEquals("2", response.selectPreferred()?.id)
     }
 
+    /**
+     * The import path filters candidates during selection. Without it the first
+     * primary wins on having *a* link, is rejected right after, and the working
+     * subscription behind it is never reached.
+     */
+    @Test
+    fun selectPreferred_skipsUnusablePrimary_andFallsThroughToTheNextOne() {
+        val unusablePrimary = sampleItem(id = "1", primary = true, link = "javascript:x")
+        val usable = sampleItem(id = "2", primary = false, link = "https://b")
+        val response = SubscriptionsResponse(false, listOf(unusablePrimary, usable))
+
+        assertEquals("2", response.selectPreferred(::looksImportable)?.id)
+        // Unfiltered selection is unchanged — the UI still shows the primary.
+        assertEquals("1", response.selectPreferred()?.id)
+    }
+
+    @Test
+    fun selectPreferred_stillPrefersPrimary_amongUsableCandidates() {
+        val usableSecondary = sampleItem(id = "1", primary = false, link = "https://a")
+        val unusableSecondary = sampleItem(id = "2", primary = false, link = "javascript:x")
+        val usablePrimary = sampleItem(id = "3", primary = true, link = "https://c")
+        val response = SubscriptionsResponse(
+            false,
+            listOf(usableSecondary, unusableSecondary, usablePrimary),
+        )
+
+        assertEquals("3", response.selectPreferred(::looksImportable)?.id)
+    }
+
+    @Test
+    fun selectPreferred_nullWhenNoCandidateIsUsable() {
+        val response = SubscriptionsResponse(
+            false,
+            listOf(
+                sampleItem(id = "1", primary = true, link = "javascript:x"),
+                sampleItem(id = "2", primary = false, link = "ftp://host/sub"),
+            ),
+        )
+
+        assertNull(response.selectPreferred(::looksImportable))
+    }
+
+    /** Stand-in for the host policy: this test pins selection, not the allowlist. */
+    private fun looksImportable(item: SubscriptionItem): Boolean =
+        item.subscriptionLink?.startsWith("https://") == true
+
     @Test
     fun selectPreferred_emptyWhenNoLinks() {
         val response = SubscriptionsResponse(
