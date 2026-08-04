@@ -19,21 +19,28 @@ data class NativeSession(
 )
 
 /**
- * Trial-relevant slice of GET /api/dashboard.
+ * Trial / free-plan decision slice of GET /api/dashboard.
  *
- * That endpoint is not a read: it is what provisions the trial subscription on a
- * fresh account, which is why the app must call it once per login. Verified
- * 2026-07-31 against production — `subscriptions` was empty before the call and
- * held one item with a working `subscription_link` right after.
+ * On prod (probed 2026-07-31 and 2026-08-04) a first GET for a fresh account can
+ * still auto-create a trial and set [trialAutoActivated]. OpenAPI 6.8.0 documents
+ * activation as POST /api/dashboard/trial instead. Treat this GET as a possible
+ * mutation: never call it before the user confirms trial activation.
  *
- * [trialAutoActivated] is the server reporting "activated during this request",
- * not "can be activated"; the web SPA renders its confirmation dialog from it.
+ * [trialDays] and eligibility flags are only known from a dashboard response; a
+ * mutating first response is already post-activate, so pre-tap UI must not show
+ * a day count or claim trial availability.
+ *
+ * [trialAutoActivated] means "activated during this request", not "can be activated".
  */
 data class DashboardInfo(
     val trialEnabled: Boolean,
     val trialAvailable: Boolean,
     val trialAutoActivated: Boolean,
     val trialDays: Int?,
+    val trialPaid: Boolean = false,
+    val trialRecurringOnly: Boolean = false,
+    val freePlanEnabled: Boolean = false,
+    val freePlanAvailable: Boolean = false,
 )
 
 data class SubscriptionTraffic(
@@ -142,6 +149,12 @@ sealed class GetLineAuthException(message: String) : Exception(message) {
     class InvalidOtp(message: String = "Invalid OTP") : GetLineAuthException(message)
 
     class OtpExpired(message: String = "OTP expired") : GetLineAuthException(message)
+
+    /**
+     * Authenticated GET /api/subscriptions succeeded with nothing importable
+     * (empty list or items without a usable link). Not a network/HTTP failure.
+     */
+    class NoSubscription : GetLineAuthException("No subscription with import URL")
 }
 
 /**

@@ -12,6 +12,7 @@ import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.design.R as DesignR
 import pro.getline.vpn.getlineui.GetLineOnboardingDesign
 import pro.getline.vpn.getlineui.R as GetLineUiR
+import pro.getline.vpn.getlineui.ToastDuration
 import pro.getline.vpn.getlineui.model.GetLineImportStage
 import pro.getline.vpn.getlineui.model.GetLineProductState
 import pro.getline.vpn.getline.GetLineBackendProvider
@@ -36,6 +37,9 @@ import pro.getline.vpn.getline.auth.GetLineSessionStorageException
 import pro.getline.vpn.getline.auth.LinkOnlyBindingPolicy
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
 import pro.getline.vpn.getline.auth.SubscriptionLinkMatcher
+import pro.getline.vpn.getline.accountportal.AccountPortalLaunchResult
+import pro.getline.vpn.getline.accountportal.AccountPortalUriPolicy
+import pro.getline.vpn.getline.accountportal.DefaultAccountPortalLauncher
 import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import kotlinx.coroutines.CancellationException
@@ -57,6 +61,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         )
     }
     private val browserAuthLauncher = BrowserAuthLauncher()
+    private val accountPortalLauncher = DefaultAccountPortalLauncher()
     private val imports = Channel<GetLineSubscriptionDraft>(Channel.UNLIMITED)
     private var busy = false
     private var retryTarget: RetryTarget = RetryTarget.Refresh
@@ -166,6 +171,11 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             }
                         }
                         retryTarget == RetryTarget.Refresh -> refreshEntryState(design)
+                        // Portal return / resume: re-read subscriptions without
+                        // re-running trial mutation (ActivateTrial stays the target
+                        // only for the explicit CTA / Offline Retry).
+                        retryTarget == RetryTarget.ActivateTrial ->
+                            resumePreferredSubscription(design)
                     }
                 }
                 design.requests.onReceive {
@@ -200,6 +210,10 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             startActivity(HelpActivity::class.intent)
                         GetLineOnboardingDesign.Request.Retry ->
                             retry(design)
+                        GetLineOnboardingDesign.Request.ActivateTrial ->
+                            activateTrialAndImport(design)
+                        GetLineOnboardingDesign.Request.OpenAccountPortal ->
+                            openAccountPortal(design)
                         GetLineOnboardingDesign.Request.SendDiagnostics ->
                             DiagnosticReportShare.present(
                                 activity = this@GetLineOnboardingActivity,
@@ -633,6 +647,12 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             return
         }
 
+        if (error is GetLineAuthException.NoSubscription) {
+            Log.i("post_session_no_subscription")
+            retryTarget = RetryTarget.ActivateTrial
+            design.setProductState(GetLineProductState.NoSubscription)
+            return
+        }
         logPostSessionSubscriptionFailed(error)
         retryTarget = RetryTarget.ImportPreferredSubscription
         design.setProductState(
@@ -754,20 +774,110 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
      * to import (preferred, or the list item matching a link-only source).
      * Requires an established session; does not touch tokens unless the user
      * keeps a link-only profile (session discarded, binding kept).
+     *
+     * Does not call dashboard or activate trial — empty list surfaces
+     * [GetLineProductState.NoSubscription] via [applyLoginFailure].
      */
     private suspend fun importPreferredSubscription(design: GetLineOnboardingDesign) {
+        val load = sessionRepository.loadPreferredSubscriptionWithList()
+        continueImportFromPreferredLoad(design, load)
+    }
+
+    /**
+     * Explicit trial CTA: GET dashboard (prod may auto-activate), optional POST
+     * /api/dashboard/trial, then import. Never runs without a user tap.
+     */
+    private suspend fun activateTrialAndImport(design: GetLineOnboardingDesign) {
+        if (busy) return
+        retryTarget = RetryTarget.ActivateTrial
+        if (!sessionRepository.hasSession()) {
+            refreshEntryState(design)
+            return
+        }
+        if (!hasValidatedInternetConnection()) {
+            design.setProductState(GetLineProductState.Offline)
+            return
+        }
+
+        busy = true
+        design.setProductState(GetLineProductState.Loading)
+        try {
+            design.setImportStage(GetLineImportStage.ActivatingTrial)
+            when (val result = sessionRepository.activateTrialAndLoadPreferred()) {
+                is GetLineSessionRepository.TrialActivationResult.Ready -> {
+                    continueImportFromPreferredLoad(design, result.load)
+                }
+                is GetLineSessionRepository.TrialActivationResult.Unavailable -> {
+                    val d = result.dashboard
+                    Log.i(
+                        "trial_unavailable enabled=${d.trialEnabled} " +
+                            "available=${d.trialAvailable} paid=${d.trialPaid} " +
+                            "recurring_only=${d.trialRecurringOnly} " +
+                            "free_plan_enabled=${d.freePlanEnabled} " +
+                            "free_plan_available=${d.freePlanAvailable}",
+                    )
+                    retryTarget = RetryTarget.ActivateTrial
+                    design.setProductState(GetLineProductState.TrialUnavailable)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: GetLineAuthException.NoSubscription) {
+            // Trial mutation may have succeeded while the reread is still empty
+            // or the link failed allowlist — do not re-activate (would hit
+            // TrialUnavailable). Retry only re-reads subscriptions.
+            Log.w("trial_activate reread_empty")
+            retryTarget = RetryTarget.ImportPreferredSubscription
+            design.setProductState(
+                if (hasValidatedInternetConnection()) {
+                    GetLineProductState.ImportFailed
+                } else {
+                    GetLineProductState.Offline
+                },
+            )
+        } catch (e: GetLineAuthException) {
+            applyLoginFailure(design, RetryTarget.ActivateTrial, e)
+        } catch (e: Exception) {
+            applyLoginFailure(design, RetryTarget.ActivateTrial, e)
+        } finally {
+            busy = false
+        }
+    }
+
+    private suspend fun openAccountPortal(design: GetLineOnboardingDesign) {
+        val uri = try {
+            AccountPortalUriPolicy.dashboardUri()
+        } catch (_: Exception) {
+            Log.w("account_portal_launch outcome=rejected_uri")
+            design.showToast(
+                GetLineUiR.string.get_line_account_portal_open_failed_title,
+                ToastDuration.Long,
+            )
+            return
+        }
+        when (accountPortalLauncher.open(this, uri)) {
+            AccountPortalLaunchResult.Launched,
+            AccountPortalLaunchResult.AlreadyInProgress -> Unit
+            AccountPortalLaunchResult.NoBrowserAvailable,
+            AccountPortalLaunchResult.RejectedUri,
+            is AccountPortalLaunchResult.Failed -> {
+                Log.w("account_portal_launch outcome=failed")
+                design.showToast(
+                    GetLineUiR.string.get_line_account_portal_open_failed_title,
+                    ToastDuration.Long,
+                )
+            }
+        }
+    }
+
+    private suspend fun continueImportFromPreferredLoad(
+        design: GetLineOnboardingDesign,
+        load: GetLineSessionRepository.PreferredSubscriptionLoad,
+    ) {
         // Capture prior selection before loading; load does not overwrite store.
         val previousSubscriptionId = sessionRepository.rememberedSubscriptionId()
         val managedUuid = sessionRepository.managedProfileUuid()
         val managedSource = sessionRepository.managedProfileSource()
-
-        val load = sessionRepository.loadPreferredSubscriptionWithList(
-            // Fresh accounts have no subscription until GET /api/dashboard makes one.
-            provisionTrialIfEmpty = true,
-            onProvisioningTrial = {
-                design.setImportStage(GetLineImportStage.ActivatingTrial)
-            },
-        )
         val all = load.all
 
         val linkOnly = LinkOnlyBindingPolicy.isLinkOnlyBinding(
@@ -1110,6 +1220,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 completeFromWebToken(design, target.webToken)
             RetryTarget.ImportPreferredSubscription ->
                 resumePreferredSubscription(design)
+            RetryTarget.ActivateTrial ->
+                activateTrialAndImport(design)
             is RetryTarget.ImportSubscription ->
                 importSubscription(
                     design = design,
@@ -1324,6 +1436,11 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
          * Retry resumes from the session — no browser auth, no new device key.
          */
         object ImportPreferredSubscription : RetryTarget()
+        /**
+         * Session exists; subscriptions were empty. User confirmed free-trial
+         * activation (or Retry after a failed activation attempt).
+         */
+        object ActivateTrial : RetryTarget()
         data class ImportSubscription(
             val request: GetLineSubscriptionDraft,
             val reuseId: GetLineSubscriptionId? = null,

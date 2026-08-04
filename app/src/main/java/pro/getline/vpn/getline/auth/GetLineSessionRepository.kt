@@ -55,32 +55,6 @@ class GetLineSessionRepository(
         return session
     }
 
-    /**
-     * GET /api/dashboard: on a fresh account this call is what creates the trial
-     * subscription, so an account with none needs it before there is anything to
-     * import. Only called when the subscription list came back empty — returning
-     * users must not pay for a request that can only tell them what they have.
-     *
-     * Best-effort: a failure here must not fail the login it is part of.
-     *
-     * @return true when the server reports it activated a trial during this call.
-     */
-    private suspend fun provisionTrial(): Boolean {
-        val info = try {
-            api.getDashboard(validAccessToken())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w("trial_provision failed kind=${e::class.simpleName}")
-            return false
-        }
-        Log.i(
-            "trial_provision auto_activated=${info.trialAutoActivated} " +
-                "available=${info.trialAvailable} enabled=${info.trialEnabled}",
-        )
-        return info.trialAutoActivated
-    }
-
     suspend fun validAccessToken(): String {
         if (store.isAccessTokenValid()) {
             return store.accessToken
@@ -113,12 +87,22 @@ class GetLineSessionRepository(
 
     /**
      * Preferred subscription plus the full list from the same round-trip.
-     * On the trial path the list is read twice; the second response is kept.
      */
     data class PreferredSubscriptionLoad(
         val preferred: SubscriptionItem,
         val all: List<SubscriptionItem>,
     )
+
+    /**
+     * Outcome of explicit trial activation (user confirmed).
+     * [loadSubscriptionForUi] never enters this path.
+     */
+    sealed class TrialActivationResult {
+        data class Ready(val load: PreferredSubscriptionLoad) : TrialActivationResult()
+
+        /** Dashboard ran; free trial is not available to activate. */
+        data class Unavailable(val dashboard: DashboardInfo) : TrialActivationResult()
+    }
 
     /**
      * Loads preferred subscription for profile import.
@@ -131,43 +115,54 @@ class GetLineSessionRepository(
      * allowlist: the link host is RWP's, not ours.
      * Does not restrict manual user-entered import URLs outside this path.
      *
-     * @param provisionTrialIfEmpty when the list comes back with nothing to
-     *   import, run [provisionTrial] and read the list once more. Login passes
-     *   true — a fresh account has no subscription until that call creates one.
-     *   Repair paths leave it false: they run for users who already had one.
-     * @param onProvisioningTrial invoked before the extra round trip so the UI
-     *   can explain the pause. Not called when the first read already succeeded.
+     * Does **not** call dashboard or activate trial. Empty importable list throws
+     * [GetLineAuthException.NoSubscription] so the UI can offer explicit activation.
      */
-    suspend fun loadPreferredSubscription(
-        provisionTrialIfEmpty: Boolean = false,
-        onProvisioningTrial: suspend () -> Unit = {},
-    ): SubscriptionItem {
-        return loadPreferredSubscriptionWithList(
-            provisionTrialIfEmpty = provisionTrialIfEmpty,
-            onProvisioningTrial = onProvisioningTrial,
-        ).preferred
+    suspend fun loadPreferredSubscription(): SubscriptionItem {
+        return loadPreferredSubscriptionWithList().preferred
     }
 
     /**
      * Same as [loadPreferredSubscription] but returns the full subscriptions list
-     * from the last successful read (second read after trial provisioning).
-     * List items are not host-validated — only [PreferredSubscriptionLoad.preferred]
-     * is checked before import.
+     * from the successful read. List items are not host-validated — only
+     * [PreferredSubscriptionLoad.preferred] is checked before import.
      */
-    suspend fun loadPreferredSubscriptionWithList(
-        provisionTrialIfEmpty: Boolean = false,
-        onProvisioningTrial: suspend () -> Unit = {},
-    ): PreferredSubscriptionLoad {
-        var response = getSubscriptionsAuthenticated()
-        // Trial provisioning still keys off "nothing to import at all", not off the
-        // allowlist: a rejected link means the account has a subscription, and
-        // asking the backend for a trial on top of it is not this call's business.
-        if (response.selectPreferred() == null && provisionTrialIfEmpty) {
-            onProvisioningTrial()
-            if (provisionTrial()) {
-                response = getSubscriptionsAuthenticated()
-            }
+    suspend fun loadPreferredSubscriptionWithList(): PreferredSubscriptionLoad {
+        val response = getSubscriptionsAuthenticated()
+        return preferredLoadFrom(response)
+    }
+
+    /**
+     * User-confirmed trial path: GET dashboard (may auto-activate on current prod),
+     * then optional POST /api/dashboard/trial when still available, then reread
+     * subscriptions for import.
+     */
+    suspend fun activateTrialAndLoadPreferred(): TrialActivationResult {
+        val info = api.getDashboard(validAccessToken())
+        Log.i(
+            "trial_activate auto_activated=${info.trialAutoActivated} " +
+                "available=${info.trialAvailable} enabled=${info.trialEnabled} " +
+                "paid=${info.trialPaid} recurring_only=${info.trialRecurringOnly}",
+        )
+        if (info.trialAutoActivated) {
+            return TrialActivationResult.Ready(loadPreferredSubscriptionWithList())
         }
+        if (canPostFreeTrial(info)) {
+            api.activateTrial(validAccessToken())
+            Log.i("trial_activate post_trial ok")
+            return TrialActivationResult.Ready(loadPreferredSubscriptionWithList())
+        }
+        return TrialActivationResult.Unavailable(info)
+    }
+
+    private fun canPostFreeTrial(info: DashboardInfo): Boolean {
+        return info.trialEnabled &&
+            info.trialAvailable &&
+            !info.trialPaid &&
+            !info.trialRecurringOnly
+    }
+
+    private fun preferredLoadFrom(response: SubscriptionsResponse): PreferredSubscriptionLoad {
         val selected = response.selectPreferred(IMPORTABLE_SUBSCRIPTION)
             ?: throwNoImportableSubscription(response)
         // Enforcement point: selection only pre-filters, the allowlist is applied here.
@@ -495,7 +490,8 @@ private val IMPORTABLE_SUBSCRIPTION: (SubscriptionItem) -> Boolean = {
 private fun throwNoImportableSubscription(response: SubscriptionsResponse): Nothing {
     val rejected = response.selectPreferred()
     if (rejected != null) {
+        // Has a link but failed the environment allowlist — keep the host reason.
         GetLineControlPlaneHostPolicy.requireSubscriptionUrl(rejected.subscriptionLink)
     }
-    throw GetLineAuthException.Protocol("No subscription with import URL")
+    throw GetLineAuthException.NoSubscription()
 }

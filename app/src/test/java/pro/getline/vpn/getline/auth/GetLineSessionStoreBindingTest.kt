@@ -221,6 +221,7 @@ class GetLineSessionStoreBindingTest {
             override suspend fun refresh(refreshToken: String) = error("n/a")
             override suspend fun getSubscriptions(accessToken: String) = error("n/a")
             override suspend fun getDashboard(accessToken: String) = error("n/a")
+            override suspend fun activateTrial(accessToken: String) = error("n/a")
         }, store)
 
         repo.discardSessionKeepingSubscription()

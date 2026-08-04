@@ -24,7 +24,10 @@ object DiagnosticReportBuilder {
         "auth_tab_result",
         "import_terminal",
         "import_waiter_cancelled",
-        "trial_provision",
+        "trial_activate",
+        "trial_unavailable",
+        "post_session_no_subscription",
+        "account_portal_launch",
         "subscription_ui",
         // Authenticated subscriptions 401 recovery; fixed outcomes/status only.
         "session_recovery",

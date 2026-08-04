@@ -148,6 +148,11 @@
     <string name="get_line_state_connection_restore_failed_explanation">Проверьте интернет и повторите попытку.</string>
     <string name="get_line_state_import_failed_title">Не удалось импортировать подписку</string>
     <string name="get_line_state_import_failed_explanation">Проверьте ссылку на подписку и повторите импорт.</string>
+    <string name="get_line_state_no_subscription_title">Подписки нет</string>
+    <string name="get_line_state_no_subscription_explanation">В этом аккаунте нет подписки для импорта. Можно активировать пробный период или открыть кабинет GetLine Pro, чтобы выбрать тариф.</string>
+    <string name="get_line_state_trial_unavailable_title">Пробный период недоступен</string>
+    <string name="get_line_state_trial_unavailable_explanation">Бесплатный пробный период для этого аккаунта недоступен. Откройте кабинет GetLine Pro, чтобы выбрать тариф.</string>
+    <string name="get_line_action_activate_trial">Активировать пробный период</string>
     <string name="get_line_state_auth_failed_title">Не удалось войти</string>
     <string name="get_line_state_auth_failed_explanation">Вход не завершён. Повторите попытку или добавьте ссылку на подписку.</string>
     <string name="get_line_state_session_storage_recovered_title">Войдите снова</string>

@@ -230,6 +230,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 GetLineRecoveryAction.OpenProfiles -> request(Request.OpenProfiles)
                 GetLineRecoveryAction.OpenAccount -> request(Request.OpenAccount)
                 GetLineRecoveryAction.SignIn -> request(Request.SignIn)
+                GetLineRecoveryAction.ActivateTrial,
+                GetLineRecoveryAction.OpenAccountPortal,
                 GetLineRecoveryAction.None -> Unit
             }
         }
@@ -244,6 +246,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                     request(Request.AddSubscription)
                 GetLineRecoveryAction.OpenProfiles -> request(Request.OpenProfiles)
                 GetLineRecoveryAction.OpenAccount -> request(Request.OpenAccount)
+                GetLineRecoveryAction.ActivateTrial,
+                GetLineRecoveryAction.OpenAccountPortal,
                 GetLineRecoveryAction.None -> Unit
             }
         }
@@ -1192,7 +1196,9 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             GetLineProductState.AuthNoAccount,
             GetLineProductState.AuthRateLimited,
             GetLineProductState.SessionStorageRecovered,
-            GetLineProductState.SessionStorageUnavailable -> GetLineRecoveryAction.None
+            GetLineProductState.SessionStorageUnavailable,
+            GetLineProductState.NoSubscription,
+            GetLineProductState.TrialUnavailable -> GetLineRecoveryAction.None
             GetLineProductState.NoProfile -> GetLineRecoveryAction.ImportSubscription
             GetLineProductState.ConnectionRepairFailed,
             GetLineProductState.ConnectionRestoreFailed -> GetLineRecoveryAction.Retry

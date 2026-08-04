@@ -151,6 +151,18 @@ class RwpGetLineAuthApi(
         return parseDashboard(json)
     }
 
+    override suspend fun activateTrial(accessToken: String) {
+        request(
+            method = "POST",
+            path = ACTIVATE_TRIAL_PATH,
+            bearer = accessToken,
+            body = null,
+            xhr = false,
+            includeBrowserOriginHeaders = false,
+            allowEmptyBody = true,
+        )
+    }
+
     private suspend fun authorizedGet(
         path: String,
         bearer: String,
@@ -331,6 +343,7 @@ class RwpGetLineAuthApi(
 
     companion object {
         const val DASHBOARD_PATH = "/api/dashboard"
+        const val ACTIVATE_TRIAL_PATH = "/api/dashboard/trial"
         const val EMAIL_SEND_OTP_PATH = "/api/auth/email/send-otp"
         const val EMAIL_VERIFY_OTP_PATH = "/api/auth/email/verify-otp"
         /**
@@ -410,9 +423,9 @@ class RwpGetLineAuthApi(
         }
 
         /**
-         * Tolerant by design: every field is optional. The call is made for its
-         * server-side effect (trial provisioning), so a payload we cannot fully
-         * read must not fail the login it is part of.
+         * Tolerant by design: every field is optional. Dashboard is called after
+         * the user confirms trial activation; a partially unreadable payload must
+         * not fail the flow when activation flags are still usable.
          */
         fun parseDashboard(json: JSONObject): DashboardInfo {
             val days = if (json.has("trial_days") && !json.isNull("trial_days")) {
@@ -425,6 +438,10 @@ class RwpGetLineAuthApi(
                 trialAvailable = json.optBoolean("trial_available"),
                 trialAutoActivated = json.optBoolean("trial_auto_activated"),
                 trialDays = days,
+                trialPaid = json.optBoolean("trial_paid"),
+                trialRecurringOnly = json.optBoolean("trial_recurring_only"),
+                freePlanEnabled = json.optBoolean("free_plan_enabled"),
+                freePlanAvailable = json.optBoolean("free_plan_available"),
             )
         }
 

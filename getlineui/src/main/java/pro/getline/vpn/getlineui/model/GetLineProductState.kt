@@ -50,6 +50,22 @@ enum class GetLineProductState(
         R.string.get_line_state_import_failed_title,
         R.string.get_line_state_import_failed_explanation,
     ),
+    /**
+     * Session ok; GET /api/subscriptions returned nothing importable.
+     * Distinct from [ImportFailed] (network/HTTP/host). Primary: activate trial.
+     */
+    NoSubscription(
+        R.string.get_line_state_no_subscription_title,
+        R.string.get_line_state_no_subscription_explanation,
+    ),
+    /**
+     * User confirmed trial activation; dashboard reported no free trial path.
+     * Primary: open account portal for plans.
+     */
+    TrialUnavailable(
+        R.string.get_line_state_trial_unavailable_title,
+        R.string.get_line_state_trial_unavailable_explanation,
+    ),
     AuthFailed(
         R.string.get_line_state_auth_failed_title,
         R.string.get_line_state_auth_failed_explanation,
@@ -110,7 +126,18 @@ enum class GetLineRecoveryAction(@StringRes val label: Int) {
     Retry(R.string.get_line_action_retry),
     ImportSubscription(R.string.get_line_add_existing_subscription),
     OpenProfiles(R.string.get_line_action_choose_profile),
+    /**
+     * Context-specific account entry: Home opens the web portal; onboarding
+     * SubscriptionExpired prefers Google sign-in (reachable without VPN).
+     */
     OpenAccount(R.string.get_line_action_open_account),
+    /**
+     * Explicit web account portal (Custom Tab). Onboarding trial empty-states
+     * only — not Home recovery (portal CTA lives on the Subscription tab).
+     */
+    OpenAccountPortal(R.string.get_line_action_open_account),
+    /** Explicit free-trial activation (may mutate via GET dashboard / POST trial). */
+    ActivateTrial(R.string.get_line_action_activate_trial),
     /** Opens existing GetLine onboarding/auth flow (Subscription signed-out). */
     SignIn(R.string.get_line_action_sign_in),
 }

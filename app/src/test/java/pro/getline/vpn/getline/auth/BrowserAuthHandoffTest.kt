@@ -113,7 +113,12 @@ class BrowserAuthHandoffTest {
 
         override suspend fun getDashboard(accessToken: String): DashboardInfo {
             calls += "dashboard"
-            throw UnsupportedOperationException("login must not provision a trial")
+            throw UnsupportedOperationException("login must not call dashboard")
+        }
+
+        override suspend fun activateTrial(accessToken: String) {
+            calls += "activate_trial"
+            throw UnsupportedOperationException("login must not activate trial")
         }
     }
 }

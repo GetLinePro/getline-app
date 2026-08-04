@@ -22,6 +22,7 @@ class GetLineStateView @JvmOverloads constructor(
         true,
     )
     private var recoveryAction = GetLineRecoveryAction.None
+    private var secondaryRecoveryAction = GetLineRecoveryAction.None
     private var onRecoveryAction: ((GetLineRecoveryAction) -> Unit)? = null
     private var onSendDiagnostics: (() -> Unit)? = null
 
@@ -36,6 +37,9 @@ class GetLineStateView @JvmOverloads constructor(
         )
         binding.action.setOnClickListener {
             onRecoveryAction?.invoke(recoveryAction)
+        }
+        binding.secondaryAction.setOnClickListener {
+            onRecoveryAction?.invoke(secondaryRecoveryAction)
         }
         binding.sendDiagnostics.setOnClickListener {
             onSendDiagnostics?.invoke()
@@ -54,21 +58,17 @@ class GetLineStateView @JvmOverloads constructor(
     fun render(
         state: GetLineProductState,
         action: GetLineRecoveryAction = GetLineRecoveryAction.None,
+        secondaryAction: GetLineRecoveryAction = GetLineRecoveryAction.None,
         showSendDiagnostics: Boolean = false,
     ) {
         visibility = if (state == GetLineProductState.Content) View.GONE else View.VISIBLE
         if (state == GetLineProductState.Content)
             return
 
-        recoveryAction = action
+        applyActions(action, secondaryAction)
         binding.title.setText(state.title)
         binding.explanation.setText(state.explanation)
         binding.progress.visibility = if (state.loading) View.VISIBLE else View.GONE
-        binding.action.visibility =
-            if (action == GetLineRecoveryAction.None) View.GONE else View.VISIBLE
-        if (action != GetLineRecoveryAction.None) {
-            binding.action.setText(action.label)
-        }
         binding.sendDiagnostics.visibility =
             if (showSendDiagnostics) View.VISIBLE else View.GONE
     }
@@ -82,20 +82,34 @@ class GetLineStateView @JvmOverloads constructor(
         @androidx.annotation.StringRes explanation: Int,
         loading: Boolean = false,
         action: GetLineRecoveryAction = GetLineRecoveryAction.None,
+        secondaryAction: GetLineRecoveryAction = GetLineRecoveryAction.None,
         showSendDiagnostics: Boolean = false,
     ) {
         visibility = View.VISIBLE
-        recoveryAction = action
+        applyActions(action, secondaryAction)
         binding.title.setText(title)
         binding.explanation.setText(explanation)
         binding.progress.visibility = if (loading) View.VISIBLE else View.GONE
+        binding.sendDiagnostics.visibility =
+            if (showSendDiagnostics) View.VISIBLE else View.GONE
+    }
+
+    private fun applyActions(
+        action: GetLineRecoveryAction,
+        secondaryAction: GetLineRecoveryAction,
+    ) {
+        recoveryAction = action
+        secondaryRecoveryAction = secondaryAction
         binding.action.visibility =
             if (action == GetLineRecoveryAction.None) View.GONE else View.VISIBLE
         if (action != GetLineRecoveryAction.None) {
             binding.action.setText(action.label)
         }
-        binding.sendDiagnostics.visibility =
-            if (showSendDiagnostics) View.VISIBLE else View.GONE
+        binding.secondaryAction.visibility =
+            if (secondaryAction == GetLineRecoveryAction.None) View.GONE else View.VISIBLE
+        if (secondaryAction != GetLineRecoveryAction.None) {
+            binding.secondaryAction.setText(secondaryAction.label)
+        }
     }
 
     fun hide() {

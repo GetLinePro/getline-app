@@ -45,6 +45,10 @@ class GetLineOnboardingDesign(context: Context) :
         /** Open existing HelpActivity (support links, about). */
         object OpenHelp : Request()
         object Retry : Request()
+        /** Explicit free-trial activation after empty subscriptions. */
+        object ActivateTrial : Request()
+        /** Open the account portal (plans / billing) in the browser. */
+        object OpenAccountPortal : Request()
         /** GL-19: local safe diagnostic report → preview → share. */
         object SendDiagnostics : Request()
     }
@@ -85,8 +89,12 @@ class GetLineOnboardingDesign(context: Context) :
                 GetLineRecoveryAction.Retry -> request(Request.Retry)
                 GetLineRecoveryAction.ImportSubscription ->
                     request(Request.AddExistingSubscription)
+                GetLineRecoveryAction.ActivateTrial -> request(Request.ActivateTrial)
+                GetLineRecoveryAction.OpenAccountPortal ->
+                    request(Request.OpenAccountPortal)
                 // Prefer Google: reachable without VPN; Telegram often is not.
-                GetLineRecoveryAction.OpenAccount -> request(Request.LoginGoogle)
+                // SubscriptionExpired uses OpenAccount → this path (not the portal).
+                GetLineRecoveryAction.OpenAccount,
                 GetLineRecoveryAction.SignIn -> request(Request.LoginGoogle)
                 GetLineRecoveryAction.OpenProfiles,
                 GetLineRecoveryAction.None -> Unit
@@ -465,6 +473,7 @@ class GetLineOnboardingDesign(context: Context) :
     private fun applyState(state: GetLineProductState) {
         lastProductState = state
         val action = recoveryActionFor(state)
+        val secondary = secondaryRecoveryActionFor(state)
         if (linkOnlySignIn && state == GetLineProductState.NoProfile) {
             // Nothing is missing here: the link-only profile is imported and routing
             // traffic. NoProfile copy ("no VPN profile yet… add a subscription link")
@@ -473,12 +482,14 @@ class GetLineOnboardingDesign(context: Context) :
                 title = R.string.get_line_link_only_sign_in_title,
                 explanation = R.string.get_line_link_only_sign_in_explanation,
                 action = action,
+                secondaryAction = secondary,
                 showSendDiagnostics = offersDiagnostics(state),
             )
         } else {
             binding.stateView.render(
                 state = state,
                 action = action,
+                secondaryAction = secondary,
                 showSendDiagnostics = offersDiagnostics(state),
             )
         }
@@ -508,6 +519,10 @@ class GetLineOnboardingDesign(context: Context) :
             GetLineProductState.SessionStorageUnavailable -> GetLineRecoveryAction.Retry
             GetLineProductState.SessionStorageRecovered,
             GetLineProductState.NoProfile -> GetLineRecoveryAction.None
+            GetLineProductState.NoSubscription -> GetLineRecoveryAction.ActivateTrial
+            GetLineProductState.TrialUnavailable -> GetLineRecoveryAction.OpenAccountPortal
+            // Prefer Google (reachable without VPN); portal is Subscription-tab only on Home.
+            GetLineProductState.SubscriptionExpired -> GetLineRecoveryAction.OpenAccount
             // Home-only repair; onboarding never shows these states.
             GetLineProductState.ConnectionRepairFailed,
             GetLineProductState.ConnectionRestoreFailed,
@@ -519,9 +534,15 @@ class GetLineOnboardingDesign(context: Context) :
             GetLineProductState.AuthEmailDomainNotAllowed,
             GetLineProductState.AuthNoAccount,
             GetLineProductState.AuthRateLimited -> GetLineRecoveryAction.None
-            GetLineProductState.SubscriptionExpired -> GetLineRecoveryAction.OpenAccount
             GetLineProductState.Content,
             GetLineProductState.Loading -> GetLineRecoveryAction.None
+        }
+    }
+
+    private fun secondaryRecoveryActionFor(state: GetLineProductState): GetLineRecoveryAction {
+        return when (state) {
+            GetLineProductState.NoSubscription -> GetLineRecoveryAction.OpenAccountPortal
+            else -> GetLineRecoveryAction.None
         }
     }
 
@@ -553,6 +574,8 @@ class GetLineOnboardingDesign(context: Context) :
             GetLineProductState.AuthFailed,
             GetLineProductState.SessionStorageRecovered,
             GetLineProductState.ImportFailed,
+            GetLineProductState.NoSubscription,
+            GetLineProductState.TrialUnavailable,
             GetLineProductState.BackendUnavailable -> true
             else -> false
         }

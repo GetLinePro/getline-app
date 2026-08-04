@@ -19,8 +19,7 @@ interface GetLineAuthApi {
     /**
      * Verifies the email OTP and returns a web token for
      * [GetLineSessionRepository.establishFromWebToken].
-     * Wire body always includes `"intent":"register"` (not a public parameter) —
-     * it is idempotent and is what provisions the trial on first sign-in.
+     * Wire body always includes `"intent":"register"` (not a public parameter).
      */
     suspend fun verifyEmailOtp(email: String, code: String): EmailOtpVerifyResult
 
@@ -31,9 +30,17 @@ interface GetLineAuthApi {
     suspend fun getSubscriptions(accessToken: String): SubscriptionsResponse
 
     /**
-     * GET /api/dashboard. Provisions the trial on a fresh account — see
-     * [DashboardInfo]. Call once after establishing a session, before
-     * [getSubscriptions], or a new user ends up with no subscription at all.
+     * GET /api/dashboard. On current prod this may auto-activate a trial
+     * (`trial_auto_activated`). Call only after an explicit user confirmation —
+     * never from [GetLineSessionRepository.loadSubscriptionForUi] or unprompted
+     * login import.
      */
     suspend fun getDashboard(accessToken: String): DashboardInfo
+
+    /**
+     * POST /api/dashboard/trial. OpenAPI 6.8.0 free-trial mutation.
+     * Fallback when GET dashboard did not auto-activate and [DashboardInfo.trialAvailable]
+     * is still true.
+     */
+    suspend fun activateTrial(accessToken: String)
 }

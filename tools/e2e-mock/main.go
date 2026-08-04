@@ -64,6 +64,7 @@ func main() {
 	mux.HandleFunc("GET /api/auth/device-key/generate", handleDeviceKeyGenerate)
 	mux.HandleFunc("POST /api/auth/device-key/exchange", handleDeviceKeyExchange)
 	mux.HandleFunc("GET /api/dashboard", handleDashboard)
+	mux.HandleFunc("POST /api/dashboard/trial", handleActivateTrial)
 	mux.HandleFunc("GET /api/subscriptions", handleSubscriptions)
 	mux.HandleFunc("GET /sub/e2e", handleSubscriptionYAML)
 	mux.HandleFunc("POST /api/auth/native/refresh", handleNativeRefresh)
@@ -315,9 +316,9 @@ func handleDeviceKeyExchange(w http.ResponseWriter, r *http.Request) {
 }
 
 // Requires native access Bearer (from exchange). Shape from SubscriptionsJson tests.
-// handleDashboard mirrors the prod endpoint the client calls once per login.
-// On real RWP this call is what provisions the trial; the mock always serves a
-// subscription, so here it only has to exist and report the trial as settled.
+// On prod GET dashboard may auto-activate a trial; the mock always serves a
+// subscription already, so this only needs to exist and report settled flags.
+// Explicit POST /api/dashboard/trial is registered for contract parity.
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
 	nativePresent, nativeMatches := inspectNativeBearer(r)
 
@@ -343,6 +344,25 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"plans_count":          1,
 		"banners":              []any{},
 	})
+}
+
+// OpenAPI free-trial mutation. Mock subscriptions already exist; accept and
+// return empty success so explicit client activation does not 404.
+func handleActivateTrial(w http.ResponseWriter, r *http.Request) {
+	nativePresent, nativeMatches := inspectNativeBearer(r)
+	log.Printf(
+		"activate_trial_requested source=%s native_bearer_present=%t native_token_matches=%t",
+		requestSource(r),
+		nativePresent,
+		nativeMatches,
+	)
+	if !nativePresent || !nativeMatches {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "Authentication required",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 func handleSubscriptions(w http.ResponseWriter, r *http.Request) {

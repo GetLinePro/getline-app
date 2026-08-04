@@ -11,13 +11,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * GET /api/dashboard is called for its side effect — it provisions the trial —
- * so parsing must never be the reason a login fails.
+ * Dashboard parse stays tolerant: missing flags default safely so a partial
+ * payload cannot block the post-tap activation path.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class DashboardTrialParseTest {
-    /** Live prod shape, 2026-07-31, fresh account right after register. */
+    /** Live prod shape, 2026-08-04, first GET after empty subscriptions. */
     @Test
     fun parsesLiveTrialActivationPayload() {
         val json = JSONObject(
@@ -27,7 +27,8 @@ class DashboardTrialParseTest {
               "trial_available": false,
               "trial_auto_activated": true,
               "trial_days": 3,
-              "free_plan_enabled": false,
+              "free_plan_enabled": true,
+              "free_plan_available": true,
               "plans_count": 6
             }
             """.trimIndent(),
@@ -39,6 +40,10 @@ class DashboardTrialParseTest {
         assertFalse(info.trialAvailable)
         assertTrue(info.trialAutoActivated)
         assertEquals(3, info.trialDays)
+        assertTrue(info.freePlanEnabled)
+        assertTrue(info.freePlanAvailable)
+        assertFalse(info.trialPaid)
+        assertFalse(info.trialRecurringOnly)
     }
 
     @Test
@@ -49,6 +54,8 @@ class DashboardTrialParseTest {
         assertFalse(info.trialAvailable)
         assertFalse(info.trialAutoActivated)
         assertNull(info.trialDays)
+        assertFalse(info.freePlanEnabled)
+        assertFalse(info.freePlanAvailable)
     }
 
     @Test
@@ -65,7 +72,8 @@ class DashboardTrialParseTest {
     }
 
     @Test
-    fun dashboardPathMatchesRwpContract() {
+    fun dashboardPathsMatchRwpContract() {
         assertEquals("/api/dashboard", RwpGetLineAuthApi.DASHBOARD_PATH)
+        assertEquals("/api/dashboard/trial", RwpGetLineAuthApi.ACTIVATE_TRIAL_PATH)
     }
 }

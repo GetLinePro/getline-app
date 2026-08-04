@@ -128,7 +128,7 @@ class SubscriptionLoadRepositoryTest {
         try {
             repo.loadPreferredSubscription()
             fail("must fail when there is nothing to import")
-        } catch (e: GetLineAuthException.Protocol) {
+        } catch (e: GetLineAuthException.NoSubscription) {
             assertEquals("No subscription with import URL", e.message)
         }
     }
@@ -575,8 +575,9 @@ class SubscriptionLoadRepositoryTest {
         override suspend fun generateDeviceKey(webToken: String) = error("not used")
         override suspend fun exchangeDeviceKey(deviceKey: String) = error("not used")
 
-        // Trial provisioning belongs to login, not to the subscription UI path.
+        // Trial activation is explicit onboarding; subscription UI stays read-only.
         override suspend fun getDashboard(accessToken: String) = error("not used")
+        override suspend fun activateTrial(accessToken: String) = error("not used")
 
         override suspend fun refresh(refreshToken: String): NativeSession {
             refreshCalls++

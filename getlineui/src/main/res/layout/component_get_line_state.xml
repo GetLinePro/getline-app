@@ -48,6 +48,16 @@
             tools:text="Retry"
             tools:visibility="visible" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/secondary_action"
+            style="@style/Widget.GetLine.SecondaryTextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:visibility="gone"
+            tools:text="Open account"
+            tools:visibility="visible" />
+
         <!-- GL-19: next to Retry on ImportFailed / AuthFailed — not a recovery CTA. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/send_diagnostics"

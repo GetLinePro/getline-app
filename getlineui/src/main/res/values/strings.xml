@@ -150,6 +150,11 @@
     <string name="get_line_state_connection_restore_failed_explanation">Check your internet connection and try again.</string>
     <string name="get_line_state_import_failed_title">Couldn’t import the subscription</string>
     <string name="get_line_state_import_failed_explanation">Check that the subscription link is correct, then try the import again.</string>
+    <string name="get_line_state_no_subscription_title">No subscription yet</string>
+    <string name="get_line_state_no_subscription_explanation">This account has no subscription to import. You can start a free trial or open your GetLine Pro account to choose a plan.</string>
+    <string name="get_line_state_trial_unavailable_title">Trial is not available</string>
+    <string name="get_line_state_trial_unavailable_explanation">A free trial cannot be started for this account. Open your GetLine Pro account to choose a plan.</string>
+    <string name="get_line_action_activate_trial">Start free trial</string>
     <string name="get_line_state_auth_failed_title">Couldn’t sign in</string>
     <string name="get_line_state_auth_failed_explanation">Sign-in did not complete. Try again, or add a subscription link.</string>
     <string name="get_line_state_session_storage_recovered_title">Sign in again</string>
