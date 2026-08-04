@@ -392,60 +392,6 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         }
     }
 
-    /**
-     * [op] names the caller in the failure line. Callers that report the failure
-     * themselves (import) pass [onUnavailable] instead, so the event is not
-     * logged twice under two different names.
-     */
-    private suspend fun <T> callProfileBackend(
-        op: String? = null,
-        timeoutMs: Long = PROFILE_OPERATION_TIMEOUT_MS,
-        onUnavailable: ((String) -> Unit)? = null,
-        block: suspend () -> T,
-    ): GetLineBackendResult<T> {
-        fun unavailable(kind: String): GetLineBackendResult<Nothing> {
-            onUnavailable?.invoke(kind)
-            // Silent paths reported nothing at all: a failed subscription refresh
-            // or managed delete left no trace in the shareable report.
-            op?.let { Log.w("profile_backend op=$it outcome=unavailable kind=$kind") }
-            return GetLineBackendResult.Unavailable
-        }
-        return try {
-            GetLineBackendResult.Success(
-                withTimeout(timeoutMs) {
-                    block()
-                }
-            )
-        } catch (_: TimeoutCancellationException) {
-            unavailable("timeout")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            unavailable(describeFailure(e))
-        }
-    }
-
-    /**
-     * A bare class name (`IllegalArgumentException`) does not say which value was
-     * rejected, and the import path is the only report of a failed fetch we get.
-     * Keep the message bounded and on one line; the diagnostic report redacts
-     * URLs/tokens on top of this.
-     */
-    private fun describeFailure(e: Throwable): String {
-        val kind = e::class.simpleName ?: "Exception"
-        val cause = e.cause?.let { it::class.simpleName }
-        val detail = e.message
-            .orEmpty()
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .take(MAX_FAILURE_DETAIL)
-        return buildString {
-            append(kind)
-            if (cause != null) append(" cause=$cause")
-            if (detail.isNotEmpty()) append(" msg=$detail")
-        }
-    }
-
     private fun Profile.toGetLineSummary(): GetLineSubscriptionSummary {
         return GetLineSubscriptionSummary(
             uuid = uuid.toString(),
@@ -464,15 +410,93 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         }
     }
 
-    companion object {
-        private const val PROFILE_OPERATION_TIMEOUT_MS = 8_000L
-        /** Subscription fetch + commit can exceed local profile IPC latency. */
-        private const val REIMPORT_TIMEOUT_MS = 60_000L
-        /** Bounded non-cancellable orphan delete after failed re-provision. */
-        private const val ORPHAN_CLEANUP_TIMEOUT_MS = 5_000L
-        /** Exception message budget in the import failure line. */
-        private const val MAX_FAILURE_DETAIL = 160
+}
+
+private const val PROFILE_OPERATION_TIMEOUT_MS = 8_000L
+/** Subscription fetch + commit can exceed local profile IPC latency. */
+private const val REIMPORT_TIMEOUT_MS = 60_000L
+/** Bounded non-cancellable orphan delete after failed re-provision. */
+private const val ORPHAN_CLEANUP_TIMEOUT_MS = 5_000L
+/** Exception message budget in the import failure line. */
+private const val MAX_FAILURE_DETAIL = 160
+
+/**
+ * Timeout/failure envelope around one profile-backend call.
+ *
+ * [op] names the caller in the failure line. Callers that report the failure
+ * themselves (import) pass [onUnavailable] instead, so the event is not
+ * logged twice under two different names.
+ *
+ * Top-level and `internal` for the unit test: the Binder lives inside [block],
+ * so the envelope itself needs no `IProfileManager` to exercise.
+ */
+internal suspend fun <T> callProfileBackend(
+    op: String? = null,
+    timeoutMs: Long = PROFILE_OPERATION_TIMEOUT_MS,
+    onUnavailable: ((String) -> Unit)? = null,
+    block: suspend () -> T,
+): GetLineBackendResult<T> {
+    fun unavailable(kind: String): GetLineBackendResult<Nothing> {
+        onUnavailable?.invoke(kind)
+        // Silent paths reported nothing at all: a failed subscription refresh
+        // or managed delete left no trace in the shareable report.
+        op?.let { Log.w("profile_backend op=$it outcome=unavailable kind=$kind") }
+        return GetLineBackendResult.Unavailable
     }
+    return try {
+        GetLineBackendResult.Success(
+            withTimeout(timeoutMs) {
+                block()
+            }
+        )
+    } catch (_: TimeoutCancellationException) {
+        unavailable("timeout")
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        unavailable(describeFailure(e))
+    }
+}
+
+/**
+ * A bare class name (`IllegalArgumentException`) does not say which value was
+ * rejected, and the import path is the only report of a failed fetch we get.
+ * Keep the message bounded and on one line; the diagnostic report redacts
+ * URLs/tokens on top of this.
+ */
+internal fun describeFailure(e: Throwable): String {
+    val kind = e::class.simpleName ?: "Exception"
+    val cause = e.reportableCause()?.let { it::class.simpleName }
+    val detail = e.message
+        .orEmpty()
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .take(MAX_FAILURE_DETAIL)
+    return buildString {
+        append(kind)
+        if (cause != null) append(" cause=$cause")
+        if (detail.isNotEmpty()) append(" msg=$detail")
+    }
+}
+
+/**
+ * The cause worth printing, skipping coroutine stacktrace-recovery copies.
+ *
+ * When an exception crosses `withTimeout`/`withContext`, kotlinx rethrows a
+ * *copy* carrying the original as its cause. A plain `cause` therefore reports
+ * the exception's own class back at us and hides the real chain — exactly on
+ * the import path the cause was added for.
+ */
+private fun Throwable.reportableCause(): Throwable? {
+    var candidate = cause
+    while (
+        candidate != null &&
+        candidate::class == this::class &&
+        candidate.message == message
+    ) {
+        candidate = candidate.cause
+    }
+    return candidate
 }
 
 private class CmfaGetLineVpnController(

@@ -331,10 +331,7 @@ class GetLineSessionRepository(
     private fun throwRefreshFailure(error: Exception): Nothing {
         when (error) {
             is GetLineAuthException.HttpFailure -> {
-                val invalidGrant =
-                    error.code == 400 &&
-                        error.message?.contains("invalid_grant", ignoreCase = true) == true
-                val rejected = error.code == 401 || invalidGrant
+                val rejected = isRejectedRefresh(error.code, error.message)
                 if (rejected) {
                     Log.w("session_refresh outcome=rejected code=${error.code}")
                     invalidateRejectedSession()
@@ -450,4 +447,24 @@ class GetLineSessionRepository(
 
     /** True when Retry can attempt remote re-provision after local prove-absent. */
     fun canRemoteRepair(): Boolean = hasSession() || managedProfileSource() != null
+}
+
+/**
+ * Whether a failed refresh proves the backend *rejected* the session, as opposed
+ * to failing for any other reason. Only `true` may delete the user's tokens.
+ *
+ * `401` is the verdict itself. On `400` the discriminator is the documented
+ * `invalid_grant` error code — matched exactly, not as a substring: [message] is
+ * whatever [RwpGetLineAuthApi.errorMessageOf] could salvage, and for a gateway
+ * HTML page or an unrelated error that mentions the token state, a substring hit
+ * would sign the user out over a transient failure. Everything else keeps the
+ * session so a later retry can still recover it.
+ */
+internal fun isRejectedRefresh(code: Int, message: String?): Boolean {
+    if (code == 401) return true
+    if (code != 400) return false
+    // Unwrap `{"error":"..."}` with the same reader the API layer uses, so a raw
+    // body reaching this point is classified like an already-unwrapped one.
+    val discriminator = RwpGetLineAuthApi.errorMessageOf(message.orEmpty()).trim()
+    return discriminator.equals("invalid_grant", ignoreCase = true)
 }

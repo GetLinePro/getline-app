@@ -26,6 +26,14 @@ class RwpGetLineAuthApi(
      * When null, resolves from [Global.application] at request time.
      */
     private val connectivityManager: ConnectivityManager? = null,
+    /**
+     * Connection factory. Substituted in tests to make the underlying-bind
+     * failure reproducible without a device: the fallback below is the only
+     * thing standing between a foreign lockdown VPN and a dead control plane,
+     * and a real socket cannot be told to refuse the bind on demand.
+     */
+    private val openConnection: (URL, Network?) -> HttpURLConnection =
+        ::openControlPlaneConnection,
 ) : GetLineAuthApi {
     init {
         // Fail closed before any network I/O if origin is wrong for this flavor.
@@ -171,7 +179,7 @@ class RwpGetLineAuthApi(
         val url = URL("$origin$path")
 
         fun open(network: Network?): HttpURLConnection {
-            return openControlPlaneConnection(url, network).apply {
+            return openConnection(url, network).apply {
                 requestMethod = method
                 connectTimeout = TIMEOUT_MS
                 readTimeout = TIMEOUT_MS
@@ -268,14 +276,6 @@ class RwpGetLineAuthApi(
             }
         } finally {
             connection.disconnect()
-        }
-    }
-
-    private fun openControlPlaneConnection(url: URL, network: Network?): HttpURLConnection {
-        return if (network != null) {
-            network.openConnection(url) as HttpURLConnection
-        } else {
-            url.openConnection() as HttpURLConnection
         }
     }
 
@@ -508,5 +508,17 @@ class RwpGetLineAuthApi(
                 text
             }
         }
+    }
+}
+
+/**
+ * Real control-plane socket. Top-level so it can be the constructor default
+ * without the class having to exist first.
+ */
+private fun openControlPlaneConnection(url: URL, network: Network?): HttpURLConnection {
+    return if (network != null) {
+        network.openConnection(url) as HttpURLConnection
+    } else {
+        url.openConnection() as HttpURLConnection
     }
 }
