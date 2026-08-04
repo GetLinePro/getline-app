@@ -13,6 +13,7 @@ import com.github.kr328.clash.core.model.FetchStatus
 import pro.getline.vpn.getlineui.model.GetLineImportStage
 import pro.getline.vpn.getlineui.model.GetLineTraffic
 import pro.getline.vpn.getline.ActiveProfilePolicy
+import pro.getline.vpn.getline.ConfigUpdateResult
 import pro.getline.vpn.getline.GetLineBackend
 import pro.getline.vpn.getline.GetLineBackendResult
 import pro.getline.vpn.getline.GetLineNavigation
@@ -25,6 +26,7 @@ import pro.getline.vpn.getline.GetLineSubscriptionSummary
 import pro.getline.vpn.getline.GetLineSubscriptionType
 import pro.getline.vpn.getline.GetLineVpnController
 import pro.getline.vpn.getline.LocalActiveRepair
+import pro.getline.vpn.getline.ManagedProfileDeleteOutcome
 import pro.getline.vpn.getline.servers.VpnServerSelectionRepository
 import com.github.kr328.clash.remote.Remote
 import com.github.kr328.clash.service.model.Profile
@@ -235,30 +237,20 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
 
     override suspend fun requestConfigUpdate(
         id: GetLineSubscriptionId,
-    ): GetLineBackendResult<Unit> {
-        // Same network budget as reimport: silent path runs ProfileProcessor inline.
-        return callProfileBackend(op = "config_update", timeoutMs = REIMPORT_TIMEOUT_MS) {
+    ): ConfigUpdateResult {
+        return runConfigUpdate {
             withProfile {
-                val profile = queryByUUID(id.toUuid()) ?: return@withProfile
-                // File profiles have no remote source; Url/External can be re-fetched.
-                if (profile.imported && profile.type != Profile.Type.File) {
-                    updateSilently(profile.uuid)
-                }
+                updateManagedProfileConfig(id)
             }
         }
     }
 
     override suspend fun deleteManaged(
         id: GetLineSubscriptionId,
-    ): GetLineBackendResult<Unit> {
+    ): GetLineBackendResult<ManagedProfileDeleteOutcome> {
         return callProfileBackend(op = "delete_managed") {
             withProfile {
-                val uuid = id.toUuid()
-                // Missing is success — logout must still clear session.
-                if (queryByUUID(uuid) != null) {
-                    delete(uuid)
-                }
-                Unit
+                deleteManagedProfile(id)
             }
         }
     }
@@ -321,6 +313,26 @@ internal suspend fun <T> callProfileBackend(
     }
 }
 
+/** Same network budget as reimport: the silent path runs ProfileProcessor inline. */
+internal suspend fun runConfigUpdate(
+    block: suspend () -> ConfigUpdateResult,
+): ConfigUpdateResult {
+    return when (
+        val result = callProfileBackend(
+            op = "config_update",
+            timeoutMs = REIMPORT_TIMEOUT_MS,
+            block = block,
+        )
+    ) {
+        GetLineBackendResult.Unavailable -> ConfigUpdateResult.Unavailable
+        is GetLineBackendResult.Success -> result.value.also { outcome ->
+            if (outcome == ConfigUpdateResult.NotFound) {
+                Log.w("profile_backend op=config_update outcome=not_found")
+            }
+        }
+    }
+}
+
 /**
  * A bare class name (`IllegalArgumentException`) does not say which value was
  * rejected, and the import path is the only report of a failed fetch we get.
@@ -340,6 +352,31 @@ internal fun describeFailure(e: Throwable): String {
         if (cause != null) append(" cause=$cause")
         if (detail.isNotEmpty()) append(" msg=$detail")
     }
+}
+
+/** Delete exactly [id], keeping an already-absent profile observable. */
+internal suspend fun IProfileManager.deleteManagedProfile(
+    id: GetLineSubscriptionId,
+): ManagedProfileDeleteOutcome {
+    val uuid = id.toUuid()
+    if (queryByUUID(uuid) == null) {
+        return ManagedProfileDeleteOutcome.NotFound
+    }
+    delete(uuid)
+    return ManagedProfileDeleteOutcome.Deleted
+}
+
+/** Refresh exactly [id], keeping missing and non-refreshable rows observable. */
+internal suspend fun IProfileManager.updateManagedProfileConfig(
+    id: GetLineSubscriptionId,
+): ConfigUpdateResult {
+    val profile = queryByUUID(id.toUuid()) ?: return ConfigUpdateResult.NotFound
+    // File rows have no remote source; pending rows have no committed config to update.
+    if (!profile.imported || profile.type == Profile.Type.File) {
+        return ConfigUpdateResult.NotRefreshable
+    }
+    updateSilently(profile.uuid)
+    return ConfigUpdateResult.Updated
 }
 
 /**

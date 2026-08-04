@@ -32,6 +32,8 @@ object DiagnosticReportBuilder {
         // Slice 1: startup decision + repair ladder (daily double-login / Home state).
         "startup_route",
         "repair_outcome",
+        // Durable replacement cleanup; fixed outcome/stop tokens, never UUIDs.
+        "profile_cleanup",
         // Slice 2: VPN connect chain (permission / start / observed core state).
         "vpn_ui",
         "vpn_start",

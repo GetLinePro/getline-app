@@ -88,21 +88,35 @@ interface GetLineSubscriptionRepository {
      * Used after /api/subscriptions shows active so Servers pick up provider node changes.
      *
      * Silent: no ProfileWorker result notifications / Properties deep-link.
-     * Success still emits ProfileChanged for Servers/Home reload.
-     * No-op success when the UUID is missing, not imported, or is a File profile.
+     * [ConfigUpdateResult.Updated] still emits ProfileChanged for Servers/Home reload.
+     * Missing and non-refreshable profiles remain distinguishable from an update.
      */
     suspend fun requestConfigUpdate(
         id: GetLineSubscriptionId,
-    ): GetLineBackendResult<Unit>
+    ): ConfigUpdateResult
 
     /**
      * Delete only the GetLine-managed profile by UUID.
      * Does not touch other imported/manual profiles or app settings.
-     * No-op success when the UUID is already gone.
+     * Missing is a completed, idempotent cleanup, but remains distinguishable
+     * from a delete that removed a profile.
      */
     suspend fun deleteManaged(
         id: GetLineSubscriptionId,
-    ): GetLineBackendResult<Unit>
+    ): GetLineBackendResult<ManagedProfileDeleteOutcome>
+}
+
+sealed class ManagedProfileDeleteOutcome {
+    object Deleted : ManagedProfileDeleteOutcome()
+    object NotFound : ManagedProfileDeleteOutcome()
+}
+
+sealed class ConfigUpdateResult {
+    object Updated : ConfigUpdateResult()
+    object NotFound : ConfigUpdateResult()
+    /** The row exists but cannot be remotely refreshed (File or pending). */
+    object NotRefreshable : ConfigUpdateResult()
+    object Unavailable : ConfigUpdateResult()
 }
 
 /**

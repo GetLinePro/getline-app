@@ -23,6 +23,8 @@ import org.robolectric.annotation.Config
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
+import pro.getline.vpn.getline.ConfigUpdateResult
+import pro.getline.vpn.getline.ManagedProfileDeleteOutcome
 import pro.getline.vpn.getlineui.model.GetLineImportStage
 import java.io.IOException
 import java.util.UUID
@@ -47,6 +49,95 @@ class ImportTransactionTest {
         source = "https://example.invalid/sub",
         interval = 0L,
     )
+
+    @Test
+    fun configUpdate_importedUrl_reportsUpdated() = runBlocking {
+        val uuid = UUID.randomUUID()
+        val backend = FakeProfileManager()
+        backend.seed(uuid, imported = true)
+
+        val outcome = runConfigUpdate {
+            backend.updateManagedProfileConfig(GetLineSubscriptionId(uuid.toString()))
+        }
+
+        assertEquals(ConfigUpdateResult.Updated, outcome)
+        assertEquals(listOf(uuid), backend.updated)
+    }
+
+    @Test
+    fun configUpdate_missingProfile_reportsNotFound() = runBlocking {
+        val backend = FakeProfileManager()
+
+        val outcome = runConfigUpdate {
+            backend.updateManagedProfileConfig(
+                GetLineSubscriptionId(UUID.randomUUID().toString()),
+            )
+        }
+
+        assertEquals(ConfigUpdateResult.NotFound, outcome)
+        assertTrue(backend.updated.isEmpty())
+    }
+
+    @Test
+    fun configUpdate_fileProfile_reportsNotRefreshable() = runBlocking {
+        val uuid = UUID.randomUUID()
+        val backend = FakeProfileManager()
+        backend.seed(uuid, imported = true, type = Profile.Type.File)
+
+        val outcome = runConfigUpdate {
+            backend.updateManagedProfileConfig(GetLineSubscriptionId(uuid.toString()))
+        }
+
+        assertEquals(ConfigUpdateResult.NotRefreshable, outcome)
+        assertTrue(backend.updated.isEmpty())
+    }
+
+    @Test
+    fun configUpdate_pendingProfile_reportsNotRefreshable() = runBlocking {
+        val uuid = UUID.randomUUID()
+        val backend = FakeProfileManager()
+        backend.seed(uuid, imported = false)
+
+        val outcome = runConfigUpdate {
+            backend.updateManagedProfileConfig(GetLineSubscriptionId(uuid.toString()))
+        }
+
+        assertEquals(ConfigUpdateResult.NotRefreshable, outcome)
+        assertTrue(backend.updated.isEmpty())
+    }
+
+    @Test
+    fun configUpdate_backendFailure_reportsUnavailable() = runBlocking {
+        val outcome = runConfigUpdate {
+            throw IOException("binder died")
+        }
+
+        assertEquals(ConfigUpdateResult.Unavailable, outcome)
+    }
+
+    @Test
+    fun managedDelete_existingProfile_reportsDeleted() = runBlocking {
+        val uuid = UUID.randomUUID()
+        val backend = FakeProfileManager()
+        backend.seed(uuid, imported = true)
+
+        val outcome = backend.deleteManagedProfile(GetLineSubscriptionId(uuid.toString()))
+
+        assertEquals(ManagedProfileDeleteOutcome.Deleted, outcome)
+        assertEquals(listOf(uuid), backend.deleted)
+    }
+
+    @Test
+    fun managedDelete_missingProfile_reportsNotFound() = runBlocking {
+        val backend = FakeProfileManager()
+
+        val outcome = backend.deleteManagedProfile(
+            GetLineSubscriptionId(UUID.randomUUID().toString()),
+        )
+
+        assertEquals(ManagedProfileDeleteOutcome.NotFound, outcome)
+        assertTrue(backend.deleted.isEmpty())
+    }
 
     @Test
     fun success_returnsTheNewId_andDeletesNothing() = runBlocking {
@@ -275,11 +366,16 @@ private class FakeProfileManager(
     val patched = mutableListOf<UUID>()
     val deleted = mutableListOf<UUID>()
     val activated = mutableListOf<UUID>()
+    val updated = mutableListOf<UUID>()
     var createdType: Profile.Type? = null
         private set
 
-    fun seed(uuid: UUID, imported: Boolean) {
-        profiles[uuid] = profile(uuid, "seeded", Profile.Type.Url, imported)
+    fun seed(
+        uuid: UUID,
+        imported: Boolean,
+        type: Profile.Type = Profile.Type.Url,
+    ) {
+        profiles[uuid] = profile(uuid, "seeded", type, imported)
     }
 
     fun markImported(uuid: UUID) {
@@ -349,7 +445,7 @@ private class FakeProfileManager(
     }
 
     override suspend fun updateSilently(uuid: UUID) {
-        error("not used by import")
+        updated += uuid
     }
 
     private fun profile(

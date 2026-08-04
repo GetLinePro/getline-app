@@ -73,6 +73,19 @@ class DiagnosticReportBuilderTest {
     }
 
     @Test
+    fun allowlist_keepsProfileCleanupOutcome_withoutIdentifiers() {
+        val raw = """
+            08-04 12:00:01.000  1000  1001 W GetLineVPN: profile_cleanup outcome=unavailable stop=ok
+            08-04 12:00:02.000  1000  1001 I GetLineVPN: delete profile 550e8400-e29b-41d4-a716-446655440000
+        """.trimIndent()
+
+        val lines = DiagnosticReportBuilder.selectEventLines(raw)
+        assertEquals(1, lines.size)
+        assertTrue(lines.single().contains("profile_cleanup outcome=unavailable stop=ok"))
+        assertFalse(lines.single().contains("550e8400"))
+    }
+
+    @Test
     fun allowlist_keepsVpnConnectChain_slice2() {
         // connect → permission → requested → started, or timeout / failed.
         // vpn_state is observed (not causal); bare ui noise stays out.

@@ -12,7 +12,7 @@ import java.io.File
  * Never stores web auth_token, device_key, callback URIs, or OAuth codes.
  *
  * Binding keys ([subscriptionId], [managedProfileUuid], [managedProfileSource],
- * [customerId]) survive process death and normal APK updates.
+ * pending profile cleanup UUIDs, and [customerId] survive process death and normal APK updates.
  * Full clear: [clearAccountState]. Session-only clear keeping managed binding:
  * [clearSessionKeepingBinding].
  */
@@ -101,6 +101,38 @@ class GetLineSessionStore(context: Context) {
         get() = prefs.getString(KEY_PROFILE_SOURCE, null)
         set(value) = prefs.edit { putString(KEY_PROFILE_SOURCE, value) }
 
+    /** Old managed profiles awaiting idempotent deletion after replacement imports. */
+    fun pendingProfileCleanupUuids(): Set<String> =
+        prefs.getStringSet(KEY_PENDING_PROFILE_CLEANUP_UUIDS, emptySet())
+            .orEmpty()
+            .filterTo(linkedSetOf()) { it.isNotBlank() }
+
+    fun rememberPendingProfileCleanup(uuid: String) {
+        val pending = uuid.takeIf { it.isNotBlank() } ?: return
+        synchronized(PENDING_PROFILE_CLEANUP_LOCK) {
+            prefs.edit {
+                putStringSet(
+                    KEY_PENDING_PROFILE_CLEANUP_UUIDS,
+                    pendingProfileCleanupUuids() + pending,
+                )
+            }
+        }
+    }
+
+    /** Remove only the completed UUID; other failed replacements stay owned. */
+    fun clearPendingProfileCleanup(expectedUuid: String) {
+        synchronized(PENDING_PROFILE_CLEANUP_LOCK) {
+            val remaining = pendingProfileCleanupUuids() - expectedUuid
+            prefs.edit {
+                if (remaining.isEmpty()) {
+                    remove(KEY_PENDING_PROFILE_CLEANUP_UUIDS)
+                } else {
+                    putStringSet(KEY_PENDING_PROFILE_CLEANUP_UUIDS, remaining)
+                }
+            }
+        }
+    }
+
     var customerId: String?
         get() = prefs.getString(KEY_CUSTOMER_ID, null)
         set(value) = prefs.edit { putString(KEY_CUSTOMER_ID, value) }
@@ -179,6 +211,7 @@ class GetLineSessionStore(context: Context) {
             remove(KEY_SUBSCRIPTION_ID)
             remove(KEY_PROFILE_UUID)
             remove(KEY_PROFILE_SOURCE)
+            remove(KEY_PENDING_PROFILE_CLEANUP_UUIDS)
             remove(KEY_CUSTOMER_ID)
             remove(KEY_PENDING_IMPORT_NAME)
             remove(KEY_PENDING_IMPORT_SOURCE)
@@ -290,6 +323,9 @@ class GetLineSessionStore(context: Context) {
         private const val KEY_SUBSCRIPTION_ID = "subscription_id"
         private const val KEY_PROFILE_UUID = "profile_uuid"
         private const val KEY_PROFILE_SOURCE = "profile_source"
+        private const val KEY_PENDING_PROFILE_CLEANUP_UUIDS =
+            "pending_profile_cleanup_uuids"
+        private val PENDING_PROFILE_CLEANUP_LOCK = Any()
         private const val KEY_CUSTOMER_ID = "customer_id"
         private const val KEY_PENDING_IMPORT_NAME = "pending_import_name"
         private const val KEY_PENDING_IMPORT_SOURCE = "pending_import_source"

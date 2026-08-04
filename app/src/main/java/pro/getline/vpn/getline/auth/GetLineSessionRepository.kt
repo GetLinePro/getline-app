@@ -373,6 +373,16 @@ class GetLineSessionRepository(
 
     fun managedProfileSource(): String? = store.managedProfileSource?.takeIf { it.isNotBlank() }
 
+    fun rememberPendingProfileCleanup(uuid: String) {
+        store.rememberPendingProfileCleanup(uuid)
+    }
+
+    fun pendingProfileCleanupUuids(): Set<String> = store.pendingProfileCleanupUuids()
+
+    fun clearPendingProfileCleanup(expectedUuid: String) {
+        store.clearPendingProfileCleanup(expectedUuid)
+    }
+
     fun rememberedSubscriptionId(): String? = store.subscriptionId
 
     fun hasPendingImport(): Boolean = store.hasPendingImport()

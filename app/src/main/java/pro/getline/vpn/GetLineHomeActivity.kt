@@ -13,14 +13,17 @@ import pro.getline.vpn.getlineui.model.GetLineTraffic
 import pro.getline.vpn.getlineui.ToastDuration
 import pro.getline.vpn.getline.GetLineBackendProvider
 import pro.getline.vpn.product.GetLineActivity
+import pro.getline.vpn.getline.ConfigUpdateResult
 import pro.getline.vpn.getline.GetLineBackendResult
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
 import pro.getline.vpn.getline.LocalActiveRepair
+import pro.getline.vpn.getline.ManagedProfileCleanupResult
 import pro.getline.vpn.getline.GetLineImportCoordinator
 import pro.getline.vpn.getline.ProductNavigationPolicy
 import pro.getline.vpn.getline.VpnConfigurationRepairPolicy
+import pro.getline.vpn.getline.runPendingManagedProfileCleanup
 import pro.getline.vpn.getline.accountportal.AccountPortalLaunchResult
 import pro.getline.vpn.getline.accountportal.AccountPortalUriPolicy
 import pro.getline.vpn.getline.accountportal.AccountPortalVisitCoordinator
@@ -326,8 +329,13 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      *
      * Always runs [repairVpnConfiguration] before product state. Never opens
      * the CMFA profile picker.
+     * [showLoading] controls PreparingVpn only; [allowNetwork] controls whether
+     * the repair ladder may re-provision a missing managed profile.
      */
-    private suspend fun GetLineHomeDesign.fetch(showLoading: Boolean) {
+    private suspend fun GetLineHomeDesign.fetch(
+        showLoading: Boolean,
+        allowNetwork: Boolean = showLoading,
+    ) {
         if (refreshing)
             return
 
@@ -338,7 +346,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
 
         try {
-            val repaired = repairVpnConfiguration(allowNetwork = showLoading)
+            val repaired = repairVpnConfiguration(allowNetwork = allowNetwork)
             applyRepairOutcomeToProduct(repaired)
         } finally {
             refreshing = false
@@ -385,11 +393,56 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             return outcome
         }
 
-        val local = when (
+        var local = when (
             val result = backend.subscriptions.repairLocalActive(managedUuid)
         ) {
             GetLineBackendResult.Unavailable -> return finish(RepairOutcome.BackendUnavailable)
             is GetLineBackendResult.Success -> result.value
+        }
+
+        // Cleanup is independent from import success, but it may run only after
+        // the replacement is proven present. If the selected row is itself an old
+        // tombstone, first switch to the current managed UUID. A quiet ActivityStart
+        // never stops the VPN: absent replacement keeps the old working profile.
+        val pendingCleanupUuids = sessionRepository.pendingProfileCleanupUuids()
+        val activeUuid = (local as? LocalActiveRepair.Ready)?.activeUuid
+        if (
+            activeUuid != null &&
+            activeUuid != managedUuid &&
+            activeUuid in pendingCleanupUuids &&
+            !managedUuid.isNullOrBlank()
+        ) {
+            local = when (
+                val activated = backend.subscriptions.activateIfImported(
+                    GetLineSubscriptionId(managedUuid),
+                )
+            ) {
+                GetLineBackendResult.Unavailable ->
+                    return finish(RepairOutcome.BackendUnavailable)
+                is GetLineBackendResult.Success -> if (activated.value) {
+                    LocalActiveRepair.Ready(managedUuid)
+                } else {
+                    LocalActiveRepair.ManagedAbsent(
+                        managedUuid = managedUuid,
+                        managedIsImported = false,
+                    )
+                }
+            }
+        }
+        val replacementReady =
+            local is LocalActiveRepair.Ready && local.activeUuid == managedUuid
+        pendingCleanupUuids.forEach { pending ->
+            runPendingManagedProfileCleanup(
+                pendingUuid = pending,
+                managedUuid = managedUuid,
+                canDelete = replacementReady,
+                // activateIfImported emitted PROFILE_CHANGED and the live
+                // ConfigurationModule loaded managed before old delete is broadcast.
+                stopBeforeDelete = false,
+                stopVpn = backend.vpn::stop,
+                deleteManaged = backend.subscriptions::deleteManaged,
+                clearPending = sessionRepository::clearPendingProfileCleanup,
+            )
         }
 
         if (local is LocalActiveRepair.Ready) {
@@ -1153,7 +1206,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             linkOnly = summary?.let(LinkOnlyPresentation::fromSummary),
                             // Clear card only when inventory confirms managed is gone;
                             // update failure alone keeps whatever snapshot returned.
-                            failed = updated is GetLineBackendResult.Unavailable,
+                            // Unlike account-backed active state, link-only does not
+                            // recreate a profile the local inventory says was removed.
+                            failed = updated == ConfigUpdateResult.Unavailable,
                             generation = generation,
                         )
                     }
@@ -1176,14 +1231,25 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     }
 
     /**
-     * Best-effort silent re-fetch of managed URL config after API says active.
-     * No user-visible profile-update notifications; failures leave existing nodes.
+     * Re-fetch managed URL config after the account API says it is active.
+     * Updated stays silent; NotFound is a consistency fault and runs the existing
+     * network repair, applying its product state. Other outcomes preserve current state.
      */
-    private fun refreshManagedProfileConfigAfterActiveSubscription() {
+    private fun GetLineHomeDesign.refreshManagedProfileConfigAfterActiveSubscription() {
         val managedUuid = sessionRepository.managedProfileUuid() ?: return
         launch {
-            // Result ignored — ProfileChanged reloads Servers; Unavailable stays silent.
-            backend.subscriptions.requestConfigUpdate(GetLineSubscriptionId(managedUuid))
+            when (
+                backend.subscriptions.requestConfigUpdate(
+                    GetLineSubscriptionId(managedUuid),
+                )
+            ) {
+                ConfigUpdateResult.NotFound -> {
+                    fetch(showLoading = false, allowNetwork = true)
+                }
+                ConfigUpdateResult.Updated,
+                ConfigUpdateResult.NotRefreshable,
+                ConfigUpdateResult.Unavailable -> Unit
+            }
         }
     }
 
@@ -1233,13 +1299,33 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         else -> GetLineHomeDesign.AccountAction.None
     }
 
+    /** VPN is already stopped; confirmed logout owns removal of every old binding. */
+    private suspend fun cleanupPendingProfilesForLogout(managedUuid: String?): Boolean {
+        var completed = true
+        sessionRepository.pendingProfileCleanupUuids().forEach { pending ->
+            val result = runPendingManagedProfileCleanup(
+                pendingUuid = pending,
+                managedUuid = managedUuid,
+                canDelete = true,
+                stopBeforeDelete = false,
+                stopVpn = backend.vpn::stop,
+                deleteManaged = backend.subscriptions::deleteManaged,
+                clearPending = sessionRepository::clearPendingProfileCleanup,
+            )
+            if (result == ManagedProfileCleanupResult.Unavailable) {
+                completed = false
+            }
+        }
+        return completed
+    }
+
     /**
      * Product sign-out / remove-subscription (after confirm):
      * 1) stop VPN including an in-progress start (not only [GetLineVpnController.running])
-     * 2) clear native session tokens — non-cancellable once confirmed
-     * 3) delete the managed profile, then clear its binding only if the delete
-     *    succeeded (both actions): a failed delete keeps the binding so Home can
-     *    still refresh/remove the profile instead of orphaning it into Advanced
+     * 2) delete every pending old managed profile before clearing its tombstone
+     * 3) clear tokens and delete the current managed profile according to the action;
+     *    any unavailable delete keeps the binding so Home can retry instead of
+     *    orphaning a profile into Advanced
      * 4) leave app settings and any non-managed profiles alone
      * 5) open onboarding
      */
@@ -1259,10 +1345,27 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             // (connecting=true, or service finishing after start() before CLASH_STARTED).
             connecting = false
             backend.vpn.stop()
+            // Fence a late process-scoped import before taking the cleanup-set
+            // snapshot; otherwise its terminal callback could add a tombstone
+            // between drain and clearAccountState().
+            withContext(NonCancellable) {
+                GetLineImportCoordinator.reset()
+            }
 
             val managedUuid = sessionRepository.managedProfileUuid()
 
             if (action == GetLineHomeDesign.AccountAction.RemoveSubscription) {
+                val oldProfilesDeleted = withContext(NonCancellable) {
+                    cleanupPendingProfilesForLogout(managedUuid)
+                }
+                if (!oldProfilesDeleted) {
+                    paintSubscriptionState()
+                    showToast(
+                        GetLineUiR.string.get_line_remove_subscription_failed,
+                        ToastDuration.Long,
+                    )
+                    return
+                }
                 // Delete while binding is still known. If IPC fails, keep binding so
                 // "Remove subscription" stays available — do not create an Advanced-only orphan.
                 // NonCancellable: user already confirmed; rotation must not abort the delete.
@@ -1282,7 +1385,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     }
                 }
                 withContext(NonCancellable) {
-                    GetLineImportCoordinator.reset()
                     sessionRepository.logout()
                     accountPortalVisit.clear()
                     pendingForceSubscriptionRefresh.clear()
@@ -1296,7 +1398,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 // The binding itself outlives a failed delete — see
                 // ProductNavigationPolicy.clearBindingAfterSignOut.
                 withContext(NonCancellable) {
-                    GetLineImportCoordinator.reset()
                     sessionRepository.discardSessionKeepingSubscription()
                     accountPortalVisit.clear()
                     pendingForceSubscriptionRefresh.clear()
@@ -1304,6 +1405,20 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     subscriptionState.resetToLoading()
                     hasKnownActiveProfile = false
                     setHomeHasActiveProfile(false)
+                }
+                val oldProfilesDeleted = withContext(NonCancellable) {
+                    cleanupPendingProfilesForLogout(managedUuid)
+                }
+                if (!oldProfilesDeleted) {
+                    // Session is gone but the binding remains, exactly like a
+                    // failed delete of the current profile below. Home can retry.
+                    scheduleApplySignedOutState()
+                    fetch(showLoading = false)
+                    showToast(
+                        GetLineUiR.string.get_line_remove_subscription_failed,
+                        ToastDuration.Long,
+                    )
+                    return
                 }
                 val deleted = if (managedUuid == null) {
                     null

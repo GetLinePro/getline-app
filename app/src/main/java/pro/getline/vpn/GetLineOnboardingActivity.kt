@@ -21,6 +21,7 @@ import pro.getline.vpn.getline.GetLineImportCoordinator
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
+import pro.getline.vpn.getline.runPendingManagedProfileCleanup
 import pro.getline.vpn.getline.auth.AuthCallbackParser
 import pro.getline.vpn.getline.auth.BrowserAuthLauncher
 import pro.getline.vpn.getline.auth.BrowserAuthLaunchResult
@@ -835,6 +836,13 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 onTerminal = { result ->
                     when (result) {
                         is GetLineImportCoordinator.ImportTerminal.Success -> {
+                            val previousUuid = previousManagedUuidToDelete
+                            if (previousUuid != null && previousUuid != result.id.value) {
+                                // Move cleanup ownership out of pending import before
+                                // that transaction is cleared. A process death from
+                                // here onward leaves a repairable tombstone.
+                                sessionRepository.rememberPendingProfileCleanup(previousUuid)
+                            }
                             sessionRepository.rememberManagedProfile(
                                 uuid = result.id.value,
                                 source = request.source,
@@ -843,18 +851,21 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                                 sessionRepository.rememberSubscription(subscriptionIdToRemember)
                             }
                             sessionRepository.clearPendingImport()
-                            // Orphan cleanup only after the new binding is written.
-                            // Stop tunnel first: previousUuid may still be the active profile.
-                            val previousUuid = previousManagedUuidToDelete
-                            if (previousUuid != null && previousUuid != result.id.value) {
-                                // Separate runCatching: a failed stop must not skip
-                                // the delete, or the orphan keeps being updated.
-                                runCatching { backend.vpn.stop() }
-                                runCatching {
-                                    backend.subscriptions.deleteManaged(
-                                        GetLineSubscriptionId(previousUuid),
-                                    )
-                                }
+                            // Cleanup is not part of import success. Unavailable keeps
+                            // the tombstone for Home repair; Deleted/NotFound consume it.
+                            sessionRepository.pendingProfileCleanupUuids().forEach { pending ->
+                                runPendingManagedProfileCleanup(
+                                    pendingUuid = pending,
+                                    managedUuid = result.id.value,
+                                    canDelete = true,
+                                    // The immediately replaced binding may still
+                                    // own the running tunnel; older tombstones cannot.
+                                    stopBeforeDelete = pending == previousUuid,
+                                    stopVpn = backend.vpn::stop,
+                                    deleteManaged = backend.subscriptions::deleteManaged,
+                                    clearPending =
+                                        sessionRepository::clearPendingProfileCleanup,
+                                )
                             }
                             // No profile UUID: lands in user-shareable diagnostics (GL-19).
                             Log.i(

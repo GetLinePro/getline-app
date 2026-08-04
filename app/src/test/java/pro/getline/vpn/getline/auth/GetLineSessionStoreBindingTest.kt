@@ -30,6 +30,7 @@ class GetLineSessionStoreBindingTest {
         store.subscriptionId = "sub-should-clear"
         store.managedProfileUuid = "profile-uuid"
         store.managedProfileSource = "https://sub.example.com/link"
+        store.rememberPendingProfileCleanup("old-profile-uuid")
         store.savePendingImport(
             PendingImport(
                 name = "GetLine",
@@ -54,6 +55,7 @@ class GetLineSessionStoreBindingTest {
 
         assertEquals("profile-uuid", store.managedProfileUuid)
         assertEquals("https://sub.example.com/link", store.managedProfileSource)
+        assertEquals(setOf("old-profile-uuid"), store.pendingProfileCleanupUuids())
     }
 
     @Test
@@ -142,11 +144,44 @@ class GetLineSessionStoreBindingTest {
     }
 
     @Test
+    fun pendingProfileCleanup_keepsMultipleUuids_andClearsOnlyExpectedUuid() {
+        val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
+        store.clearAccountState()
+        store.rememberPendingProfileCleanup("old-profile-uuid")
+        store.rememberPendingProfileCleanup("newer-old-profile-uuid")
+        store.savePendingImport(
+            PendingImport(
+                name = "GetLine",
+                source = "https://account.example.com/sub",
+            ),
+        )
+
+        store.clearPendingImport()
+        assertEquals(
+            setOf("old-profile-uuid", "newer-old-profile-uuid"),
+            store.pendingProfileCleanupUuids(),
+        )
+
+        store.clearPendingProfileCleanup("newer-attempt")
+        assertEquals(
+            setOf("old-profile-uuid", "newer-old-profile-uuid"),
+            store.pendingProfileCleanupUuids(),
+        )
+
+        store.clearPendingProfileCleanup("old-profile-uuid")
+        assertEquals(
+            setOf("newer-old-profile-uuid"),
+            store.pendingProfileCleanupUuids(),
+        )
+    }
+
+    @Test
     fun clearAccountState_stillClearsBinding() {
         val store = GetLineSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.managedProfileUuid = "profile-uuid"
         store.managedProfileSource = "https://sub.example.com/link"
+        store.rememberPendingProfileCleanup("old-profile-uuid")
         store.saveSession(
             NativeSession(
                 accessToken = "a",
@@ -159,6 +194,7 @@ class GetLineSessionStoreBindingTest {
 
         assertNull(store.managedProfileUuid)
         assertNull(store.managedProfileSource)
+        assertTrue(store.pendingProfileCleanupUuids().isEmpty())
         assertFalse(store.hasRefreshToken())
     }
 
