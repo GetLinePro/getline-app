@@ -5,6 +5,12 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+android {
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+}
+
 dependencies {
     implementation(project(":core"))
     implementation(project(":common"))
@@ -19,6 +25,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.kaidl.runtime)
     implementation(libs.rikkax.multiprocess)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
 }
 
 afterEvaluate {

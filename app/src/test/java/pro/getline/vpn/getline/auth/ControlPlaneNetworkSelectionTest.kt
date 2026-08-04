@@ -1,5 +1,6 @@
 package pro.getline.vpn.getline.auth
 
+import com.github.kr328.clash.common.network.UnderlyingNetworkSelector
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -11,7 +12,7 @@ class ControlPlaneNetworkSelectionTest {
 
     @Test
     fun pickUnderlying_prefersActiveWhenUsable() {
-        val picked = RwpGetLineAuthApi.pickUnderlying(
+        val picked = UnderlyingNetworkSelector.pick(
             active = "active",
             activeUsable = true,
             all = listOf("active", "other"),
@@ -22,7 +23,7 @@ class ControlPlaneNetworkSelectionTest {
 
     @Test
     fun pickUnderlying_skipsUnusableActiveAndUsesUnderlying() {
-        val picked = RwpGetLineAuthApi.pickUnderlying(
+        val picked = UnderlyingNetworkSelector.pick(
             active = "vpn",
             activeUsable = false,
             all = listOf("vpn", "cell"),
@@ -33,7 +34,7 @@ class ControlPlaneNetworkSelectionTest {
 
     @Test
     fun pickUnderlying_nullWhenOnlyVpn() {
-        val picked = RwpGetLineAuthApi.pickUnderlying(
+        val picked = UnderlyingNetworkSelector.pick(
             active = "vpn",
             activeUsable = false,
             all = listOf("vpn"),
@@ -44,7 +45,7 @@ class ControlPlaneNetworkSelectionTest {
 
     @Test
     fun pickUnderlying_nullActiveFallsThroughToAll() {
-        val picked = RwpGetLineAuthApi.pickUnderlying(
+        val picked = UnderlyingNetworkSelector.pick(
             active = null,
             activeUsable = false,
             all = listOf("cell"),

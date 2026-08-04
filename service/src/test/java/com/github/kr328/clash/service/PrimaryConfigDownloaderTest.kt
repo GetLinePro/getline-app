@@ -1,0 +1,453 @@
+package com.github.kr328.clash.service
+
+import android.content.Context
+import android.net.Network
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowNetwork
+import java.io.ByteArrayInputStream
+import java.io.IOException
+import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.URL
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
+class PrimaryConfigDownloaderTest {
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
+
+    private val context: Context
+        get() = RuntimeEnvironment.getApplication()
+
+    @Test
+    fun selectedNetwork_preservesRequestAndResponseContract() = runBlocking {
+        val network = ShadowNetwork.newInstance(42)
+        val opener = RecordingOpener(
+            Response(
+                body = "mixed-port: 7890\n",
+                headers = mapOf(
+                    "subscription-userinfo" to "upload=1; download=2; total=3",
+                    "profile-update-interval" to "24",
+                ),
+            ),
+        )
+        val directory = temporaryFolder.newFolder("download")
+        val downloader = downloader(opener, network)
+
+        val artifact = downloader.download(
+            context,
+            "https://example.com/subscription",
+            directory,
+        )
+
+        assertEquals(listOf(network), opener.networks)
+        assertEquals("GET", opener.connections.single().requestMethod)
+        assertEquals(false, opener.connections.single().instanceFollowRedirects)
+        assertEquals(false, opener.connections.single().useCaches)
+        assertTrue(opener.connections.single().doInput)
+        assertTrue(opener.connections.single().connectTimeout in 1..60_000)
+        assertTrue(opener.connections.single().readTimeout in 1..60_000)
+        assertTrue(
+            opener.connections.single().requestHeader("User-Agent")
+                ?.startsWith("ClashMetaForAndroid/") == true,
+        )
+        assertEquals("mixed-port: 7890\n", artifact.file.readText())
+        assertEquals("upload=1; download=2; total=3", artifact.subscriptionUserInfo)
+        assertEquals("24", artifact.profileUpdateInterval)
+
+        val file = artifact.file
+        artifact.close()
+        assertFalse(file.exists())
+        assertEquals(1, opener.connections.single().disconnects)
+    }
+
+    @Test
+    fun cleartextSource_isRejectedWithoutOpeningConnection() = runBlocking {
+        val opener = RecordingOpener(Response())
+
+        try {
+            downloader(opener).download(
+                context,
+                "http://example.com/subscription",
+                temporaryFolder.newFolder("cleartext"),
+            )
+            fail("expected cleartext rejection")
+        } catch (_: IllegalArgumentException) {
+            // expected
+        }
+
+        assertTrue(opener.urls.isEmpty())
+    }
+
+    @Test
+    fun basicAuth_isDecodedAndReappliedAcrossSameHostRedirect() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 302,
+                headers = mapOf("Location" to "https://example.com:443/final"),
+            ),
+            Response(body = "rules: []\n"),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://user%3Aname:p%40ss@example.com:443/start",
+            temporaryFolder.newFolder("basic-auth"),
+        ).use { }
+
+        val expected = "Basic " + android.util.Base64.encodeToString(
+            "user:name:p@ss".toByteArray(Charsets.UTF_8),
+            android.util.Base64.NO_WRAP,
+        )
+        assertEquals(2, opener.connections.size)
+        opener.connections.forEach {
+            assertEquals(expected, it.requestHeader("Authorization"))
+        }
+    }
+
+    @Test
+    fun basicAuth_isRemovedWhenRedirectChangesPort() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 302,
+                headers = mapOf("Location" to "https://example.com:8443/final"),
+            ),
+            Response(body = "rules: []\n"),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://user:password@example.com:443/start",
+            temporaryFolder.newFolder("basic-auth-port-change"),
+        ).use { }
+
+        assertEquals("Basic dXNlcjpwYXNzd29yZA==", opener.connections[0].requestHeader("Authorization"))
+        assertNull(opener.connections[1].requestHeader("Authorization"))
+    }
+
+    @Test
+    fun defaultTemporaryDirectory_isApplicationCache() = runBlocking {
+        val opener = RecordingOpener(Response(body = "rules: []\n"))
+
+        val artifact = downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+        )
+
+        assertEquals(context.cacheDir.canonicalFile, artifact.file.parentFile?.canonicalFile)
+        artifact.close()
+        assertFalse(artifact.file.exists())
+    }
+
+    @Test
+    fun sameHostRedirect_allowsPortChangeAndTrailingDot() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 302,
+                headers = mapOf("Location" to "https://example.com.:8443/final"),
+            ),
+            Response(body = "rules: []\n"),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://example.com/start",
+            temporaryFolder.newFolder("redirect"),
+        ).use { artifact ->
+            assertEquals("rules: []\n", artifact.file.readText())
+        }
+
+        assertEquals(2, opener.urls.size)
+        assertEquals("https", opener.urls[1].protocol)
+        assertEquals("example.com.", opener.urls[1].host)
+        assertEquals(8443, opener.urls[1].port)
+    }
+
+    @Test
+    fun crossHostRedirect_isRejectedWithoutTemporaryFile() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 302,
+                headers = mapOf("Location" to "https://other.example/final"),
+            ),
+        )
+        val directory = temporaryFolder.newFolder("cross-host")
+
+        expectIOException {
+            downloader(opener).download(context, "https://example.com/start", directory)
+        }
+
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+        assertEquals(1, opener.connections.single().disconnects)
+    }
+
+    @Test
+    fun httpsDowngrade_isRejected() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 307,
+                headers = mapOf("Location" to "http://example.com/final"),
+            ),
+        )
+
+        expectIOException {
+            downloader(opener).download(
+                context,
+                "https://example.com/start",
+                temporaryFolder.newFolder("downgrade"),
+            )
+        }
+        Unit
+    }
+
+    @Test
+    fun redirectLimit_matchesGoCheckRedirect() = runBlocking {
+        val redirect = Response(code = 302, headers = mapOf("Location" to "/again"))
+        val opener = RecordingOpener(*Array(10) { redirect })
+
+        val error = expectIOException {
+            downloader(opener).download(
+                context,
+                "https://example.com/start",
+                temporaryFolder.newFolder("redirect-limit"),
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("10 redirects"))
+        assertEquals(10, opener.urls.size)
+    }
+
+    @Test
+    fun non2xx_isRejectedWithoutTemporaryFile() = runBlocking {
+        val opener = RecordingOpener(Response(code = 503, message = "Unavailable"))
+        val directory = temporaryFolder.newFolder("non-2xx")
+
+        val error = expectIOException {
+            downloader(opener).download(context, "https://example.com/sub", directory)
+        }
+
+        assertTrue(error.message.orEmpty().contains("HTTP 503"))
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun selectedNetworkConnectFailure_retriesDefaultRouting() = runBlocking {
+        val network = ShadowNetwork.newInstance(42)
+        val opener = RecordingOpener(
+            Response(connectError = IOException("bind refused")),
+            Response(body = "rules: []\n"),
+        )
+
+        downloader(opener, network).download(
+            context,
+            "https://example.com/sub",
+            temporaryFolder.newFolder("fallback"),
+        ).use { artifact ->
+            assertEquals("rules: []\n", artifact.file.readText())
+        }
+
+        assertEquals(2, opener.networks.size)
+        assertEquals(network, opener.networks[0])
+        assertNull(opener.networks[1])
+        assertEquals(1, opener.connections[0].disconnects)
+    }
+
+    @Test
+    fun selectedNetworkConnectTimeout_reservesHalfBudgetForFallback() = runBlocking {
+        var now = 0L
+        val network = ShadowNetwork.newInstance(42)
+        val opener = RecordingOpener(
+            Response(
+                connectError = SocketTimeoutException("bound timeout"),
+                onConnect = { now = 30_000L },
+            ),
+            Response(body = "rules: []\n"),
+        )
+        val downloader = PrimaryConfigDownloader(
+            openConnection = opener,
+            pickNetwork = { network },
+            elapsedRealtime = { now },
+        )
+
+        downloader.download(
+            context,
+            "https://example.com/sub",
+            temporaryFolder.newFolder("timeout-fallback"),
+        ).use { }
+
+        assertEquals(listOf(network, null), opener.networks)
+        assertEquals(30_000, opener.connections[0].connectTimeout)
+        assertEquals(30_000, opener.connections[1].connectTimeout)
+    }
+
+    @Test
+    fun expiredBoundConnectFailure_reportsOriginalWithoutOpeningFallback() = runBlocking {
+        var now = 0L
+        val network = ShadowNetwork.newInstance(42)
+        val opener = RecordingOpener(
+            Response(
+                connectError = SocketTimeoutException("original bound timeout"),
+                onConnect = { now = 60_001L },
+            ),
+        )
+        val downloader = PrimaryConfigDownloader(
+            openConnection = opener,
+            pickNetwork = { network },
+            elapsedRealtime = { now },
+        )
+
+        val error = expectIOException {
+            downloader.download(
+                context,
+                "https://example.com/sub",
+                temporaryFolder.newFolder("expired-fallback"),
+            )
+        }
+
+        assertEquals("original bound timeout", error.message)
+        assertEquals(1, opener.urls.size)
+    }
+
+    @Test
+    fun readFailure_removesPartialTemporaryFile() = runBlocking {
+        val opener = RecordingOpener(Response(readError = IOException("reset")))
+        val directory = temporaryFolder.newFolder("partial")
+
+        expectIOException {
+            downloader(opener).download(context, "https://example.com/sub", directory)
+        }
+
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun oneDeadline_coversConnectionAndResponse() = runBlocking {
+        var now = 0L
+        val opener = RecordingOpener(Response(onConnect = { now = 60_001L }))
+        val downloader = PrimaryConfigDownloader(
+            openConnection = opener,
+            pickNetwork = { null },
+            elapsedRealtime = { now },
+        )
+
+        try {
+            downloader.download(
+                context,
+                "https://example.com/sub",
+                temporaryFolder.newFolder("deadline"),
+            )
+            fail("expected timeout")
+        } catch (_: SocketTimeoutException) {
+            // expected
+        }
+    }
+
+    private fun downloader(
+        opener: RecordingOpener,
+        network: Network? = null,
+    ) = PrimaryConfigDownloader(
+        openConnection = opener,
+        pickNetwork = { network },
+        elapsedRealtime = { 0L },
+    )
+
+    private suspend fun expectIOException(block: suspend () -> Unit): IOException {
+        return try {
+            block()
+            fail("expected IOException")
+            throw AssertionError("unreachable")
+        } catch (e: IOException) {
+            e
+        }
+    }
+
+    private data class Response(
+        val code: Int = 200,
+        val message: String = "OK",
+        val body: String = "",
+        val headers: Map<String, String> = emptyMap(),
+        val connectError: IOException? = null,
+        val readError: IOException? = null,
+        val onConnect: () -> Unit = {},
+    )
+
+    private class RecordingOpener(
+        vararg responses: Response,
+    ) : (URL, Network?) -> HttpURLConnection {
+        private val queue = ArrayDeque(responses.toList())
+        val urls = mutableListOf<URL>()
+        val networks = mutableListOf<Network?>()
+        val connections = mutableListOf<FakeConnection>()
+
+        override fun invoke(url: URL, network: Network?): HttpURLConnection {
+            urls += url
+            networks += network
+            val response = queue.removeFirstOrNull()
+                ?: throw AssertionError("unexpected connection #${urls.size} to $url")
+            return FakeConnection(url, response).also(connections::add)
+        }
+    }
+
+    private class FakeConnection(
+        url: URL,
+        private val response: Response,
+    ) : HttpURLConnection(url) {
+        private val requestHeaders = mutableMapOf<String, String>()
+        var disconnects: Int = 0
+            private set
+
+        fun requestHeader(name: String): String? = requestHeaders[name]
+
+        override fun setRequestProperty(key: String, value: String) {
+            requestHeaders[key] = value
+        }
+
+        override fun getRequestProperty(key: String): String? = requestHeaders[key]
+
+        override fun connect() {
+            response.onConnect()
+            response.connectError?.let { throw it }
+        }
+
+        override fun disconnect() {
+            disconnects++
+        }
+
+        override fun usingProxy(): Boolean = false
+
+        override fun getResponseCode(): Int = response.code
+
+        override fun getResponseMessage(): String = response.message
+
+        override fun getHeaderField(name: String?): String? {
+            if (name == null) return null
+            return response.headers.entries.firstOrNull {
+                it.key.equals(name, ignoreCase = true)
+            }?.value
+        }
+
+        override fun getInputStream(): InputStream {
+            response.readError?.let { error ->
+                return object : InputStream() {
+                    override fun read(): Int = throw error
+                    override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+                        throw error
+                }
+            }
+            return ByteArrayInputStream(response.body.toByteArray(Charsets.UTF_8))
+        }
+    }
+}

@@ -38,6 +38,34 @@ func fetchAndValid(callback unsafe.Pointer, path, url C.c_string, force C.int) {
 	}(C.GoString(path), C.GoString(url), callback)
 }
 
+//export validateAndPrepareLocalConfig
+func validateAndPrepareLocalConfig(
+	callback unsafe.Pointer,
+	path, localFile, subscriptionUserInfo, profileUpdateInterval C.c_string,
+) {
+	go func(path, localFile, subscriptionUserInfo, profileUpdateInterval string, callback unsafe.Pointer) {
+		cb := &remoteValidCallback{callback: callback}
+
+		err := config.ValidateAndPrepareLocalConfig(
+			path,
+			localFile,
+			subscriptionUserInfo,
+			profileUpdateInterval,
+			cb.reportStatus,
+		)
+
+		C.fetch_complete(callback, marshalString(err))
+		C.release_object(callback)
+		runtime.GC()
+	}(
+		C.GoString(path),
+		C.GoString(localFile),
+		C.GoString(subscriptionUserInfo),
+		C.GoString(profileUpdateInterval),
+		callback,
+	)
+}
+
 //export load
 func load(completable unsafe.Pointer, path C.c_string) {
 	go func(path string) {

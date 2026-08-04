@@ -196,6 +196,39 @@ func FetchAndValid(
 		reportSubscriptionInfo(header, reportStatus)
 	}
 
+	return validateAndPrepare(path, reportStatus)
+}
+
+// ValidateAndPrepareLocalConfig installs a caller-downloaded primary config,
+// reports its subscription headers, then runs the existing patch/provider/parse
+// pipeline. It deliberately accepts no URL: bootstrap transport stays outside
+// the Mihomo runtime.
+func ValidateAndPrepareLocalConfig(
+	path string,
+	localFile string,
+	subscriptionUserInfo string,
+	profileUpdateInterval string,
+	reportStatus func(string),
+) error {
+	reader, err := os.Open(localFile)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	if err := writeFile(P.Join(path, "config.yaml"), reader); err != nil {
+		return err
+	}
+
+	reportSubscriptionInfo(fetchHeader{
+		SubscriptionUserInfo:  subscriptionUserInfo,
+		ProfileUpdateInterval: profileUpdateInterval,
+	}, reportStatus)
+
+	return validateAndPrepare(path, reportStatus)
+}
+
+func validateAndPrepare(path string, reportStatus func(string)) error {
 	defer runtime.GC()
 
 	rawCfg, err := UnmarshalAndPatch(path)

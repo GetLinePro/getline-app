@@ -20,12 +20,19 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.net.URL
 import java.util.*
 import java.util.concurrent.TimeUnit
+
+internal fun shouldUsePlatformPrimaryConfigTransport(
+    type: Profile.Type,
+    scheme: String?,
+): Boolean = type == Profile.Type.Url && scheme?.equals("https", ignoreCase = true) == true
 
 object ProfileProcessor {
     private val profileLock = Mutex()
     private val processLock = Mutex()
+    private val primaryConfigDownloader = PrimaryConfigDownloader()
 
     suspend fun apply(context: Context, uuid: UUID, callback: IFetchObserver? = null) {
         withContext(NonCancellable) {
@@ -48,7 +55,13 @@ object ProfileProcessor {
                 Clash.setAgeSecretKey(snapshot.ageSecretKey?.takeIf { it.isNotBlank() })
 
                 val force = snapshot.type != Profile.Type.File
-                val subscriptionInfo = fetchProfile(context, snapshot.source, force, callback)
+                val subscriptionInfo = fetchProfile(
+                    context,
+                    snapshot.type,
+                    snapshot.source,
+                    force,
+                    callback,
+                )
 
                 profileLock.withLock {
                     if (PendingDao().queryByUUID(snapshot.uuid) == snapshot) {
@@ -107,7 +120,13 @@ object ProfileProcessor {
 
                 Clash.setAgeSecretKey(snapshot.ageSecretKey?.takeIf { it.isNotBlank() })
 
-                val subscriptionInfo = fetchProfile(context, snapshot.source, true, callback)
+                val subscriptionInfo = fetchProfile(
+                    context,
+                    snapshot.type,
+                    snapshot.source,
+                    true,
+                    callback,
+                )
 
                 profileLock.withLock {
                     val imported = ImportedDao().queryByUUID(snapshot.uuid)
@@ -136,6 +155,7 @@ object ProfileProcessor {
 
     private suspend fun fetchProfile(
         context: Context,
+        type: Profile.Type,
         source: String,
         force: Boolean,
         callback: IFetchObserver?,
@@ -143,20 +163,51 @@ object ProfileProcessor {
         var subscriptionInfo: FetchStatus? = null
         var cb = callback
 
-        Clash.fetchAndValid(context.processingDir, source, force) {
+        val reportStatus: (FetchStatus) -> Unit = {
             if (it.action == FetchStatus.Action.SubscriptionInfo) {
                 subscriptionInfo = it
-                return@fetchAndValid
-            }
+            } else {
+                try {
+                    cb?.updateStatus(it)
+                } catch (e: Exception) {
+                    cb = null
 
-            try {
-                cb?.updateStatus(it)
-            } catch (e: Exception) {
-                cb = null
-
-                Log.w("Report fetch status: $e", e)
+                    Log.w("Report fetch status: $e", e)
+                }
             }
-        }.await()
+        }
+
+        if (shouldUsePlatformPrimaryConfigTransport(type, Uri.parse(source).scheme)) {
+            val sourceUrl = URL(source)
+            val reportHost = if (sourceUrl.port < 0) {
+                sourceUrl.host
+            } else {
+                "${sourceUrl.host}:${sourceUrl.port}"
+            }
+            reportStatus(
+                FetchStatus(
+                    action = FetchStatus.Action.FetchConfiguration,
+                    args = listOf(reportHost),
+                    progress = -1,
+                    max = -1,
+                ),
+            )
+            primaryConfigDownloader.download(context, source)
+                .use { artifact ->
+                    Clash.validateAndPrepareLocalConfig(
+                        path = context.processingDir,
+                        localFile = artifact.file,
+                        subscriptionUserInfo = artifact.subscriptionUserInfo,
+                        profileUpdateInterval = artifact.profileUpdateInterval,
+                        reportStatus = reportStatus,
+                    ).await()
+                }
+        } else {
+            // Android's platform HTTP stack blocks cleartext for target 28+.
+            // Keep advanced http:// profiles on their existing native path instead
+            // of weakening the whole app's Network Security Configuration.
+            Clash.fetchAndValid(context.processingDir, source, force, reportStatus).await()
+        }
 
         return subscriptionInfo
     }

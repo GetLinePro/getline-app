@@ -70,6 +70,10 @@ jobs:
       - name: Verify Mihomo security gate
         run: ./scripts/verify-mihomo-gate.sh
 
+      - name: Test application-owned Go config bridge
+        working-directory: core/src/main/golang
+        run: go test ./native/config
+
       # This job builds the release build type without any signing material.
       # Pull requests only need the build result, so they upload no binaries.
       # Main/manual runs retain one universal APK briefly for diagnostics; it is
@@ -85,7 +89,10 @@ jobs:
         if: success()
         run: |
           df -h / | tail -1
-          ./gradlew --no-daemon app:testAlphaProdReleaseUnitTest
+          ./gradlew --no-daemon \
+            service:testAlphaReleaseUnitTest \
+            app:testAlphaProdReleaseUnitTest \
+            app:testAlphaE2eDebugUnitTest
           df -h / | tail -1
 
       - name: Build

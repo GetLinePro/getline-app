@@ -3,9 +3,9 @@ package pro.getline.vpn.getline.auth
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
-import android.net.NetworkCapabilities
 import com.github.kr328.clash.common.Global
 import com.github.kr328.clash.common.log.Log
+import com.github.kr328.clash.common.network.UnderlyingNetworkSelector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -286,7 +286,7 @@ class RwpGetLineAuthApi(
      */
     internal fun resolveUnderlyingNetwork(): Network? {
         val cm = connectivityManager ?: connectivityManagerFromGlobal() ?: return null
-        return pickUnderlyingNetwork(cm)
+        return UnderlyingNetworkSelector.pickNetwork(cm)
     }
 
     private fun connectivityManagerFromGlobal(): ConnectivityManager? {
@@ -341,66 +341,6 @@ class RwpGetLineAuthApi(
         private const val EMAIL_AUTH_INTENT = "register"
         private const val TIMEOUT_MS = 30_000
         private const val DEFAULT_EXPIRES_IN_SECONDS = 86_400L
-
-        /**
-         * Whether [NetworkCapabilities] are safe for control-plane HTTP
-         * (must not re-enter the app VPN tunnel).
-         *
-         * Requires [NetworkCapabilities.NET_CAPABILITY_VALIDATED]: INTERNET alone
-         * means the network is *configured* for internet, not that it currently
-         * works (captive portal / unvalidated Wi‑Fi can rank ahead of working cell).
-         */
-        internal fun isUsableUnderlying(caps: NetworkCapabilities?): Boolean {
-            if (caps == null) return false
-            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
-                return false
-            }
-            // Configured-for-internet is not enough; skip captive / unvalidated.
-            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
-                return false
-            }
-            // VPN transport: app traffic would re-enter the tunnel.
-            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
-                return false
-            }
-            // Prefer NOT_VPN when the platform sets it (API 21+ on underlying).
-            if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
-                return false
-            }
-            return true
-        }
-
-        /**
-         * Pure selection: prefer [active] when usable, else first usable in [all].
-         */
-        internal fun <T> pickUnderlying(
-            active: T?,
-            activeUsable: Boolean,
-            all: List<T>,
-            isUsable: (T) -> Boolean,
-        ): T? {
-            if (active != null && activeUsable) return active
-            return all.firstOrNull(isUsable)
-        }
-
-        /**
-         * Pick a validated non-VPN network with INTERNET.
-         * Prefer the active network when it itself is not a VPN; otherwise scan.
-         */
-        internal fun pickUnderlyingNetwork(cm: ConnectivityManager): Network? {
-            fun usable(network: Network): Boolean =
-                isUsableUnderlying(cm.getNetworkCapabilities(network))
-
-            val active = cm.activeNetwork
-            @Suppress("DEPRECATION")
-            val all = cm.allNetworks.toList()
-            return pickUnderlying(
-                active = active,
-                activeUsable = active != null && usable(active),
-                all = all,
-                isUsable = ::usable,
-            )
-        }
 
         /**
          * Browser start paths, kept in sync with the deployed trampoline HTML

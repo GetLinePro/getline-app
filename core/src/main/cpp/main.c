@@ -239,6 +239,26 @@ Java_com_github_kr328_clash_core_bridge_Bridge_nativeFetchAndValid(JNIEnv *env, 
 }
 
 JNIEXPORT void JNICALL
+Java_com_github_kr328_clash_core_bridge_Bridge_nativeValidateAndPrepareLocalConfig(
+        JNIEnv *env, jobject thiz, jobject callback, jstring path, jstring local_file,
+        jstring subscription_user_info, jstring profile_update_interval) {
+    TRACE_METHOD();
+
+    jobject _callback = new_global(callback);
+    scoped_string _path = get_string(path);
+    scoped_string _local_file = get_string(local_file);
+    scoped_string _subscription_user_info = get_string(subscription_user_info);
+    scoped_string _profile_update_interval = get_string(profile_update_interval);
+
+    validateAndPrepareLocalConfig(
+            _callback,
+            _path,
+            _local_file,
+            _subscription_user_info,
+            _profile_update_interval);
+}
+
+JNIEXPORT void JNICALL
 Java_com_github_kr328_clash_core_bridge_Bridge_nativeSetAgeSecretKey(JNIEnv *env, jobject thiz,
                                                                       jstring key) {
     TRACE_METHOD();

@@ -35,6 +35,14 @@ object Bridge {
         force: Boolean
     )
 
+    external fun nativeValidateAndPrepareLocalConfig(
+        completable: FetchCallback,
+        path: String,
+        localFile: String,
+        subscriptionUserInfo: String,
+        profileUpdateInterval: String,
+    )
+
     external fun nativeLoad(completable: CompletableDeferred<Unit>, path: String)
     external fun nativeQueryProviders(): String
     external fun nativeUpdateProvider(

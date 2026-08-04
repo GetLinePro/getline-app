@@ -165,6 +165,41 @@ object Clash {
         }
     }
 
+    fun validateAndPrepareLocalConfig(
+        path: File,
+        localFile: File,
+        subscriptionUserInfo: String,
+        profileUpdateInterval: String,
+        reportStatus: (FetchStatus) -> Unit,
+    ): CompletableDeferred<Unit> {
+        return CompletableDeferred<Unit>().apply {
+            Bridge.nativeValidateAndPrepareLocalConfig(
+                object : FetchCallback {
+                    override fun report(statusJson: String) {
+                        reportStatus(
+                            Json.Default.decodeFromString(
+                                FetchStatus.serializer(),
+                                statusJson,
+                            ),
+                        )
+                    }
+
+                    override fun complete(error: String?) {
+                        if (error != null) {
+                            completeExceptionally(ClashException(error))
+                        } else {
+                            complete(Unit)
+                        }
+                    }
+                },
+                path.absolutePath,
+                localFile.absolutePath,
+                subscriptionUserInfo,
+                profileUpdateInterval,
+            )
+        }
+    }
+
     fun load(path: File): CompletableDeferred<Unit> {
         return CompletableDeferred<Unit>().apply {
             Bridge.nativeLoad(this, path.absolutePath)
