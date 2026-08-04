@@ -233,135 +233,6 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         return result
     }
 
-    /**
-     * Shared headless import. [createdOrphan] is cleared only after the full path
-     * succeeds — including [setActive] when [activate] is true — so a failed
-     * activation still deletes a UUID minted by this call.
-     */
-    private suspend fun IProfileManager.importPending(
-        draft: GetLineSubscriptionDraft,
-        reuseId: GetLineSubscriptionId?,
-        onProgress: suspend (GetLineImportStage) -> Unit,
-        activate: Boolean,
-        diagnosticOp: String?,
-    ): GetLineSubscriptionId {
-        // File profiles ship an empty config.yaml; ProfileProcessor uses force=false
-        // so commit never fetches draft.source and always fails. Advanced BrowseFiles
-        // is the supported File path. ExternalControl sometimes tags a remote URL as
-        // type=file — promote those to Url before create. Non-URL File: refuse early.
-        val importType = resolveHeadlessImportType(draft)
-
-        val existingUuid = reuseId
-            ?.toUuid()
-            ?.let { uuid -> queryByUUID(uuid)?.uuid }
-        // Only delete on failure when we minted a brand-new UUID this call.
-        var createdOrphan: UUID? = null
-        val uuid = existingUuid ?: create(importType.toCmfaType(), draft.name).also {
-            createdOrphan = it
-        }
-        try {
-            if (draft.source != null) {
-                patch(
-                    uuid,
-                    draft.name,
-                    draft.source,
-                    draft.interval,
-                    null,
-                )
-            }
-            diagnosticOp?.let {
-                Log.i(
-                    "profile_import stage=profile_prepared op=$it " +
-                        "reused=${if (existingUuid == null) 0 else 1}",
-                )
-            }
-            // IFetchObserver.updateStatus is synchronous — do not launch on an
-            // arbitrary scope (progress would outlive import cancellation).
-            diagnosticOp?.let { Log.i("profile_import stage=commit_begin op=$it") }
-            coroutineScope {
-                val stages = Channel<GetLineImportStage>(Channel.CONFLATED)
-                var lastDiagnosticAction: FetchStatus.Action? = null
-                val progressJob = launch {
-                    for (stage in stages) {
-                        onProgress(stage)
-                    }
-                }
-                try {
-                    commit(uuid) { status ->
-                        Log.d(fetchStatusDiagnosticLine(status))
-                        if (diagnosticOp != null && status.action != lastDiagnosticAction) {
-                            lastDiagnosticAction = status.action
-                            Log.i(
-                                "profile_import fetch op=$diagnosticOp " +
-                                    "action=${status.action}",
-                            )
-                        }
-                        mapFetchActionToImportStage(status.action)
-                            ?.let { stages.trySend(it) }
-                    }
-                } finally {
-                    stages.close()
-                    progressJob.join()
-                }
-            }
-            diagnosticOp?.let { Log.i("profile_import stage=commit_returned op=$it") }
-            val imported = queryByUUID(uuid)?.takeIf { it.imported }
-                ?: throw IllegalStateException("profile not imported after commit")
-            diagnosticOp?.let { Log.i("profile_import stage=verified op=$it") }
-            if (activate) {
-                setActive(imported)
-            }
-            // Clear only after the full requested path (import ± activate) succeeded.
-            createdOrphan = null
-            return GetLineSubscriptionId(uuid.toString())
-        } catch (e: Throwable) {
-            val orphan = createdOrphan
-            if (orphan != null) {
-                // Parent may already be cancelled (withTimeout). Cleanup must not
-                // ride that cancellation or Binder delete is dropped silently.
-                val cleanup = withContext(NonCancellable) {
-                    runCatching {
-                        withTimeout(ORPHAN_CLEANUP_TIMEOUT_MS) {
-                            delete(orphan)
-                        }
-                    }
-                }
-                diagnosticOp?.let {
-                    Log.i(
-                        "profile_import cleanup op=$it " +
-                            "outcome=${if (cleanup.isSuccess) "ok" else "failed"}",
-                    )
-                }
-            }
-            throw e
-        }
-    }
-
-    /**
-     * Headless import needs a fetchable remote source (Url). File without an
-     * http(s) source cannot be committed product-side.
-     */
-    private fun resolveHeadlessImportType(
-        draft: GetLineSubscriptionDraft,
-    ): GetLineSubscriptionType {
-        return when (draft.type) {
-            GetLineSubscriptionType.Url -> GetLineSubscriptionType.Url
-            GetLineSubscriptionType.File -> {
-                val source = draft.source?.trim().orEmpty()
-                if (source.startsWith("http://", ignoreCase = true) ||
-                    source.startsWith("https://", ignoreCase = true)
-                ) {
-                    GetLineSubscriptionType.Url
-                } else {
-                    throw IllegalArgumentException(
-                        "File profiles require Advanced BrowseFiles; " +
-                            "headless import needs an http(s) source",
-                    )
-                }
-            }
-        }
-    }
-
     override suspend fun requestConfigUpdate(
         id: GetLineSubscriptionId,
     ): GetLineBackendResult<Unit> {
@@ -402,14 +273,6 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
             total = total,
         )
     }
-
-    private fun GetLineSubscriptionType.toCmfaType(): Profile.Type {
-        return when (this) {
-            GetLineSubscriptionType.File -> Profile.Type.File
-            GetLineSubscriptionType.Url -> Profile.Type.Url
-        }
-    }
-
 }
 
 private const val PROFILE_OPERATION_TIMEOUT_MS = 8_000L
@@ -497,6 +360,142 @@ private fun Throwable.reportableCause(): Throwable? {
         candidate = candidate.cause
     }
     return candidate
+}
+
+/**
+ * Shared headless import. [createdOrphan] is cleared only after the full path
+ * succeeds — including [setActive] when [activate] is true — so a failed
+ * activation still deletes a UUID minted by this call.
+ */
+internal suspend fun IProfileManager.importPending(
+    draft: GetLineSubscriptionDraft,
+    reuseId: GetLineSubscriptionId?,
+    onProgress: suspend (GetLineImportStage) -> Unit,
+    activate: Boolean,
+    diagnosticOp: String?,
+): GetLineSubscriptionId {
+    // File profiles ship an empty config.yaml; ProfileProcessor uses force=false
+    // so commit never fetches draft.source and always fails. Advanced BrowseFiles
+    // is the supported File path. ExternalControl sometimes tags a remote URL as
+    // type=file — promote those to Url before create. Non-URL File: refuse early.
+    val importType = resolveHeadlessImportType(draft)
+
+    val existingUuid = reuseId
+        ?.toUuid()
+        ?.let { uuid -> queryByUUID(uuid)?.uuid }
+    // Only delete on failure when we minted a brand-new UUID this call.
+    var createdOrphan: UUID? = null
+    val uuid = existingUuid ?: create(importType.toCmfaType(), draft.name).also {
+        createdOrphan = it
+    }
+    try {
+        if (draft.source != null) {
+            patch(
+                uuid,
+                draft.name,
+                draft.source,
+                draft.interval,
+                null,
+            )
+        }
+        diagnosticOp?.let {
+            Log.i(
+                "profile_import stage=profile_prepared op=$it " +
+                    "reused=${if (existingUuid == null) 0 else 1}",
+            )
+        }
+        // IFetchObserver.updateStatus is synchronous — do not launch on an
+        // arbitrary scope (progress would outlive import cancellation).
+        diagnosticOp?.let { Log.i("profile_import stage=commit_begin op=$it") }
+        coroutineScope {
+            val stages = Channel<GetLineImportStage>(Channel.CONFLATED)
+            var lastDiagnosticAction: FetchStatus.Action? = null
+            val progressJob = launch {
+                for (stage in stages) {
+                    onProgress(stage)
+                }
+            }
+            try {
+                commit(uuid) { status ->
+                    Log.d(fetchStatusDiagnosticLine(status))
+                    if (diagnosticOp != null && status.action != lastDiagnosticAction) {
+                        lastDiagnosticAction = status.action
+                        Log.i(
+                            "profile_import fetch op=$diagnosticOp " +
+                                "action=${status.action}",
+                        )
+                    }
+                    mapFetchActionToImportStage(status.action)
+                        ?.let { stages.trySend(it) }
+                }
+            } finally {
+                stages.close()
+                progressJob.join()
+            }
+        }
+        diagnosticOp?.let { Log.i("profile_import stage=commit_returned op=$it") }
+        val imported = queryByUUID(uuid)?.takeIf { it.imported }
+            ?: throw IllegalStateException("profile not imported after commit")
+        diagnosticOp?.let { Log.i("profile_import stage=verified op=$it") }
+        if (activate) {
+            setActive(imported)
+        }
+        // Clear only after the full requested path (import ± activate) succeeded.
+        createdOrphan = null
+        return GetLineSubscriptionId(uuid.toString())
+    } catch (e: Throwable) {
+        val orphan = createdOrphan
+        if (orphan != null) {
+            // Parent may already be cancelled (withTimeout). Cleanup must not
+            // ride that cancellation or Binder delete is dropped silently.
+            val cleanup = withContext(NonCancellable) {
+                runCatching {
+                    withTimeout(ORPHAN_CLEANUP_TIMEOUT_MS) {
+                        delete(orphan)
+                    }
+                }
+            }
+            diagnosticOp?.let {
+                Log.i(
+                    "profile_import cleanup op=$it " +
+                        "outcome=${if (cleanup.isSuccess) "ok" else "failed"}",
+                )
+            }
+        }
+        throw e
+    }
+}
+
+/**
+ * Headless import needs a fetchable remote source (Url). File without an
+ * http(s) source cannot be committed product-side.
+ */
+private fun resolveHeadlessImportType(
+    draft: GetLineSubscriptionDraft,
+): GetLineSubscriptionType {
+    return when (draft.type) {
+        GetLineSubscriptionType.Url -> GetLineSubscriptionType.Url
+        GetLineSubscriptionType.File -> {
+            val source = draft.source?.trim().orEmpty()
+            if (source.startsWith("http://", ignoreCase = true) ||
+                source.startsWith("https://", ignoreCase = true)
+            ) {
+                GetLineSubscriptionType.Url
+            } else {
+                throw IllegalArgumentException(
+                    "File profiles require Advanced BrowseFiles; " +
+                        "headless import needs an http(s) source",
+                )
+            }
+        }
+    }
+}
+
+private fun GetLineSubscriptionType.toCmfaType(): Profile.Type {
+    return when (this) {
+        GetLineSubscriptionType.File -> Profile.Type.File
+        GetLineSubscriptionType.Url -> Profile.Type.Url
+    }
 }
 
 private class CmfaGetLineVpnController(

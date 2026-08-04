@@ -9,6 +9,8 @@
 #        clear → Sign in with Google → Success on mock page
 #        → VPN OK → notification Allow → Home (e2e-direct / Connected)
 #        → force-stop → relaunch → Home without browser login
+#        → kill :background → UI survives, profile inventory intact, still Home
+#        → install -r without pm clear → Home, encrypted store, no re-login
 #   → optional local docker markers (only if e2e-mock is on this machine)
 #
 # No SSH to deploy hosts. Remote mock logs: check on the host yourself or use
@@ -33,6 +35,10 @@
 #   SKIP_SUB_LINK=1          skip manual subscription-link import path
 #   SKIP_GOOGLE=1            skip Google Auth Tab path (+ its persistence)
 #   SKIP_PERSISTENCE=1       skip force-stop relaunch (Google path only)
+#   SKIP_BACKGROUND_DEATH=1  skip :background kill/recovery (Google path only)
+#   SKIP_REINSTALL=1         skip install -r over existing data (Google path only)
+#   FORCE_REINSTALL=1        run the install -r check even with SKIP_INSTALL=1
+#                            (installs the local APK over whatever is on device)
 #   SKIP_IMPORT_HOME=1       skip HOME mid-import survival check on link path
 #   REQUIRE_ENCRYPTED_SESSION_PREFS
 #                            default 1 after pm clear, 0 with SKIP_CLEAR=1;
@@ -219,6 +225,40 @@ ui_input_text() {
   local encoded
   encoded="${raw// /%s}"
   adb_s shell input text "$encoded"
+}
+
+pid_of() {
+  adb_s shell "ps -A -o PID,NAME" 2>/dev/null \
+    | tr -d '\r' \
+    | awk -v n="$1" '$2 == n { print $1; exit }'
+}
+
+# Imported profile UUIDs as a sorted line. CMFA stores one directory per
+# imported profile, so this is the cheapest honest answer to "did we leak or
+# lose a profile" without going through the Binder we are trying to kill.
+imported_profile_uuids() {
+  adb_s shell run-as "$PACKAGE" ls -1 files/imported 2>/dev/null \
+    | tr -d '\r' \
+    | sort \
+    | tr '\n' ' '
+}
+
+# Last cold-start routing breadcrumb (see MainActivity.logStartupRoute).
+last_startup_route() {
+  adb_s logcat -d 2>/dev/null | grep -o 'startup_route .*' | tail -1
+}
+
+# Breadcrumb tokens are space-separated k=v; match on whole tokens only.
+assert_route_token() {
+  local route="$1" token="$2"
+  case " $route " in
+    *" $token "*)
+      ok "startup_route $token"
+      return 0
+      ;;
+  esac
+  fail "startup_route missing $token"
+  return 1
 }
 
 # True if package process logged a fatal ClassCast (Bug 4 regression).
@@ -668,6 +708,182 @@ flow_persistence() {
   fi
 }
 
+# The VPN and the whole profile store live in :background. Killing it must not
+# take the UI process with it, must not lose a profile, and must not drop the
+# user back on onboarding — the cold-start policy treats a dead backend as
+# "unknown", not as "no subscription".
+#
+# `am kill` is a no-op here: the process is not in a killable state while the UI
+# holds a binding. The kill goes through run-as under the app's own uid, which
+# works on debuggable builds only — the same builds this script installs.
+flow_background_death() {
+  bold "[E] :background process death"
+  if [[ "${SKIP_BACKGROUND_DEATH:-0}" == "1" ]]; then
+    yellow "SKIP_BACKGROUND_DEATH=1"
+    return 0
+  fi
+  export E2E_SERIAL="$SERIAL"
+  export E2E_ADB="$ADB"
+
+  local ui_before bg_before profiles_before
+  ui_before="$(pid_of "$PACKAGE")"
+  bg_before="$(pid_of "$PACKAGE:background")"
+  profiles_before="$(imported_profile_uuids)"
+
+  if [[ -z "$bg_before" ]]; then
+    fail ":background is not running — nothing to kill"
+    return 1
+  fi
+  if [[ -z "${profiles_before// /}" ]]; then
+    fail "no imported profile before the kill — the scenario would prove nothing"
+    return 1
+  fi
+  ok ":background pid=$bg_before, imported: $profiles_before"
+
+  if ! adb_s shell run-as "$PACKAGE" kill -9 "$bg_before" >/dev/null 2>&1; then
+    fail "run-as kill -9 $bg_before failed (non-debuggable build?)"
+    return 1
+  fi
+  sleep 3
+
+  local ui_after bg_after
+  ui_after="$(pid_of "$PACKAGE")"
+  bg_after="$(pid_of "$PACKAGE:background")"
+  if [[ "$bg_after" == "$bg_before" ]]; then
+    fail "kill did not land — :background pid unchanged ($bg_after)"
+    return 1
+  fi
+  ok ":background died (pid $bg_before → ${bg_after:-none})"
+  if [[ -n "$ui_before" && "$ui_after" == "$ui_before" ]]; then
+    ok "UI process survived (pid $ui_after)"
+  else
+    fail "UI process died with :background ($ui_before → ${ui_after:-none})"
+  fi
+
+  launch_app
+  if ! wait_activity_regex 'GetLineHomeActivity' "$HOME_TIMEOUT_S"; then
+    fail "expected Home after :background death; got $(top_activity || true)"
+    ui_texts || true
+    return 1
+  fi
+  ok "Home after :background death"
+
+  local texts
+  texts="$(ui_texts || true)"
+  if echo "$texts" | grep -Fq "Sign in with Google"; then
+    fail ":background death dropped the user back on onboarding"
+    return 1
+  fi
+  ok "no onboarding after :background death"
+
+  # One recovery tap, only if the screen is offering one.
+  if echo "$texts" | grep -Eq 'Retry|Повторить'; then
+    ui_tap_exact Retry "Повторить" >/dev/null 2>&1 || true
+    sleep 2
+    if wait_activity_regex 'GetLineHomeActivity' 30; then
+      ok "Home after one Retry"
+    else
+      fail "Retry after :background death left $(top_activity || true)"
+      return 1
+    fi
+  fi
+
+  local profiles_after
+  profiles_after="$(imported_profile_uuids)"
+  if [[ "$profiles_after" == "$profiles_before" ]]; then
+    ok "imported profiles unchanged"
+  else
+    fail "profile inventory changed: '$profiles_before' → '$profiles_after'"
+    return 1
+  fi
+}
+
+# `install -r` keeps the data directory. The failure this guards is silent: the
+# session store lands on the plaintext fallback file, reads it empty, and the
+# user is asked to sign in again with nothing in the UI saying why. The
+# startup_route breadcrumb carries exactly the evidence needed to tell that apart
+# from a genuinely empty session.
+#
+# The same APK is reinstalled on purpose: the failure is about surviving a
+# replace, not about a migration between two versions — there are none.
+flow_reinstall() {
+  bold "[F] install -r over existing data (no pm clear)"
+  if [[ "${SKIP_REINSTALL:-0}" == "1" ]]; then
+    yellow "SKIP_REINSTALL=1"
+    return 0
+  fi
+  # SKIP_INSTALL=1 means "smoke whatever is already on the device". Installing a
+  # local artifact here would replace it with a possibly different build: the
+  # replacement is no longer same-APK, a lower versionCode fails outright, and
+  # either way the device is modified by a run that promised not to.
+  if [[ "${SKIP_INSTALL:-0}" == "1" && "${FORCE_REINSTALL:-0}" != "1" ]]; then
+    yellow "SKIP reinstall — SKIP_INSTALL=1 (FORCE_REINSTALL=1 to install the local APK anyway)"
+    return 0
+  fi
+  local apk
+  apk="$(pick_apk)"
+  if [[ -z "$apk" ]]; then
+    yellow "NOTE no APK available to reinstall — skip"
+    return 0
+  fi
+
+  local profiles_before
+  profiles_before="$(imported_profile_uuids)"
+  if [[ -z "${profiles_before// /}" ]]; then
+    fail "no imported profile before reinstall — the scenario would prove nothing"
+    return 1
+  fi
+
+  adb_s shell am force-stop "$PACKAGE"
+  local out
+  if ! out=$(adb_s install -r "$apk" 2>&1); then
+    fail "install -r failed for $(basename "$apk")"
+    printf '%s\n' "$out" | sed 's/^/  /' || true
+    return 1
+  fi
+  if printf '%s\n' "$out" | grep -qiE 'Failure|Error:'; then
+    fail "install -r reported failure for $(basename "$apk")"
+    printf '%s\n' "$out" | sed 's/^/  /' || true
+    return 1
+  fi
+  ok "install -r $(basename "$apk") (data kept)"
+
+  adb_s logcat -c 2>/dev/null || true
+  launch_app
+  if ! wait_activity_regex 'GetLineHomeActivity' "$HOME_TIMEOUT_S"; then
+    fail "expected Home after reinstall; got $(top_activity || true)"
+    ui_texts || true
+    return 1
+  fi
+  ok "Home after reinstall (no sign-in required)"
+
+  local route
+  route="$(last_startup_route)"
+  if [[ -z "$route" ]]; then
+    fail "no startup_route breadcrumb after reinstall"
+    return 1
+  fi
+  echo "  $route"
+  assert_route_token "$route" "dest=home" || return 1
+  assert_route_token "$route" "session=1" || return 1
+  assert_route_token "$route" "managed=1" || return 1
+  # A forked store reads empty and is indistinguishable from a wiped session
+  # in the UI; prefs_other is the only place it shows.
+  assert_route_token "$route" "prefs_other=0" || return 1
+  if [[ "$REQUIRE_ENCRYPTED_SESSION_PREFS" == "1" ]]; then
+    assert_route_token "$route" "prefs=enc" || return 1
+  fi
+
+  local profiles_after
+  profiles_after="$(imported_profile_uuids)"
+  if [[ "$profiles_after" == "$profiles_before" ]]; then
+    ok "imported profiles survived reinstall"
+  else
+    fail "profiles lost across reinstall: '$profiles_before' → '$profiles_after'"
+    return 1
+  fi
+}
+
 chrome_note() {
   bold "Device / Chrome"
   adb_s shell getprop ro.product.model || true
@@ -717,10 +933,14 @@ main() {
       login_ok=1
     fi
     check_server_markers || true
+    # E and F assert session=1 / managed=1, so they need the authenticated
+    # state the login flow leaves behind — same gate as persistence.
     if [[ "$login_ok" -eq 1 ]]; then
       flow_persistence || true
+      flow_background_death || true
+      flow_reinstall || true
     else
-      yellow "SKIP persistence — login flow failed"
+      yellow "SKIP persistence / :background death / reinstall — login flow failed"
     fi
   fi
 
