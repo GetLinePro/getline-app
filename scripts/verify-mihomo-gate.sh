@@ -103,9 +103,9 @@ check_ssh_deps() {
     printf '%s\n' "$with_out" >&2
     exit 1
   fi
-  if printf '%s\n' "$with_out" | grep -q "$SSH_DEP_PATTERN"; then
+  if grep -Fq "$SSH_DEP_PATTERN" <<<"$with_out"; then
     echo "error: security gate failed: $SSH_DEP_PATTERN still in deps ($target_desc tags $TAGS_WITH_NO_SSH)" >&2
-    printf '%s\n' "$with_out" | grep "$SSH_DEP_PATTERN" >&2 || true
+    grep -F "$SSH_DEP_PATTERN" <<<"$with_out" >&2 || true
     echo "  no_ssh did not exclude SSH outbound; patch or upstream wiring broken" >&2
     exit 1
   fi
@@ -116,7 +116,7 @@ check_ssh_deps() {
     printf '%s\n' "$without_out" >&2
     exit 1
   fi
-  if ! printf '%s\n' "$without_out" | grep -q "$SSH_DEP_PATTERN"; then
+  if ! grep -Fq "$SSH_DEP_PATTERN" <<<"$without_out"; then
     echo "error: control check failed: $SSH_DEP_PATTERN absent even without no_ssh" >&2
     echo "  target: $target_desc" >&2
     echo "  tags: $TAGS_WITHOUT_NO_SSH" >&2
