@@ -77,6 +77,26 @@
             android:launchMode="singleTask"
             android:screenOrientation="portrait"
             tools:ignore="LockedOrientationActivity" />
+        <!-- Native PKCE deep-link receiver. Scheme is flavor applicationId
+             (pro.getline.vpn / .alpha / .alpha.debug / .alpha.e2e.debug).
+             scheme "getline" stays reserved for ExternalImportActivity. -->
+        <activity
+            android:name="pro.getline.vpn.NativeAuthCallbackActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:path="/oauth2redirect"
+                    android:scheme="${applicationId}" />
+            </intent-filter>
+        </activity>
         <activity
             android:name="pro.getline.vpn.GetLineHomeActivity"
             android:configChanges="uiMode"

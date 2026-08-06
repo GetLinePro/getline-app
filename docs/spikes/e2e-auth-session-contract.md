@@ -446,10 +446,10 @@ L23–34, L71–75, L135–161.
 
 | Slice | Status |
 | --- | --- |
-| S0 Auth Tab handoff | **green** |
+| S0 Auth Tab handoff | **green** (shipped path: web token → device-key) |
 | S1 Native session + subscription import | **green** |
 | S2 Email OTP | not started |
-| Custom Tabs fallback | deferred |
+| Custom Tabs / native PKCE (`${APPLICATION_ID}:/oauth2redirect`) | **not in this mock yet** — product #19; matrix #22. e2e package intends `pro.getline.vpn.alpha.e2e.debug:/oauth2redirect` (mock/stage, not prod RWP). Contract body above still describes the shipped edge path. |
 
 How to run the mock, repeat S0/S1 on device, browser notes, and troubleshooting:  
 [`tools/e2e-mock/README.md`](../../tools/e2e-mock/README.md).

@@ -261,7 +261,17 @@ class TrialActivationTest {
         var dashboardCalls = 0
         var activateTrialCalls = 0
 
-        override suspend fun startBrowserAuth(method: AuthMethod) = error("not used")
+        override suspend fun startBrowserAuth(
+            method: AuthMethod,
+            codeChallenge: String,
+            appRedirect: String,
+        ) = error("not used")
+
+        override suspend fun exchangeNativeCode(
+            code: String,
+            codeVerifier: String,
+        ) = error("not used")
+
         override suspend fun sendEmailOtp(email: String) = error("not used")
         override suspend fun verifyEmailOtp(email: String, code: String) = error("not used")
         override suspend fun getCurrentUser(webToken: String) = error("not used")

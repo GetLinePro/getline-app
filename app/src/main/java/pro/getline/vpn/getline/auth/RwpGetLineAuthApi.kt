@@ -40,11 +40,17 @@ class RwpGetLineAuthApi(
         GetLineControlPlaneHostPolicy.requireApiOrigin(origin)
     }
 
-    override suspend fun startBrowserAuth(method: AuthMethod): BrowserAuthStartResponse {
+    override suspend fun startBrowserAuth(
+        method: AuthMethod,
+        codeChallenge: String,
+        appRedirect: String,
+    ): BrowserAuthStartResponse {
         require(method.requiresBrowser()) {
             "AuthMethod.$method cannot start browser auth"
         }
-        val path = startPath(method)
+        require(codeChallenge.isNotBlank()) { "code_challenge is blank" }
+        require(appRedirect.isNotBlank()) { "app_redirect is blank" }
+        val path = startPath(method, appRedirect, codeChallenge)
         val json = request(
             method = "GET",
             path = path,
@@ -61,6 +67,27 @@ class RwpGetLineAuthApi(
         // Reject wrong-environment / arbitrary hosts before browser launch.
         GetLineControlPlaneHostPolicy.requireBrowserLaunchUrl(authUrl)
         return BrowserAuthStartResponse(authUrl = authUrl)
+    }
+
+    override suspend fun exchangeNativeCode(
+        code: String,
+        codeVerifier: String,
+    ): NativeSession {
+        require(code.isNotBlank()) { "code is blank" }
+        require(codeVerifier.isNotBlank()) { "code_verifier is blank" }
+        val body = JSONObject()
+            .put("code", code)
+            .put("code_verifier", codeVerifier)
+            .toString()
+        val json = request(
+            method = "POST",
+            path = NATIVE_EXCHANGE_PATH,
+            bearer = null,
+            body = body,
+            xhr = true,
+            includeBrowserOriginHeaders = true,
+        )
+        return json.toNativeSession()
     }
 
     override suspend fun sendEmailOtp(email: String): EmailOtpSendResult {
@@ -346,6 +373,7 @@ class RwpGetLineAuthApi(
         const val ACTIVATE_TRIAL_PATH = "/api/dashboard/trial"
         const val EMAIL_SEND_OTP_PATH = "/api/auth/email/send-otp"
         const val EMAIL_VERIFY_OTP_PATH = "/api/auth/email/verify-otp"
+        const val NATIVE_EXCHANGE_PATH = "/api/auth/native/exchange"
         /**
          * `register`, not `login`: RWP provisions the trial only on the register
          * branch and treats it as idempotent — an existing account just signs in.
@@ -356,25 +384,30 @@ class RwpGetLineAuthApi(
         private const val DEFAULT_EXPIRES_IN_SECONDS = 86_400L
 
         /**
-         * Browser start paths, kept in sync with the deployed trampoline HTML
-         * under `docs/spikes/android-auth/` — this is the revert path if
-         * trampolines misbehave, so a stale `intent` here would bring the
-         * "registered without a trial" bug back.
+         * Browser start paths for native PKCE. Query always includes
+         * `app_redirect`, `code_challenge`, and explicit `code_challenge_method=S256`.
+         * Without `app_redirect` the server may still return 200 and follow the
+         * old web path — unit tests lock these parameter names.
          */
-        fun startPath(method: AuthMethod): String {
+        fun startPath(
+            method: AuthMethod,
+            appRedirect: String,
+            codeChallenge: String,
+        ): String {
             require(method.requiresBrowser()) {
                 "AuthMethod.$method has no browser start path"
             }
-            return when (method) {
-                AuthMethod.Google -> "/api/auth/google/start?intent=register"
-                AuthMethod.Telegram ->
-                    "/api/auth/telegram-oidc/start?intent=register&return_to=" +
-                        java.net.URLEncoder.encode(
-                            AppEnvironment.telegramReturnTo,
-                            StandardCharsets.UTF_8.name(),
-                        )
+            val base = when (method) {
+                AuthMethod.Google -> "/api/auth/google/start"
+                AuthMethod.Telegram -> "/api/auth/telegram-oidc/start"
                 AuthMethod.Email -> error("unreachable: Email requiresBrowser is false")
             }
+            val enc = StandardCharsets.UTF_8.name()
+            return base +
+                "?intent=register" +
+                "&app_redirect=" + java.net.URLEncoder.encode(appRedirect, enc) +
+                "&code_challenge=" + java.net.URLEncoder.encode(codeChallenge, enc) +
+                "&code_challenge_method=S256"
         }
 
         /** JSON body for send-otp (email only; intent is not used by this endpoint). */

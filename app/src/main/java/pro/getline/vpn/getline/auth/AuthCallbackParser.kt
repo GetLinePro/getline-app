@@ -5,58 +5,69 @@ import pro.getline.vpn.AppEnvironment
 import pro.getline.vpn.GetLineControlPlaneHostPolicy
 
 /**
- * Parses the shared HTTPS Auth Tab completion URI used by all browser providers:
+ * Dual browser-callback parser (issue #19 step 23).
  *
- * `https://{callbackHost}/#/login?auth_token=...&expires_in=86400`
- * `https://{callbackHost}/#/login?auth_error=...`
+ * 1. Native package URI `{applicationId}:/oauth2redirect`:
+ *    - `?code=` → [AuthCallbackResult.NativeCode] (Google PKCE)
+ *    - `?auth_token=` → [AuthCallbackResult.WebToken] (Telegram deep link / edge page)
+ * 2. HTTPS Auth Tab completion `https://{callbackHost}/#/login?auth_token=…`
+ *    → [AuthCallbackResult.WebToken] (Telegram with Auth Tab)
  *
- * [callbackHost] comes from [AppEnvironment] (`prod` or `e2e`).
- * Host must also pass [GetLineControlPlaneHostPolicy] so a wrong-environment
- * host cannot be accepted even if BuildConfig fields were mis-set.
- * Token values are never included in exception messages.
+ * Token/code values never appear in exception messages.
  */
 object AuthCallbackParser {
-    private const val EXPECTED_SCHEME = "https"
-    private const val EXPECTED_PATH = "/"
+    const val NATIVE_PATH = "/oauth2redirect"
+    const val HTTPS_REDIRECT_PATH = "/"
     private const val FRAGMENT_PREFIX = "/login?"
 
-    fun parse(uri: Uri?): WebAuthCallback {
-        val params = parseParams(uri)
-
-        val authError = params.getQueryParameter("auth_error")
-            ?.takeIf { it.isNotBlank() }
-        if (authError != null) {
-            // Do not embed error payload details that might include sensitive material.
-            throw GetLineAuthException.InvalidCallback("Authentication error from provider")
-        }
-
-        val token = params.getQueryParameter("auth_token")
-            ?.takeIf { it.isNotBlank() }
-            ?: throw GetLineAuthException.InvalidCallback("Missing auth result")
-
-        val expiresIn = params.getQueryParameter("expires_in")
-            ?.takeIf { it.isNotBlank() }
-            ?.toLongOrNull()
-
-        return WebAuthCallback(
-            authToken = token,
-            expiresInSeconds = expiresIn,
-        )
-    }
-
-    /**
-     * Convenience for callers that only need the web bearer token.
-     */
-    fun parseWebAuthToken(uri: Uri?): String = parse(uri).authToken
-
-    internal fun parseParams(uri: Uri?): Uri {
+    fun parse(uri: Uri?): AuthCallbackResult {
         if (uri == null) {
             throw GetLineAuthException.InvalidCallback("Missing callback URI")
         }
+        val scheme = uri.scheme?.lowercase()
+            ?: throw GetLineAuthException.InvalidCallback("Unexpected scheme")
 
-        if (!EXPECTED_SCHEME.equals(uri.scheme, ignoreCase = true)) {
+        return if (scheme == "https") {
+            parseHttpsWebToken(uri)
+        } else {
+            parseNativePackageUri(uri)
+        }
+    }
+
+    private fun parseNativePackageUri(uri: Uri): AuthCallbackResult {
+        val expectedScheme = AppEnvironment.nativeCallbackScheme
+        if (!expectedScheme.equals(uri.scheme, ignoreCase = true)) {
             throw GetLineAuthException.InvalidCallback("Unexpected scheme")
         }
+        // Private-use URI must be scheme:/path — not scheme://host/path.
+        if (!uri.host.isNullOrEmpty()) {
+            throw GetLineAuthException.InvalidCallback("Unexpected authority")
+        }
+        val path = uri.path.orEmpty().ifEmpty { "/" }
+        if (path != NATIVE_PATH) {
+            throw GetLineAuthException.InvalidCallback("Unexpected path")
+        }
+
+        val error = uri.getQueryParameter("error")?.takeIf { it.isNotBlank() }
+            ?: uri.getQueryParameter("auth_error")?.takeIf { it.isNotBlank() }
+        if (error != null) {
+            throw GetLineAuthException.InvalidCallback("Authentication error from provider")
+        }
+
+        val code = uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
+        if (code != null) {
+            return AuthCallbackResult.NativeCode(code)
+        }
+
+        val token = uri.getQueryParameter("auth_token")?.takeIf { it.isNotBlank() }
+            ?: throw GetLineAuthException.InvalidCallback("Missing auth result")
+        val expiresIn = uri.getQueryParameter("expires_in")
+            ?.takeIf { it.isNotBlank() }
+            ?.toLongOrNull()
+        return AuthCallbackResult.WebToken(authToken = token, expiresInSeconds = expiresIn)
+    }
+
+    private fun parseHttpsWebToken(uri: Uri): AuthCallbackResult {
         val expected = GetLineControlPlaneHostPolicy.canonicalizeHost(
             AppEnvironment.callbackHost,
         )
@@ -64,28 +75,35 @@ object AuthCallbackParser {
         if (expected == null || actual == null || expected != actual) {
             throw GetLineAuthException.InvalidCallback("Unexpected host")
         }
-        // Defense in depth: flavor callback host must be a control-plane host.
         if (!GetLineControlPlaneHostPolicy.isAllowedProductHost(actual)) {
             throw GetLineAuthException.InvalidCallback("Unexpected host")
         }
 
         val path = uri.path.orEmpty().ifEmpty { "/" }
-        if (path != EXPECTED_PATH) {
+        if (path != HTTPS_REDIRECT_PATH) {
             throw GetLineAuthException.InvalidCallback("Unexpected path")
         }
 
         val fragment = uri.fragment
             ?: throw GetLineAuthException.InvalidCallback("Missing fragment")
-
         if (!fragment.startsWith(FRAGMENT_PREFIX)) {
             throw GetLineAuthException.InvalidCallback("Unexpected fragment")
         }
-
         val query = fragment.removePrefix("/login?")
         if (query.isBlank()) {
             throw GetLineAuthException.InvalidCallback("Empty auth fragment")
         }
+        val params = Uri.parse("https://local/?$query")
 
-        return Uri.parse("https://local/?$query")
+        val authError = params.getQueryParameter("auth_error")?.takeIf { it.isNotBlank() }
+        if (authError != null) {
+            throw GetLineAuthException.InvalidCallback("Authentication error from provider")
+        }
+        val token = params.getQueryParameter("auth_token")?.takeIf { it.isNotBlank() }
+            ?: throw GetLineAuthException.InvalidCallback("Missing auth result")
+        val expiresIn = params.getQueryParameter("expires_in")
+            ?.takeIf { it.isNotBlank() }
+            ?.toLongOrNull()
+        return AuthCallbackResult.WebToken(authToken = token, expiresInSeconds = expiresIn)
     }
 }

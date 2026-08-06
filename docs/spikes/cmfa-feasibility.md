@@ -482,7 +482,15 @@ facts in:
 - `docs/spikes/e2e-auth-session-contract.md` (HTTP contract Observed/Expected)
 - `tools/e2e-mock/README.md` (deploy, runbooks, browser notes)
 
-S2 OTP and Custom Tabs fallback are **not** part of that close-out.
+S2 OTP was not part of that close-out.
+
+> **2026-08-06 note.** Production native PKCE start is unblocked. Whitelist:
+> `pro.getline.vpn:/oauth2redirect`, `.alpha`, `.alpha.debug`; client callback
+> `${APPLICATION_ID}:/oauth2redirect` (`getline://auth` not allowed). Target
+> path and browser ladder are **#19**; matrix **#22**. Sections above still
+> describe the **shipped** Auth Tab → web token → device-key path. Prefer
+> `docs/spikes/android-auth/README.md` status table and
+> `docs/external/native-auth-flow.md` for the migration target.
 
 #### Unverified items
 
@@ -494,16 +502,20 @@ blockers:
   **Observed green** on Chrome 150 (emulator + physical device) for e2e/prod
   DAL paths; older Chrome (≤137 observed) can lack Auth Tab — see e2e-mock README.
 - Required `assetlinks.json` configuration for the final **store** package and
-  signing certificate (e2e package DAL is configured for stage).
-- Browser compatibility and **Custom Tabs fallback** when Auth Tab is unsupported
-  (**deferred**).
+  signing certificate (e2e package DAL is configured for stage). Relevant for
+  any residual HTTPS completion; **not** required for package-id
+  `${APPLICATION_ID}:/oauth2redirect` callback.
+- ~~Browser compatibility and **Custom Tabs fallback** when Auth Tab is
+  unsupported (**deferred**).~~ **Scheduled as #19** (capability ladder;
+  Chrome not hard-required). Matrix #22.
 - Full production nested schema of `/api/subscriptions` beyond fields the client
   parses (client selection rules: `e2e-auth-session-contract.md`).
 - Live production behavior of `POST /api/auth/native/refresh` (client code path
-  + mock stub documented; not claimed on first-login device path).
+  + mock stub documented; not claimed on first-login device path). Becomes
+  first-class on #19 native exchange path.
 - Refresh-token rotation semantics.
 - Logout/revocation behavior.
-- Device-key TTL and replay response.
+- Device-key TTL and replay response (still applies to **email** handoff).
 - Whether multiple active subscriptions can exist and how the client should
   choose among them (client prefers primary with link, else first with link).
 - Whether the subscription URL remains stable across renewals and tariff changes.

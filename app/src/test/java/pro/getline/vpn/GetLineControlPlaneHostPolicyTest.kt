@@ -136,12 +136,7 @@ class GetLineControlPlaneHostPolicyTest {
             AppEnvironment.callbackHost,
             "auth.getline.pro",
         )
-        // Trampolines stay on the portal host; only completion moves.
-        assertTrue(
-            GetLineControlPlaneHostPolicy.isAllowedBrowserLaunchUrl(
-                AppEnvironment.googleTrampolineUrl,
-            ),
-        )
+        // Telegram trampoline stays a valid browser-launch URL (Google is native).
         assertTrue(
             GetLineControlPlaneHostPolicy.isAllowedBrowserLaunchUrl(
                 AppEnvironment.telegramTrampolineUrl,

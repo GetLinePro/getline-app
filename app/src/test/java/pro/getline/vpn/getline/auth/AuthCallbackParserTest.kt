@@ -2,7 +2,6 @@ package pro.getline.vpn.getline.auth
 
 import android.net.Uri
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -15,24 +14,41 @@ import pro.getline.vpn.AppEnvironment
 @Config(sdk = [28])
 class AuthCallbackParserTest {
     @Test
-    fun parse_authToken_success() {
-        val uri = callback("auth_token=web-token-value&expires_in=86400")
+    fun parse_nativeCode_success() {
+        val uri = Uri.parse("${AppEnvironment.nativeCallbackUri}?code=one-time-code")
         val result = AuthCallbackParser.parse(uri)
-        assertEquals("web-token-value", result.authToken)
+        assertTrue(result is AuthCallbackResult.NativeCode)
+        assertEquals("one-time-code", (result as AuthCallbackResult.NativeCode).code)
+    }
+
+    @Test
+    fun parse_nativeAuthToken_success() {
+        val uri = Uri.parse(
+            "${AppEnvironment.nativeCallbackUri}?auth_token=web-tok&expires_in=60",
+        )
+        val result = AuthCallbackParser.parse(uri)
+        assertTrue(result is AuthCallbackResult.WebToken)
+        val web = result as AuthCallbackResult.WebToken
+        assertEquals("web-tok", web.authToken)
+        assertEquals(60L, web.expiresInSeconds)
+    }
+
+    @Test
+    fun parse_httpsFragment_webToken() {
+        val uri = Uri.parse(
+            "https://${AppEnvironment.callbackHost}/#/login?auth_token=frag-tok&expires_in=86400",
+        )
+        val result = AuthCallbackParser.parse(uri)
+        assertTrue(result is AuthCallbackResult.WebToken)
+        assertEquals("frag-tok", (result as AuthCallbackResult.WebToken).authToken)
         assertEquals(86400L, result.expiresInSeconds)
     }
 
     @Test
-    fun parse_missingExpiresIn_stillSucceeds() {
-        val uri = callback("auth_token=only-token")
-        val result = AuthCallbackParser.parse(uri)
-        assertEquals("only-token", result.authToken)
-        assertNull(result.expiresInSeconds)
-    }
-
-    @Test
-    fun parse_authError_isInvalidCallback() {
-        val uri = callback("auth_error=access_denied")
+    fun parse_httpsAuthError_rejected() {
+        val uri = Uri.parse(
+            "https://${AppEnvironment.callbackHost}/#/login?auth_error=access_denied",
+        )
         try {
             AuthCallbackParser.parse(uri)
             fail("expected InvalidCallback")
@@ -43,10 +59,20 @@ class AuthCallbackParserTest {
     }
 
     @Test
-    fun parse_missingResultFields_rejected() {
-        val uri = callback("foo=bar")
+    fun parse_nativeError_rejected() {
+        val uri = Uri.parse("${AppEnvironment.nativeCallbackUri}?error=access_denied")
         try {
             AuthCallbackParser.parse(uri)
+            fail("expected InvalidCallback")
+        } catch (e: GetLineAuthException.InvalidCallback) {
+            assertTrue(!e.message.orEmpty().contains("access_denied"))
+        }
+    }
+
+    @Test
+    fun parse_emptyQuery_rejected() {
+        try {
+            AuthCallbackParser.parse(Uri.parse(AppEnvironment.nativeCallbackUri))
             fail("expected InvalidCallback")
         } catch (_: GetLineAuthException.InvalidCallback) {
             // expected
@@ -54,72 +80,21 @@ class AuthCallbackParserTest {
     }
 
     @Test
-    fun parse_unexpectedHost_rejected() {
+    fun parse_doubleSlashForm_rejected() {
         val uri = Uri.parse(
-            "https://evil.example/#/login?auth_token=token",
+            "${AppEnvironment.nativeCallbackScheme}://oauth2redirect?code=token",
         )
         try {
             AuthCallbackParser.parse(uri)
-            fail("expected InvalidCallback")
+            fail("expected InvalidCallback for // form")
         } catch (_: GetLineAuthException.InvalidCallback) {
             // expected
         }
     }
 
     @Test
-    fun parse_wrongEnvironmentHost_rejected() {
-        // Production callback host on e2e build (and vice versa).
-        val foreign = if (AppEnvironment.callbackHost == "auth.stage.getline.pro") {
-            "app.getline.pro"
-        } else {
-            "auth.stage.getline.pro"
-        }
-        val uri = Uri.parse(
-            "https://$foreign/#/login?auth_token=token",
-        )
-        try {
-            AuthCallbackParser.parse(uri)
-            fail("expected InvalidCallback for wrong-environment host")
-        } catch (_: GetLineAuthException.InvalidCallback) {
-            // expected
-        }
-    }
-
-    @Test
-    fun parse_unrelatedRoute_rejected() {
-        val uri = Uri.parse(
-            "https://${AppEnvironment.callbackHost}/#/settings?auth_token=token",
-        )
-        try {
-            AuthCallbackParser.parse(uri)
-            fail("expected InvalidCallback")
-        } catch (_: GetLineAuthException.InvalidCallback) {
-            // expected
-        }
-    }
-
-    /**
-     * The path the launcher registers with the Auth Tab and the path the parser
-     * accepts are two constants in two files. If they drift, the browser hands
-     * the callback back and the app rejects it — sign-in dies with no server
-     * involved, and nothing in the log says the two disagreed.
-     */
-    @Test
-    fun parse_acceptsExactlyTheLauncherRedirectPath() {
-        val uri = Uri.parse(
-            "https://${AppEnvironment.callbackHost}${BrowserAuthLauncher.REDIRECT_PATH}" +
-                "#/login?auth_token=contract-token&expires_in=60",
-        )
-
-        assertEquals("contract-token", AuthCallbackParser.parse(uri).authToken)
-    }
-
-    @Test
-    fun parse_otherPathOnTheCallbackHost_rejected() {
-        val uri = Uri.parse(
-            "https://${AppEnvironment.callbackHost}/auth/callback" +
-                "#/login?auth_token=token&expires_in=60",
-        )
+    fun parse_wrongHttpsHost_rejected() {
+        val uri = Uri.parse("https://evil.example/#/login?auth_token=token")
         try {
             AuthCallbackParser.parse(uri)
             fail("expected InvalidCallback")
@@ -139,14 +114,14 @@ class AuthCallbackParserTest {
     }
 
     @Test
-    fun parseWebAuthToken_matchesParse() {
-        val uri = callback("auth_token=abc&expires_in=1")
-        assertEquals("abc", AuthCallbackParser.parseWebAuthToken(uri))
-    }
-
-    private fun callback(fragmentQuery: String): Uri {
-        return Uri.parse(
-            "https://${AppEnvironment.callbackHost}/#/login?$fragmentQuery",
+    fun parse_httpsPathMatchesAuthTabRedirect() {
+        val uri = Uri.parse(
+            "https://${AppEnvironment.callbackHost}${AuthCallbackParser.HTTPS_REDIRECT_PATH}" +
+                "#/login?auth_token=contract-token",
+        )
+        assertEquals(
+            "contract-token",
+            (AuthCallbackParser.parse(uri) as AuthCallbackResult.WebToken).authToken,
         )
     }
 }

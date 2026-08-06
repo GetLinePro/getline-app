@@ -1,13 +1,16 @@
 package pro.getline.vpn.getline.auth
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import androidx.browser.auth.AuthTabIntent
 import androidx.browser.customtabs.CustomTabsClient
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.browser.customtabs.CustomTabsService
 import com.github.kr328.clash.common.log.Log
 import pro.getline.vpn.AppEnvironment
@@ -16,33 +19,69 @@ import pro.getline.vpn.getlineui.GetLineScreen
 import pro.getline.vpn.product.GetLineActivity
 
 /**
- * Opens a server-provided auth URL in an AndroidX Auth Tab and returns the
- * HTTPS completion URI (or cancellation / verification failure).
+ * How Auth Tab should recognize completion.
  *
- * The launcher is provider-agnostic: callers obtain `auth_url` (or a same-origin
- * trampoline that resolves it in-browser) and pass it here unchanged.
+ * [NativeScheme] — Google PKCE (`EXTRA_REDIRECT_SCHEME`).
+ * [HttpsCallback] — Telegram trampoline path (`EXTRA_HTTPS_REDIRECT_*`).
+ */
+enum class AuthTabRedirectMode {
+    NativeScheme,
+    HttpsCallback,
+}
+
+/**
+ * Opens a server-provided auth URL using the best available browser capability:
+ * Auth Tab → Custom Tabs → external browser ([Intent.ACTION_VIEW]).
  *
- * Completion host/path come from [AppEnvironment] (prod or e2e flavor).
- *
- * Start URL must not be the HTTPS completion path (`/`), otherwise supporting
- * browsers can treat the initial navigation as completion.
+ * Auth Tab returns the callback via [ActivityResult]; Custom Tab and external
+ * browser complete only through the exported deep-link Activity (or edge page).
  */
 class BrowserAuthLauncher {
     suspend fun <D : GetLineScreen<*>> launch(
         activity: GetLineActivity<D>,
         authUrl: String,
+        redirectMode: AuthTabRedirectMode = AuthTabRedirectMode.NativeScheme,
     ): BrowserAuthLaunchResult {
         val launchUri = parseAndValidateLaunchUrl(authUrl)
 
-        val browserPackage = resolveAuthTabPackage(activity)
-            ?: throw GetLineAuthException.Protocol("No Auth Tab-capable browser")
+        return when (val capability = resolveBrowserCapability(activity)) {
+            is BrowserCapability.AuthTab ->
+                launchAuthTab(activity, launchUri, capability.packageName, redirectMode)
+            is BrowserCapability.CustomTab ->
+                launchCustomTab(activity, launchUri, capability.packageName)
+            BrowserCapability.ExternalBrowser -> launchExternalBrowser(activity, launchUri)
+            BrowserCapability.None -> BrowserAuthLaunchResult.NoBrowser
+        }
+    }
 
+    private suspend fun <D : GetLineScreen<*>> launchAuthTab(
+        activity: GetLineActivity<D>,
+        launchUri: Uri,
+        browserPackage: String,
+        redirectMode: AuthTabRedirectMode,
+    ): BrowserAuthLaunchResult {
         val authTab = AuthTabIntent.Builder().build()
         val intent = Intent(authTab.intent).apply {
             data = launchUri
             setPackage(browserPackage)
-            putExtra(AuthTabIntent.EXTRA_HTTPS_REDIRECT_HOST, AppEnvironment.callbackHost)
-            putExtra(AuthTabIntent.EXTRA_HTTPS_REDIRECT_PATH, REDIRECT_PATH)
+            when (redirectMode) {
+                AuthTabRedirectMode.NativeScheme -> {
+                    putExtra(
+                        AuthTabIntent.EXTRA_REDIRECT_SCHEME,
+                        AppEnvironment.nativeCallbackScheme,
+                    )
+                }
+                AuthTabRedirectMode.HttpsCallback -> {
+                    putExtra(
+                        AuthTabIntent.EXTRA_HTTPS_REDIRECT_HOST,
+                        AppEnvironment.callbackHost,
+                    )
+                    putExtra(
+                        AuthTabIntent.EXTRA_HTTPS_REDIRECT_PATH,
+                        AuthCallbackParser.HTTPS_REDIRECT_PATH,
+                    )
+                }
+            }
         }
 
         val startedAt = SystemClock.elapsedRealtime()
@@ -51,15 +90,11 @@ class BrowserAuthLauncher {
             intent,
         )
 
-        // The only place the raw code survives: RESULT_VERIFICATION_FAILED (2) and
-        // RESULT_VERIFICATION_TIMED_OUT (3) collapse into one state below, and a
-        // pre-session failure reaches the UI as a single "Couldn't sign in".
-        // Numbers and a package name only — never result, resultUri or authUrl:
-        // this tag lands in the crash dump the user can screenshot.
+        // Numbers and package name only — never resultUri or authUrl.
         Log.w(
             "auth_tab_result code=${result.resultCode} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - startedAt} " +
-                "browser=$browserPackage",
+                "browser=$browserPackage mode=${redirectMode.name}",
         )
 
         return when (result.resultCode) {
@@ -74,6 +109,97 @@ class BrowserAuthLauncher {
                 BrowserAuthLaunchResult.VerificationFailed
             else -> BrowserAuthLaunchResult.Invalid("Unexpected auth result")
         }
+    }
+
+    private fun launchCustomTab(
+        activity: Context,
+        launchUri: Uri,
+        browserPackage: String,
+    ): BrowserAuthLaunchResult {
+        return try {
+            val customTabs = CustomTabsIntent.Builder().build()
+            customTabs.intent.setPackage(browserPackage)
+            customTabs.launchUrl(activity, launchUri)
+            Log.i("browser_auth_custom_tab package=$browserPackage")
+            BrowserAuthLaunchResult.AwaitingDeepLink
+        } catch (_: ActivityNotFoundException) {
+            BrowserAuthLaunchResult.NoBrowser
+        }
+    }
+
+    private fun launchExternalBrowser(
+        activity: Context,
+        launchUri: Uri,
+    ): BrowserAuthLaunchResult {
+        return try {
+            // Pin package from hostless https:// resolve (generic browsers only).
+            // A bare ACTION_VIEW of app.getline.pro can open a verified WebAPK
+            // (scope "/"); setPackage avoids that when a browser is installed.
+            // No pin when the resolve is the system chooser — let it be shown.
+            val intent = Intent(Intent.ACTION_VIEW, launchUri).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                resolveGenericHttpsBrowserPackage(activity)?.let { setPackage(it) }
+            }
+            activity.startActivity(intent)
+            Log.i("browser_auth_external_view")
+            BrowserAuthLaunchResult.AwaitingDeepLink
+        } catch (_: ActivityNotFoundException) {
+            BrowserAuthLaunchResult.NoBrowser
+        }
+    }
+
+    /**
+     * Capability ladder: Auth Tab → any Custom Tabs provider → generic HTTPS browser → none.
+     * Chrome is not prioritized outside the existing Auth Tab preferred list.
+     *
+     * External rung uses a hostless `https://` probe so WebAPK / verified app-link
+     * handlers for a product host do not count as "has a browser".
+     */
+    fun resolveBrowserCapability(context: Context): BrowserCapability {
+        resolveAuthTabPackage(context)?.let { return BrowserCapability.AuthTab(it) }
+
+        val customTabPackage = CustomTabsClient.getPackageName(context, null, false)
+            ?: installedCustomTabsPackages(context).firstOrNull()
+        if (customTabPackage != null) {
+            return BrowserCapability.CustomTab(customTabPackage)
+        }
+
+        if (hasGenericHttpsBrowser(context)) {
+            return BrowserCapability.ExternalBrowser
+        }
+        return BrowserCapability.None
+    }
+
+    /**
+     * Package to pin for the external rung, or null when there is nothing safe to
+     * pin. Several browsers with no default resolve to the system chooser
+     * (`packageName == "android"`); pinning that makes [Intent.setPackage] throw.
+     * Null therefore means "launch unpinned", not "no browser" — presence is
+     * [hasGenericHttpsBrowser].
+     */
+    fun resolveGenericHttpsBrowserPackage(context: Context): String? =
+        resolveGenericHttpsBrowser(context)
+            ?.activityInfo
+            ?.packageName
+            ?.takeIf { it != "android" }
+
+    /** True when any generic browser handles hostless `https://` (chooser counts). */
+    private fun hasGenericHttpsBrowser(context: Context): Boolean =
+        resolveGenericHttpsBrowser(context) != null
+
+    /**
+     * Resolve [Intent.ACTION_VIEW] + [Intent.CATEGORY_BROWSABLE] on a hostless
+     * `https://` URI. Generic browser filters match; host-bound WebAPK /
+     * app-link filters do not.
+     */
+    private fun resolveGenericHttpsBrowser(context: Context): ResolveInfo? {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://")).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+        }
+        return context.packageManager.resolveActivity(
+            intent,
+            PackageManager.MATCH_DEFAULT_ONLY,
+        )
     }
 
     /**
@@ -112,20 +238,6 @@ class BrowserAuthLauncher {
     }
 
     companion object {
-        /**
-         * Same-origin trampolines. The HTML calls the provider start endpoint
-         * inside the browser: Telegram so PKCE cookies land in the Auth Tab jar,
-         * Google so the edge can mark the request and rewrite the callback host.
-         * See `docs/spikes/android-auth/`.
-         */
-        val TELEGRAM_TRAMPOLINE_URL: String
-            get() = AppEnvironment.telegramTrampolineUrl
-
-        val GOOGLE_TRAMPOLINE_URL: String
-            get() = AppEnvironment.googleTrampolineUrl
-
-        const val REDIRECT_PATH = "/"
-
         private val PREFERRED_BROWSERS = listOf(
             "com.android.chrome",
             "com.chrome.beta",
@@ -148,17 +260,28 @@ class BrowserAuthLauncher {
             if (uri.host.isNullOrBlank()) {
                 throw GetLineAuthException.Protocol("auth_url host missing")
             }
-            // E2E: only stage product hosts. Prod: block wrong-env GetLine hosts;
-            // third-party OAuth (accounts.google.com) still allowed on prod.
             GetLineControlPlaneHostPolicy.requireBrowserLaunchUrl(trimmed)
             return uri
         }
     }
 }
 
+sealed interface BrowserCapability {
+    data class AuthTab(val packageName: String) : BrowserCapability
+    data class CustomTab(val packageName: String) : BrowserCapability
+    data object ExternalBrowser : BrowserCapability
+    data object None : BrowserCapability
+}
+
 sealed interface BrowserAuthLaunchResult {
+    /** Auth Tab returned a callback URI via ActivityResult. */
     data class Completed(val callbackUri: Uri) : BrowserAuthLaunchResult
+
+    /** Custom Tab / external browser launched; completion arrives via deep link. */
+    data object AwaitingDeepLink : BrowserAuthLaunchResult
+
     data object Cancelled : BrowserAuthLaunchResult
     data object VerificationFailed : BrowserAuthLaunchResult
+    data object NoBrowser : BrowserAuthLaunchResult
     data class Invalid(val message: String) : BrowserAuthLaunchResult
 }

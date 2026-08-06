@@ -21,6 +21,27 @@
     // does not match the initial load. Example: /android-auth/telegram
     //
     // Requires static hosting that does not rewrite this path to the SPA.
+    //
+    // Step 25: optional ?app_id=<applicationId> → cookie gl_app_id for
+    // auth.getline.pro/auth-callback.html (Domain=.getline.pro, not HttpOnly).
+    // Whitelist must match auth-callback.html ALLOWED.
+    (function setAppIdCookie() {
+      // Own keys only — never ALLOWED[key] (prototype keys like "constructor" are truthy).
+      var ALLOWED = {
+        "pro.getline.vpn": true,
+        "pro.getline.vpn.alpha": true,
+        "pro.getline.vpn.alpha.debug": true,
+        "pro.getline.vpn.alpha.e2e.debug": true
+      };
+      var params = new URLSearchParams(window.location.search || "");
+      var appId = (params.get("app_id") || "").trim();
+      if (!appId || !Object.prototype.hasOwnProperty.call(ALLOWED, appId)) return;
+      // Max-Age=600 matches PendingNativeAuth.TTL_MS (10 min).
+      document.cookie =
+        "gl_app_id=" + encodeURIComponent(appId) +
+        "; Domain=.getline.pro; Path=/; Max-Age=600; Secure; SameSite=Lax";
+    })();
+
     (async () => {
       try {
         const returnTo = encodeURIComponent(window.location.origin + "/");

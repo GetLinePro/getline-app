@@ -1,15 +1,52 @@
 # Android browser auth deployment notes
 
-Client implementation uses AndroidX `AuthTabIntent` with HTTPS completion:
+## Status (2026-08-06)
 
-- host: from `AppEnvironment.callbackHost` — production `auth.getline.pro`, e2e `auth.stage.getline.pro`
-- path: `/`
-- fragment: `/login?auth_token=...` (parsed via `Uri.fragment`)
+| Layer | State |
+|---|---|
+| **Client (#19)** | App-owned PKCE → `GET /api/auth/{provider}/start` with `app_redirect` + S256 challenge → open `auth_url` via Auth Tab / Custom Tabs / `ACTION_VIEW` → callback `${APPLICATION_ID}:/oauth2redirect?code=…` → `POST /api/auth/native/exchange` → native session. No client trampoline; device-key remains for **email OTP only**. |
+| **Production backend** | Native PKCE `app_redirect` whitelist: `pro.getline.vpn`, `.alpha`, `.alpha.debug` only (not e2e). **`getline://auth` is not allowed.** Edge trampoline / marker-cookie rewrite still on Caddy as rollback until #22 is green. |
+| **Edge HTML ALLOWED** | Same three packages **plus** `pro.getline.vpn.alpha.e2e.debug` (deep-link scheme construction only). Wider than prod backend PKCE list by design of a single HTML file; e2e package on prod edge is inert without a matching backend exchange. |
+| **e2e-mock** | API: native exchange (S256), `telegram-oidc/start`, e2e `app_redirect`. **Static holes (#22):** stage Caddy is pure `reverse_proxy` to mock — mock has no `/android-auth/telegram` (404) and `GET /` is Auth Tab stub HTML (no `gl_app_id` / package deep-link). Bottom ladder (Custom Tab / external) has no completion page on e2e. |
+| **Rollout matrix (#22)** | Device/browser regression after #19; mock static handlers for trampoline + package callback page. |
 
-Providers share one Auth Tab launcher and one callback parser. Provider-specific
-code only obtains the launch URL.
+Backend contract prose: [`../../external/native-auth-flow.md`](../../external/native-auth-flow.md).  
+Internal decision trail (untracked): `docs/internal/android-auth-journal.md` (2026-08-06), `docs/internal/spike-native-pkce-2026-08-03.md`.
 
-## Why completion is not on the portal host
+### Static edge assets (this directory only)
+
+All production browser HTML for auth lives **here** (`docs/spikes/android-auth/`),
+next to the trampolines that were already deployable. Not under `tools/e2e-mock/`.
+
+| File in this folder | On server |
+|---|---|
+| [`auth-callback.html`](auth-callback.html) | `EDGE_WEBROOT/auth-callback.html` → `https://auth.getline.pro/` |
+| [`telegram-trampoline.html`](telegram-trampoline.html) | `EDGE_WEBROOT/android-auth/telegram.html` |
+| [`google-trampoline.html`](google-trampoline.html) | `EDGE_WEBROOT/android-auth/google.html` (rollback / unused by #19 client) |
+
+Caddy snippet (stage + prod hosts, including how `/` serves `auth-callback.html`):
+`private deployment configuration` — path is historical; content is not
+“e2e-only”.
+
+---
+
+## Current client path (#19) — native PKCE + browser ladder
+
+What the app does now (see Status table above):
+
+| Provider | Launch | Callback |
+|---|---|---|
+| **Google** | `GET /api/auth/google/start` + app-owned S256 PKCE + `app_redirect` | `{applicationId}:/oauth2redirect?code=…` → `POST /api/auth/native/exchange` |
+| **Telegram** | HTTPS trampoline `/android-auth/telegram?app_id=…` (sets `gl_app_id`) → Telegram OIDC | Edge rewrite to `auth.getline.pro` → `auth-callback.html` → `{applicationId}:/oauth2redirect?auth_token=…` → device-key |
+| **Email** | unchanged | device-key OTP |
+
+Browser capability ladder: Auth Tab → Custom Tabs → external `ACTION_VIEW`.  
+External rung resolves a **hostless** `https://` + `CATEGORY_BROWSABLE` package (generic browsers), then `setPackage` on the real launch URI — so a portal WebAPK is not the default target when a browser is installed.  
+Auth Tab Google uses native scheme completion; Auth Tab Telegram still uses HTTPS host/path completion (`auth.getline.pro` `/`) so the portal WebAPK cannot steal the Auth Tab redirect.
+
+**`auth-callback.html` / trampoline whitelist:** own-property check only (`hasOwnProperty`); packages include `pro.getline.vpn`, `.alpha`, `.alpha.debug`, `.alpha.e2e.debug` (see Status: edge vs backend).
+
+## Why HTTPS completion is not on the portal host
 
 `https://app.getline.pro/manifest.webmanifest` declares `"scope": "/"`. A WebAPK
 installed from it becomes a **verified handler for the whole domain** and takes
@@ -30,28 +67,32 @@ that one `Location` — see "Callback host rewrite" below.
 Observed client contract: [`../e2e-auth-session-contract.md`](../e2e-auth-session-contract.md).  
 Runbooks and troubleshooting: [`../../../tools/e2e-mock/README.md`](../../../tools/e2e-mock/README.md).
 
-## Status (2026-07-30)
+## Edge history (2026-07-30) — rollback until #22
 
 Shipped on `feat/auth-browser-fallback`. **Prod verified on a device** (Xiaomi /
-MIUI, `pro.getline.vpn.alpha.debug`): Telegram and Google both complete, import
-runs, Home opens.
+MIUI, `pro.getline.vpn.alpha.debug`) for the pre-#19 HTTPS Auth Tab + trampoline
+path. After #19 the **client** uses native PKCE (Google) + Telegram trampoline;
+edge marker-cookie rewrite and `/android-auth/google` stay as **rollback** until
+#22 is green.
 
-| Done | |
+| Done (edge, still live) | |
 |---|---|
-| prod callback moved to `auth.getline.pro`, path `/` | `GETLINE_CALLBACK_HOST` + `prodAllowedHosts`; parser and `REDIRECT_PATH` untouched |
-| Caddy edge rewrites the provider redirect onto it | marker cookie + `header_down Location`; verified by curl **and** on device for both providers |
-| Google trampoline | `/android-auth/google`, both providers now launch trampolines |
-| provider-origin check inside both trampolines | replaces the `requireBrowserLaunchUrl` check the app can no longer do |
-| Digital Asset Links on all callback hosts | one shared file |
-| `subscription_link` no longer checked against the control-plane allowlist | see below — this had broken **every** prod import since `c6558428` |
-| post-session failures retry only the subscription step | `RetryTarget.ImportPreferredSubscription`; a retry used to re-run the whole browser leg and mint a new device key |
+| prod callback host `auth.getline.pro`, path `/` | `GETLINE_CALLBACK_HOST` + `prodAllowedHosts` |
+| Caddy edge rewrites provider redirect onto it | marker cookie `gl_native` + `header_down Location` |
+| Telegram trampoline | `/android-auth/telegram` (still used by #19 client) |
+| Google trampoline | `/android-auth/google` — **rollback only**; #19 client does not open it |
+| provider-origin check inside trampolines | static HTML |
+| Digital Asset Links on callback hosts | one shared file |
+| `subscription_link` not control-plane allowlist | see below |
 
-| Open | |
+| Open / next | |
 |---|---|
-| e2e Google | needs `docker compose up -d --build e2e-mock` |
-| e2e Telegram | 404 by decision — the mock has no `telegram-oidc/start` |
-| web login unaffected + PWA-installed regression | smoke items 8 and 9 below, still unrun |
-| protected auth attempt (`native_state`), App Link ingress, Auth Tab → Custom Tab → ACTION_VIEW ladder, cancel/timeout UX | not started; the fallback ladder is what introduces the exported callback Activity |
+| **#22** regression matrix | Auth Tab / Custom Tab / external / PWA / lifecycle after #19 |
+| Deploy edge HTML from this branch | `auth-callback.html` + `telegram-trampoline.html` (hasOwnProperty whitelist + e2e package) |
+| e2e Google Auth Tab / native | mock has exchange + S256; `docker compose up -d --build e2e-mock` |
+| e2e Custom Tab / external (both providers) | **broken until #22:** mock needs (1) `/android-auth/telegram` HTML, (2) `GET /` (or auth-callback host path) that reads `gl_app_id` and deep-links — not the current Auth Tab stub |
+| web login + PWA-installed regression | smoke items 8–9; package-id callback + external rung vs WebAPK |
+| Full removal of Caddy trampoline / marker-cookie | **after** #22 |
 
 ### `subscription_link` is not a control-plane host
 
@@ -67,58 +108,53 @@ Do not "unify" this back into `isAllowedProductHost`: that predicate also
 validates the callback host. E2E cannot catch a regression here — the mock link
 lives on `app.stage.getline.pro`, which is in the stage allowlist either way.
 
-`native_state` is deliberately **not** part of the RWP contract. When the attempt
-store needs it, mint it at the edge — the vendor is not on our critical path.
+`native_state` is deliberately **not** part of the RWP contract on the
+**shipped edge path**. For the **#19 native PKCE path**, pending attempt state
+(provider, verifier, correlation id) is client-owned; RWP stores server-side
+OAuth state and the one-time exchange code.
 
 Longer reasoning, incident history and rejected options live in
 `docs/internal/android-auth-journal.md` (untracked, local only).
 
 ## Auth methods (client)
 
-| Method   | Path on client                         | Notes                                      |
-|----------|----------------------------------------|--------------------------------------------|
-| Telegram | Auth Tab + trampoline                  | Browser cookies for PKCE                   |
-| Google   | Auth Tab after `GET .../google/start`  | App process fetches `auth_url`             |
-| Email    | In-app OTP (no Auth Tab)               | `send-otp` → `verify-otp` → web token      |
+| Method   | Path |
+|----------|------|
+| Telegram | Portal trampoline → browser ladder → HTTPS `auth.*` fragment `auth_token` (Auth Tab) or package deep link `auth_token` (edge page, #19 steps 24–25) → device-key. **Not** app-level native PKCE until RWP grows a native branch. |
+| Google   | App PKCE → `/api/auth/google/start` → browser ladder → `${APPLICATION_ID}:/oauth2redirect?code=` → `/api/auth/native/exchange` |
+| Email    | In-app OTP → web token → device-key (unchanged) |
 
 `AuthMethod.Email` does **not** use browser auth. Passkey / register intent are
 out of scope.
 
-## Provider start
+## Provider start (native PKCE)
 
-Neither start endpoint is called from the app process. Both providers launch a
-same-origin trampoline on the portal host, which calls start in-browser. The app
-only knows two URLs (`AppEnvironment.googleTrampolineUrl` /
-`telegramTrampolineUrl`).
-
-Because the app no longer sees `auth_url`, the host check that
-`requireBrowserLaunchUrl` used to perform moved into the trampoline HTML: each
-one refuses to navigate anywhere but its provider's origin.
-
-### Google
+The app calls start from the process with app-owned PKCE:
 
 ```text
-GET /api/auth/google/start → JSON { "auth_url": "https://accounts.google.com/..." }
-```
+GET /api/auth/google/start
+  ?intent=register
+  &app_redirect=<APPLICATION_ID>:/oauth2redirect
+  &code_challenge=<S256>
+  &code_challenge_method=S256
+→ JSON { "auth_url": "https://accounts.google.com/..." }
 
-Google start works from any client, but the browser must visit the portal origin
-first so the edge can set the marker cookie that scopes the callback rewrite to
-app logins. Hence `/android-auth/google`.
-
-`redirect_uri` is fixed server-side to
-`https://app.getline.pro/api/auth/google/callback` — the app cannot influence it.
-
-### Telegram
-
-```text
-GET /api/auth/telegram-oidc/start?intent=login&return_to=...
+GET /api/auth/telegram-oidc/start
+  ?intent=register
+  &app_redirect=...
+  &code_challenge=...
+  &code_challenge_method=S256
 → JSON { "auth_url": "https://oauth.telegram.org/..." }
 ```
 
-Telegram start sets HttpOnly PKCE cookies. Those cookies must be stored in the
-Auth Tab browser jar, so start must run in the browser. `return_to` stays the
-portal root — the edge rewrite moves the final hop, so nothing here needs to know
-about the callback host.
+- Parameter name is **`app_redirect`** (not `redirect_uri`). Without it the server
+  may still return 200 and follow the old web path — unit tests lock the query.
+- `code_challenge_method=S256` is always sent explicitly.
+- Provider `redirect_uri` (backend ↔ Google/Telegram) stays server-side; the app
+  only controls `app_redirect` for the final hop into the package.
+- Browser ladder: Auth Tab (`EXTRA_REDIRECT_SCHEME`) → Custom Tabs → `ACTION_VIEW`.
+  Auth Tab returns via ActivityResult; the other two via exported
+  `NativeAuthCallbackActivity`.
 
 ### Email OTP
 

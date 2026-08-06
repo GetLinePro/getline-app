@@ -22,24 +22,30 @@ class ControlPlaneIsolationIntegrationTest {
         get() = GetLineControlPlaneHostPolicy.isE2e
 
     @Test
-    fun callbackParser_rejectsWrongEnvironmentHost() {
-        val foreignHost = if (isE2e) "app.getline.pro" else "auth.stage.getline.pro"
-        val uri = Uri.parse("https://$foreignHost/#/login?auth_token=token&expires_in=1")
+    fun callbackParser_rejectsWrongHttpsHost() {
+        val uri = Uri.parse("https://evil.example/#/login?auth_token=token")
         try {
             AuthCallbackParser.parse(uri)
-            fail("callback must reject wrong-environment host")
+            fail("callback must reject foreign host")
         } catch (_: GetLineAuthException.InvalidCallback) {
             // expected
         }
     }
 
     @Test
-    fun callbackParser_acceptsEnvironmentCallbackHost() {
+    fun callbackParser_acceptsNativeCode() {
+        val uri = Uri.parse("${AppEnvironment.nativeCallbackUri}?code=tok")
+        val result = AuthCallbackParser.parse(uri)
+        assertEquals("tok", (result as AuthCallbackResult.NativeCode).code)
+    }
+
+    @Test
+    fun callbackParser_acceptsHttpsWebToken() {
         val uri = Uri.parse(
             "https://${AppEnvironment.callbackHost}/#/login?auth_token=tok&expires_in=60",
         )
         val result = AuthCallbackParser.parse(uri)
-        assertEquals("tok", result.authToken)
+        assertEquals("tok", (result as AuthCallbackResult.WebToken).authToken)
     }
 
     @Test

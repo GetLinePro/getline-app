@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>GetLine</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem;
+      background: #1a1b1e;
+      color: #e8e8e8;
+      line-height: 1.45;
+    }
+    a.button {
+      display: inline-block;
+      margin-top: 1rem;
+      padding: 0.75rem 1.25rem;
+      background: #3b82f6;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 8px;
+    }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <!--
+    Production auth handoff page for https://auth.getline.pro/
+    Repo home: docs/spikes/android-auth/auth-callback.html (only copy).
+    Server path: EDGE_WEBROOT/auth-callback.html
+  -->
+  <p id="status">Открываем приложение…</p>
+  <p id="fallback" class="hidden">
+    <a id="open" class="button" href="#">Открыть приложение</a>
+  </p>
+  <script>
+(function () {
+  // Own keys only — never ALLOWED[key] (prototype keys like "constructor" are truthy).
+  var ALLOWED = {
+    "pro.getline.vpn": true,
+    "pro.getline.vpn.alpha": true,
+    "pro.getline.vpn.alpha.debug": true,
+    "pro.getline.vpn.alpha.e2e.debug": true
+  };
+
+  function readCookie(name) {
+    var parts = document.cookie ? document.cookie.split(";") : [];
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].replace(/^\s+/, "");
+      if (p.indexOf(name + "=") === 0) {
+        return decodeURIComponent(p.slice(name.length + 1));
+      }
+    }
+    return "";
+  }
+
+  function showMessage(text) {
+    document.getElementById("status").textContent = text;
+  }
+
+  var hash = (location.hash || "").replace(/^#/, "");
+  if (hash.indexOf("/login?") === 0) {
+    hash = hash.slice("/login?".length);
+  } else if (hash.charAt(0) === "?") {
+    hash = hash.slice(1);
+  }
+
+  var params = new URLSearchParams(hash);
+  var token = params.get("auth_token") || "";
+  var authError = params.get("auth_error") || "";
+
+  if (authError || !token) {
+    showMessage(
+      "Не удалось завершить вход. Вернитесь в приложение GetLine и попробуйте снова."
+    );
+    return;
+  }
+
+  var pkg = readCookie("gl_app_id");
+  if (!pkg || !Object.prototype.hasOwnProperty.call(ALLOWED, pkg)) {
+    showMessage(
+      "Не удалось открыть приложение. Вернитесь в GetLine и войдите ещё раз."
+    );
+    return;
+  }
+
+  var deep =
+    pkg + ":/oauth2redirect?auth_token=" + encodeURIComponent(token);
+
+  // One-shot package cookie after we have built the deep link.
+  document.cookie =
+    "gl_app_id=; Domain=.getline.pro; Path=/; Max-Age=0; Secure; SameSite=Lax";
+
+  var open = document.getElementById("open");
+  open.setAttribute("href", deep);
+
+  try {
+    location.replace(deep);
+  } catch (e) {
+    /* button fallback */
+  }
+
+  setTimeout(function () {
+    showMessage("Если приложение не открылось — нажмите кнопку.");
+    document.getElementById("fallback").classList.remove("hidden");
+  }, 1500);
+})();
+  </script>
+</body>
+</html>

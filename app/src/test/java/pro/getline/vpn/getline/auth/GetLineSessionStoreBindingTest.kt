@@ -212,7 +212,17 @@ class GetLineSessionStoreBindingTest {
         store.managedProfileUuid = "u"
         store.managedProfileSource = "https://s"
         val repo = GetLineSessionRepository(object : GetLineAuthApi {
-            override suspend fun startBrowserAuth(method: AuthMethod) = error("n/a")
+            override suspend fun startBrowserAuth(
+                method: AuthMethod,
+                codeChallenge: String,
+                appRedirect: String,
+            ) = error("n/a")
+
+            override suspend fun exchangeNativeCode(
+                code: String,
+                codeVerifier: String,
+            ) = error("n/a")
+
             override suspend fun sendEmailOtp(email: String) = error("n/a")
             override suspend fun verifyEmailOtp(email: String, code: String) = error("n/a")
             override suspend fun getCurrentUser(webToken: String) = error("n/a")

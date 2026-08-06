@@ -2,16 +2,26 @@ package pro.getline.vpn.getline.auth
 
 interface GetLineAuthApi {
     /**
-     * Starts browser OAuth for [method] and returns the server-provided `auth_url`.
+     * Starts browser OAuth for [method] with app-owned PKCE and returns the
+     * server-provided `auth_url`.
      *
-     * Google is started from the app process (no browser cookies required).
-     * Telegram start must run inside the Auth Tab trampoline so PKCE cookies
-     * land in the browser jar; prefer [BrowserAuthStarter] for launch URLs.
+     * [codeChallenge] is S256 of the verifier held in [PendingNativeAuth].
+     * [appRedirect] must be [pro.getline.vpn.AppEnvironment.nativeCallbackUri].
      *
      * [AuthMethod.Email] must not be used here — call [sendEmailOtp] /
      * [verifyEmailOtp] instead.
      */
-    suspend fun startBrowserAuth(method: AuthMethod): BrowserAuthStartResponse
+    suspend fun startBrowserAuth(
+        method: AuthMethod,
+        codeChallenge: String,
+        appRedirect: String,
+    ): BrowserAuthStartResponse
+
+    /**
+     * Exchanges a one-time native OAuth [code] + PKCE [codeVerifier] for a
+     * native session (`POST /api/auth/native/exchange`).
+     */
+    suspend fun exchangeNativeCode(code: String, codeVerifier: String): NativeSession
 
     /** Sends a login OTP to [email]. */
     suspend fun sendEmailOtp(email: String): EmailOtpSendResult

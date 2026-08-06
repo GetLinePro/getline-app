@@ -24,20 +24,35 @@ object AppEnvironment {
         get() = BuildConfig.GETLINE_PORTAL_ORIGIN
 
     /**
-     * Same-origin provider trampolines on the portal host.
+     * Private-use reverse-DNS scheme for native OAuth callback
+     * (`pro.getline.vpn`, `pro.getline.vpn.alpha`, …). No trailing colon.
+     */
+    val nativeCallbackScheme: String
+        get() = BuildConfig.APPLICATION_ID
+
+    /**
+     * Native PKCE redirect URI. Single slash after the scheme
+     * (`pro.getline.vpn.alpha:/oauth2redirect`) — double-slash is a different URI
+     * and is rejected by production whitelist.
+     */
+    val nativeCallbackUri: String
+        get() = "${BuildConfig.APPLICATION_ID}:/oauth2redirect"
+
+    /**
+     * Telegram-only portal trampoline (sets edge marker cookie, runs OIDC start
+     * in the browser jar). Google uses native PKCE and does not open this URL.
+     * Must not be `/` — that is the HTTPS completion path.
      *
-     * Both exist so the browser visits the portal origin *before* the provider:
-     * Telegram needs its PKCE cookies in the Auth Tab jar, and Google needs the
-     * edge to set the marker cookie that scopes the callback-host rewrite to app
-     * logins. Neither may live on `/` — that is the completion path.
+     * `app_id` is read by trampoline HTML to set `gl_app_id` for the auth
+     * callback page (step 25). Whitelist lives in that HTML.
      */
     val telegramTrampolineUrl: String
-        get() = portalOrigin.trimEnd('/') + "/android-auth/telegram"
-
-    val googleTrampolineUrl: String
-        get() = portalOrigin.trimEnd('/') + "/android-auth/google"
-
-    /** `return_to` for Telegram OIDC start (portal root). */
-    val telegramReturnTo: String
-        get() = portalOrigin.trimEnd('/') + "/"
+        get() {
+            val base = portalOrigin.trimEnd('/') + "/android-auth/telegram"
+            val appId = java.net.URLEncoder.encode(
+                BuildConfig.APPLICATION_ID,
+                java.nio.charset.StandardCharsets.UTF_8.name(),
+            )
+            return "$base?app_id=$appId"
+        }
 }

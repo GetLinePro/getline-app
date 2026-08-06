@@ -116,8 +116,20 @@ if [[ "$code" == "200" ]]; then
   expect_json_field "[PREFLIGHT] health slice" "$body" slice S1 || true
 fi
 
+# RFC 7636 Appendix B vector — challenge for verifier below.
+S256_CHALLENGE="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+S256_VERIFIER="dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+NATIVE_REDIRECT="pro.getline.vpn.alpha.e2e.debug:/oauth2redirect"
+S1_NATIVE_CODE="s1-native-auth-code"
+
 out="$TMPDIR_SMOKE/start.json"
-code="$(http_get "$out" "$BASE_API/api/auth/google/start")"
+code="$(http_get "$out" \
+  --get \
+  --data-urlencode "intent=register" \
+  --data-urlencode "app_redirect=${NATIVE_REDIRECT}" \
+  --data-urlencode "code_challenge=${S256_CHALLENGE}" \
+  --data-urlencode "code_challenge_method=S256" \
+  "$BASE_API/api/auth/google/start")"
 expect_http "[PREFLIGHT] GET /api/auth/google/start" "$code" "200" || true
 if [[ "$code" == "200" ]]; then
   body="$(cat "$out")"
@@ -129,15 +141,44 @@ out="$TMPDIR_SMOKE/google.html"
 code="$(http_get "$out" "$BASE_AUTH/__mock__/google")"
 expect_http "[PREFLIGHT] GET /__mock__/google" "$code" "200" || true
 if [[ "$code" == "200" ]]; then
-  if grep -q 'Success' "$out" && grep -q 's0-auth-token' "$out"; then
-    green "OK   [PREFLIGHT] mock google HTML has Success + token marker"
+  if grep -q 'Success' "$out" && grep -q 'pro.getline.vpn.alpha.e2e.debug:/oauth2redirect' "$out"; then
+    green "OK   [PREFLIGHT] mock google HTML has Success + native callback"
     PASS_N=$((PASS_N + 1))
   else
-    red "FAIL [PREFLIGHT] mock google HTML missing Success or token marker"
+    red "FAIL [PREFLIGHT] mock google HTML missing Success or native callback"
     FAIL=1
     FAIL_N=$((FAIL_N + 1))
   fi
 fi
+
+bold "[POSITIVE] native/exchange accepts code + verifier"
+out="$TMPDIR_SMOKE/native-ex-ok.json"
+code="$(http_post "$out" \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -H 'X-Requested-With: XMLHttpRequest' \
+  -H "Origin: ${BASE_API}" \
+  -H "Referer: ${BASE_API}/" \
+  -d "{\"code\":\"${S1_NATIVE_CODE}\",\"code_verifier\":\"${S256_VERIFIER}\"}" \
+  "$BASE_API/api/auth/native/exchange")"
+expect_http "[POSITIVE] native/exchange" "$code" "200" || true
+if [[ "$code" == "200" ]]; then
+  body="$(cat "$out")"
+  expect_json_field "[POSITIVE] native access" "$body" access_token "$S1_ACCESS" || true
+  expect_json_field "[POSITIVE] native refresh" "$body" refresh_token "$S1_REFRESH" || true
+fi
+
+bold "[NEGATIVE] native/exchange rejects replay"
+out="$TMPDIR_SMOKE/native-ex-replay.json"
+code="$(http_post "$out" \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -H 'X-Requested-With: XMLHttpRequest' \
+  -d "{\"code\":\"${S1_NATIVE_CODE}\",\"code_verifier\":\"${S256_VERIFIER}\"}" \
+  "$BASE_API/api/auth/native/exchange")"
+expect_http "[NEGATIVE] native/exchange replay" "$code" "400" || true
 
 # Auth Tab Success navigates to completion host root (fragment not sent to server).
 # Contract: 200 + Cache-Control: no-store (same as previous smoke.sh).

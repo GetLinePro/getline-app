@@ -41,6 +41,19 @@ class GetLineSessionRepository(
 
         val deviceKey = api.generateDeviceKey(webToken)
         val session = api.exchangeDeviceKey(deviceKey.value)
+        return persistEstablishedSession(session)
+    }
+
+    /**
+     * Native PKCE path: exchange one-time code + verifier, then persist session.
+     * Does not use device-key endpoints.
+     */
+    suspend fun establishFromNativeCode(code: String, verifier: String): NativeSession {
+        val session = api.exchangeNativeCode(code, verifier)
+        return persistEstablishedSession(session)
+    }
+
+    private fun persistEstablishedSession(session: NativeSession): NativeSession {
         store.saveSession(session)
         // Bug 3 diagnostic: one boolean after establish — never log token values.
         val hasRefresh = store.hasRefreshToken()

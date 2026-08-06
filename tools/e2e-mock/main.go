@@ -1,14 +1,17 @@
 // S1 e2e mock backend for native session happy path.
 //
 // Serves the minimal API surface needed to prove:
-//   Auth Tab Success → web token → establishFromWebToken
-//   → device-key generate/exchange → native session
+//   native PKCE start → mock provider → package-id callback code
+//   → POST /api/auth/native/exchange → native session
 //   → GET /api/subscriptions → GET /sub/e2e import → Home
 //
+// Device-key routes remain for email OTP handoff tests.
 // Does not call bot.getline.pro or backend-app.
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log"
@@ -20,13 +23,16 @@ import (
 )
 
 const (
-	// Fixed S0/S1 web token returned via Auth Tab completion fragment.
+	// Fixed S0/S1 web token for email OTP / device-key path.
 	s0AuthToken = "s0-auth-token"
 
 	// Stable device_key issued after matching web Bearer (S1).
 	s1DeviceKey = "s1-device-key"
 
-	// Native session tokens from successful device-key exchange.
+	// One-time native OAuth code issued by mock provider Success.
+	s1NativeCode = "s1-native-auth-code"
+
+	// Native session tokens from successful native exchange / device-key exchange.
 	s1NativeAccess  = "s1-native-access-token"
 	s1NativeRefresh = "s1-native-refresh-token"
 	s1ExpiresIn     = 3600
@@ -37,29 +43,34 @@ const (
 
 	authStageOrigin = "https://auth.stage.getline.pro"
 	mockGoogleURL   = authStageOrigin + "/__mock__/google"
-	successCallback = authStageOrigin + "/#/login?auth_token=" + s0AuthToken + "&expires_in=300"
+	// alphaE2eDebug applicationId private-use callback (prod whitelist excludes this).
+	nativeSuccessCallback = "pro.getline.vpn.alpha.e2e.debug:/oauth2redirect?code=" + s1NativeCode
 
 	subscriptionLink = "https://app.stage.getline.pro/sub/e2e"
 )
 
-// In-process state: last issued device_key (generate → exchange handoff).
+// In-process state: last issued device_key and last PKCE challenge from /start.
 var (
-	stateMu         sync.Mutex
-	issuedDeviceKey string
+	stateMu           sync.Mutex
+	issuedDeviceKey   string
+	pendingChallenge  string // S256 challenge from last /start with app_redirect
+	pendingCodeIssued bool   // true after mock provider issues s1NativeCode
 )
 
 func main() {
 	addr := listenAddr()
 	mux := http.NewServeMux()
 
-	// S0 surface (Auth Tab handoff).
+	// Native PKCE + mock provider surface.
 	mux.HandleFunc("GET /__health", handleHealth)
 	mux.HandleFunc("GET /api/auth/google/start", handleGoogleStart)
+	mux.HandleFunc("GET /api/auth/telegram-oidc/start", handleTelegramStart)
 	mux.HandleFunc("GET /android-auth/google", handleGoogleTrampoline)
 	mux.HandleFunc("GET /__mock__/google", handleMockGoogle)
 	mux.HandleFunc("GET /", handleCompletionRoot)
+	mux.HandleFunc("POST /api/auth/native/exchange", handleNativeExchange)
 
-	// S1 surface (native session + subscription import).
+	// S1 surface (native session + subscription import + email device-key).
 	mux.HandleFunc("GET /api/auth/me", handleMe)
 	mux.HandleFunc("GET /api/auth/device-key/generate", handleDeviceKeyGenerate)
 	mux.HandleFunc("POST /api/auth/device-key/exchange", handleDeviceKeyExchange)
@@ -122,10 +133,40 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // Exact shape expected by RwpGetLineAuthApi.startBrowserAuth: {"auth_url":"..."}.
+// When app_redirect + code_challenge are present, stores challenge for native/exchange.
 func handleGoogleStart(w http.ResponseWriter, r *http.Request) {
+	rememberPkceFromStart(r)
 	writeJSON(w, http.StatusOK, map[string]string{
 		"auth_url": mockGoogleURL,
 	})
+}
+
+func handleTelegramStart(w http.ResponseWriter, r *http.Request) {
+	// Telegram /start is fail-open without challenge on prod; mock always accepts
+	// and still records PKCE when the app sends it (client must always send S256).
+	rememberPkceFromStart(r)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"auth_url": mockGoogleURL, // reuse mock provider page for e2e
+	})
+}
+
+func rememberPkceFromStart(r *http.Request) {
+	q := r.URL.Query()
+	challenge := strings.TrimSpace(q.Get("code_challenge"))
+	redirect := strings.TrimSpace(q.Get("app_redirect"))
+	if challenge == "" || redirect == "" {
+		return
+	}
+	stateMu.Lock()
+	pendingChallenge = challenge
+	pendingCodeIssued = false
+	stateMu.Unlock()
+	log.Printf(
+		"pkce_start_recorded source=%s app_redirect_present=%t challenge_len=%d",
+		requestSource(r),
+		true,
+		len(challenge),
+	)
 }
 
 // Same-origin trampoline the app launches instead of calling google/start from
@@ -139,6 +180,13 @@ func handleGoogleTrampoline(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleMockGoogle(w http.ResponseWriter, r *http.Request) {
+	// Mark one-time code as issued when the mock provider page is opened.
+	stateMu.Lock()
+	if pendingChallenge != "" {
+		pendingCodeIssued = true
+	}
+	stateMu.Unlock()
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
@@ -432,6 +480,66 @@ func handleSubscriptionYAML(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(e2eClashYAML))
 }
 
+// POST /api/auth/native/exchange — body {"code","code_verifier"}.
+// Verifies S256(verifier) against the challenge stored at /start and that
+// mock provider has issued the one-time code.
+func handleNativeExchange(w http.ResponseWriter, r *http.Request) {
+	src := requestSource(r)
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+	var payload struct {
+		Code         string `json:"code"`
+		CodeVerifier string `json:"code_verifier"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		return
+	}
+	code := strings.TrimSpace(payload.Code)
+	verifier := strings.TrimSpace(payload.CodeVerifier)
+	if code == "" || verifier == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "code and code_verifier required"})
+		return
+	}
+
+	stateMu.Lock()
+	challenge := pendingChallenge
+	issued := pendingCodeIssued
+	stateMu.Unlock()
+
+	if code != s1NativeCode || !issued {
+		log.Printf("native_exchange source=%s code_ok=%t issued=%t", src, code == s1NativeCode, issued)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+		return
+	}
+	if challenge == "" || s256Challenge(verifier) != challenge {
+		log.Printf("native_exchange source=%s verifier_ok=false", src)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+		return
+	}
+
+	// One-time code: clear issued flag so replay fails.
+	stateMu.Lock()
+	pendingCodeIssued = false
+	pendingChallenge = ""
+	stateMu.Unlock()
+
+	log.Printf("native_exchange_succeeded source=%s", src)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token":  s1NativeAccess,
+		"refresh_token": s1NativeRefresh,
+		"expires_in":    s1ExpiresIn,
+	})
+}
+
+func s256Challenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
 // Simple valid stub — happy path does not call refresh.
 func handleNativeRefresh(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -550,8 +658,8 @@ const mockGoogleHTML = `<!DOCTYPE html>
 </head>
 <body>
   <h1>S1 mock Google sign-in</h1>
-  <p>Not a real OAuth provider. Success completes Auth Tab via HTTPS callback.</p>
-  <p><a class="button" href="` + successCallback + `">Success</a></p>
+  <p>Not a real OAuth provider. Success completes via native package-id callback.</p>
+  <p><a class="button" href="` + nativeSuccessCallback + `">Success</a></p>
 </body>
 </html>
 `

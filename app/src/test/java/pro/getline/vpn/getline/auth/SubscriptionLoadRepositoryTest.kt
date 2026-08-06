@@ -564,8 +564,16 @@ class SubscriptionLoadRepositoryTest {
         var subscriptionsCalls = 0
         var refreshCalls = 0
 
-        override suspend fun startBrowserAuth(method: AuthMethod) =
-            error("not used")
+        override suspend fun startBrowserAuth(
+            method: AuthMethod,
+            codeChallenge: String,
+            appRedirect: String,
+        ) = error("not used")
+
+        override suspend fun exchangeNativeCode(
+            code: String,
+            codeVerifier: String,
+        ) = error("not used")
 
         override suspend fun sendEmailOtp(email: String) = error("not used")
         override suspend fun verifyEmailOtp(email: String, code: String) =
