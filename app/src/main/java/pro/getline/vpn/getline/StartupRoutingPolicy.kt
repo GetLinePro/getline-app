@@ -112,15 +112,34 @@ internal object StartupRoutingPolicy {
         }
 
         return when (val imported = hasImported()) {
-            // A dead backend is not an empty account. Home in a recoverable state
-            // beats Onboarding, which would offer to import over an existing profile.
-            GetLineBackendResult.Unavailable -> LaunchRoute(
-                target = LaunchTarget.Home,
-                reason = "backend_unavailable",
-                snapshot = snapshot,
-                backendUnavailable = true,
-                backend = "unavailable",
-            )
+            // Managed / pending already branched above. Remaining local signal is
+            // session.
+            //
+            // #98: empty local + dead backend must not open Home ("service down" is a
+            // dead end on clean install). Session without managed → Home recoverable:
+            // inventory may still exist only in :background.
+            //
+            // Accepted tradeoff: imported profiles with no session and no managed UUID
+            // (Advanced-only / partial wipe) are also treated as empty and may land
+            // Onboarding with a re-import clobber risk. Prefer that over trapping every
+            // new install; no other local signal proves inventory without IPC.
+            GetLineBackendResult.Unavailable -> if (!snapshot.hasSession) {
+                LaunchRoute(
+                    target = LaunchTarget.Onboarding,
+                    reason = "backend_unavailable_empty",
+                    snapshot = snapshot,
+                    backendUnavailable = true,
+                    backend = "unavailable",
+                )
+            } else {
+                LaunchRoute(
+                    target = LaunchTarget.Home,
+                    reason = "backend_unavailable",
+                    snapshot = snapshot,
+                    backendUnavailable = true,
+                    backend = "unavailable",
+                )
+            }
             is GetLineBackendResult.Success -> if (imported.value) {
                 LaunchRoute(
                     target = LaunchTarget.Home,

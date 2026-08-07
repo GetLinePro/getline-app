@@ -56,6 +56,9 @@ class MainActivity : BaseActivity<MainDesign>() {
                     GetLineOnboardingActivity::class.intent.putExtra(
                         GetLineOnboardingActivity.EXTRA_SESSION_STORAGE_RECOVERED,
                         route.snapshot?.sessionStorageRecovered == true,
+                    ).putExtra(
+                        GetLineOnboardingActivity.EXTRA_BACKEND_UNAVAILABLE,
+                        route.backendUnavailable,
                     ),
                 )
                 finish()

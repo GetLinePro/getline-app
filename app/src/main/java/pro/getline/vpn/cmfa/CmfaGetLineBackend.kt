@@ -58,7 +58,7 @@ class CmfaGetLineBackend(
 
 private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository {
     override suspend fun snapshot(): GetLineBackendResult<GetLineSubscriptionSnapshot> {
-        return callProfileBackend {
+        return callProfileBackend(op = "snapshot") {
             withProfile {
                 GetLineSubscriptionSnapshot(
                     active = queryActive()
@@ -71,7 +71,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
     }
 
     override suspend fun hasImported(): GetLineBackendResult<Boolean> {
-        return callProfileBackend {
+        return callProfileBackend(op = "has_imported") {
             withProfile {
                 queryAll().any { it.imported }
             }
@@ -79,7 +79,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
     }
 
     override suspend fun hasActiveImported(): GetLineBackendResult<Boolean> {
-        return callProfileBackend {
+        return callProfileBackend(op = "has_active_imported") {
             withProfile {
                 queryActive()?.imported == true
             }
@@ -96,7 +96,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         draft: GetLineSubscriptionDraft,
         reuseId: GetLineSubscriptionId?,
     ): GetLineBackendResult<GetLineSubscriptionId> {
-        return callProfileBackend {
+        return callProfileBackend(op = "create_or_update_pending") {
             withProfile {
                 val existingUuid = reuseId
                     ?.toUuid()
@@ -142,7 +142,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
     override suspend fun repairLocalActive(
         managedUuid: String?,
     ): GetLineBackendResult<LocalActiveRepair> {
-        return callProfileBackend {
+        return callProfileBackend(op = "repair_local_active") {
             withProfile {
                 val managed = managedUuid?.takeIf { it.isNotBlank() }
                 val imported = queryAll().filter { it.imported }

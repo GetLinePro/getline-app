@@ -127,6 +127,13 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 design.showProviders()
                 design.setProductState(GetLineProductState.SessionStorageRecovered)
             }
+            // #98: clean install with :background bind reject — show why, not NoProfile.
+            // Retry → Refresh re-runs entry (and withProfile re-binds).
+            intent.getBooleanExtra(EXTRA_BACKEND_UNAVAILABLE, false) -> {
+                retryTarget = RetryTarget.Refresh
+                design.showProviders()
+                design.setProductState(GetLineProductState.BackendUnavailable)
+            }
             // Deep-link native PKCE finished in NativeAuthCallbackActivity.
             intent.getBooleanExtra(EXTRA_NATIVE_AUTH_HANDLED, false) ->
                 handleNativeAuthHandoff(intent)
@@ -1820,6 +1827,10 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
 
         internal const val EXTRA_SESSION_STORAGE_RECOVERED =
             "pro.getline.vpn.extra.GET_LINE_SESSION_STORAGE_RECOVERED"
+
+        /** Cold start routed here because profile backend was unreachable (#98). */
+        internal const val EXTRA_BACKEND_UNAVAILABLE =
+            "pro.getline.vpn.extra.GET_LINE_BACKEND_UNAVAILABLE"
 
         private const val EXTRA_IMPORT_TYPE =
             "pro.getline.vpn.extra.GET_LINE_IMPORT_TYPE"

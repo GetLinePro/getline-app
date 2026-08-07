@@ -1,0 +1,12 @@
+=== package ===
+    primaryCpuAbi=arm64-v8a
+    versionCode=2016 minSdk=23 targetSdk=36
+    versionName=0.5.0.Alpha
+    lastUpdateTime=2026-08-06 18:16:53
+      firstInstallTime=2026-08-06 18:16:53
+      firstInstallTime=1970-01-01 03:00:00
+=== processes ===
+u0_a562      32630  1317    8514008 162536 0                   0 S pro.getline.vpn.alpha
+=== services ===
+3:  * ConnectionRecord{135629d u0 CR DEAD pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService:@182ad74 flags=0x1}
+4:    binding=AppBindRecord{68de846 pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService:pro.getline.vpn.alpha}

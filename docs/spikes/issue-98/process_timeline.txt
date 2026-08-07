@@ -1,0 +1,59 @@
+08-06 17:31:48.613  2139  2231 I ActivityManager: Start proc 18993:pro.getline.vpn.alpha/u0a554 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 17:32:08.185  2139  2278 I ActivityManager: Killing 18993:pro.getline.vpn.alpha/u0a554 (adj 900): SwipeUpClean
+08-06 17:32:08.188  2139  2278 I ActivityManager: Killing 18707:pro.getline.vpn.alpha:background/u0a554 (adj 700): SwipeUpClean
+08-06 17:32:37.075  2139  2231 I ActivityManager: Start proc 20618:pro.getline.vpn.alpha/u0a555 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 17:32:51.966  2139  2231 I ActivityManager: Start proc 20769:com.android.intentresolver/u0a100 for next-top-activity {com.android.intentresolver/com.android.intentresolver.ChooserActivity} caller=pro.getline.vpn.alpha
+08-06 17:32:54.040  2139  2231 I ActivityManager: Start proc 20861:pro.getline.vpn.alpha:background/u0a555 for service {pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService} caller=pro.getline.vpn.alpha
+08-06 17:39:50.492  2139  2278 I ActivityManager: Killing 20618:pro.getline.vpn.alpha/u0a555 (adj 900): SwipeUpClean
+08-06 17:39:50.498  2139  2278 I ActivityManager: Killing 20861:pro.getline.vpn.alpha:background/u0a555 (adj 905): SwipeUpClean
+08-06 17:39:52.230  2139  2231 I ActivityManager: Start proc 25821:pro.getline.vpn.alpha/u0a555 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.mi.android.globallauncher
+08-06 17:39:58.023  2139  2231 I ActivityManager: Start proc 25911:pro.getline.vpn.alpha:background/u0a555 for service {pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService} caller=pro.getline.vpn.alpha
+08-06 17:40:05.325  2139  2278 I ActivityManager: Killing 25821:pro.getline.vpn.alpha/u0a555 (adj 900): SwipeUpClean
+08-06 17:40:05.329  2139  2278 I ActivityManager: Killing 25911:pro.getline.vpn.alpha:background/u0a555 (adj 905): SwipeUpClean
+08-06 17:40:23.217  2139  2231 I ActivityManager: Start proc 26339:pro.getline.vpn.alpha:background/u0a555 for content provider {pro.getline.vpn.alpha/com.github.kr328.clash.service.FilesProvider} caller=com.google.android.documentsui
+08-06 17:40:24.550  2139  2231 I ActivityManager: Start proc 26401:pro.getline.vpn.alpha/u0a555 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.mi.android.globallauncher
+08-06 17:45:31.720  2139  2230 I ActivityManager: Killing 26401:pro.getline.vpn.alpha/u0a555 (adj 700): stop pro.getline.vpn.alpha due to installPackageLI
+08-06 17:45:31.954  2139  2230 I ActivityManager: Killing 26339:pro.getline.vpn.alpha:background/u0a555 (adj 200): stop pro.getline.vpn.alpha due to installPackageLI
+08-06 17:45:33.474  2139  2231 I ActivityManager: Start proc 30400:pro.getline.vpn.alpha:background/u0a555 for content provider {pro.getline.vpn.alpha/com.github.kr328.clash.service.FilesProvider} caller=com.google.android.documentsui
+08-06 17:45:42.091  2139  2231 I ActivityManager: Start proc 30713:pro.getline.vpn.alpha/u0a555 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 17:46:04.618  2139  2231 I ActivityManager: Start proc 31136:com.android.intentresolver/u0a100 for next-top-activity {com.android.intentresolver/com.android.intentresolver.ChooserActivity} caller=pro.getline.vpn.alpha
+08-06 17:47:18.517  2139  2230 I ActivityManager: Killing 30713:pro.getline.vpn.alpha/u0a555 (adj 700): stop pro.getline.vpn.alpha due to deletePackageX
+08-06 17:47:18.557  2139  2230 I ActivityManager: Killing 30400:pro.getline.vpn.alpha:background/u0a555 (adj 200): stop pro.getline.vpn.alpha due to deletePackageX
+08-06 17:48:19.112  2139  2231 I ActivityManager: Start proc 3774:pro.getline.vpn.alpha/u0a556 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 17:49:53.408  2139  2231 I ActivityManager: Start proc 5970:pro.getline.vpn.alpha:background/u0a556 for service {pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService} caller=pro.getline.vpn.alpha
+08-06 17:50:07.615  2139  2278 I ActivityManager: Killing 3774:pro.getline.vpn.alpha/u0a556 (adj 900): SwipeUpClean
+08-06 17:50:07.617  2139  2278 I ActivityManager: Killing 5970:pro.getline.vpn.alpha:background/u0a556 (adj 905): SwipeUpClean
+08-06 17:50:15.304  2139  2231 I ActivityManager: Start proc 6238:pro.getline.vpn.alpha:background/u0a556 for content provider {pro.getline.vpn.alpha/com.github.kr328.clash.service.FilesProvider} caller=com.google.android.documentsui
+08-06 17:50:17.541  2139  2231 I ActivityManager: Start proc 6319:pro.getline.vpn.alpha/u0a556 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.mi.android.globallauncher
+08-06 17:50:25.295  2139  2230 I ActivityManager: Killing 6319:pro.getline.vpn.alpha/u0a556 (adj 700): stop pro.getline.vpn.alpha due to deletePackageX
+08-06 17:50:25.331  2139  2230 I ActivityManager: Killing 6238:pro.getline.vpn.alpha:background/u0a556 (adj 905): stop pro.getline.vpn.alpha due to deletePackageX
+08-06 17:50:47.928  2139  2231 I ActivityManager: Start proc 7489:pro.getline.vpn.alpha/u0a557 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 17:51:00.021  2139  2278 I ActivityManager: Killing 7489:pro.getline.vpn.alpha/u0a557 (adj 900): SwipeUpClean
+08-06 17:51:04.490  2139  2231 I ActivityManager: Start proc 7873:pro.getline.vpn.alpha:background/u0a557 for content provider {pro.getline.vpn.alpha/com.github.kr328.clash.service.FilesProvider} caller=com.google.android.documentsui
+08-06 17:51:05.983  2139  2230 I ActivityManager: Killing 7873:pro.getline.vpn.alpha:background/u0a557 (adj 905): stop pro.getline.vpn.alpha due to deletePackageX
+08-06 17:51:20.724  2139  2231 I ActivityManager: Start proc 8532:pro.getline.vpn.alpha/u0a558 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 18:10:30.982  2139  2231 I ActivityManager: Start proc 26085:pro.getline.vpn.alpha:background/u0a558 for service {pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService} caller=pro.getline.vpn.alpha
+08-06 18:10:37.696  2139  7243 I ActivityTaskManager: Process com.miui.securitycenter restarted
+08-06 18:10:39.708  2139  2230 I ActivityManager: Killing 8532:pro.getline.vpn.alpha/u0a558 (adj 700): stop pro.getline.vpn.alpha due to deletePackageX
+08-06 18:10:39.774  2139  2230 I ActivityManager: Killing 26085:pro.getline.vpn.alpha:background/u0a558 (adj 905): stop pro.getline.vpn.alpha due to deletePackageX
+08-06 18:11:34.203  2139  2231 I ActivityManager: Start proc 28132:pro.getline.vpn.alpha/u0a559 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 18:11:34.494  2139  2231 I ActivityManager: Start proc 28201:pro.getline.vpn.alpha:background/u0a559 for service {pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService} caller=pro.getline.vpn.alpha
+08-06 18:11:48.811  2139  2278 I ActivityManager: Killing 28132:pro.getline.vpn.alpha/u0a559 (adj 900): SwipeUpClean
+08-06 18:11:48.814  2139  2278 I ActivityManager: Killing 28201:pro.getline.vpn.alpha:background/u0a559 (adj 700): SwipeUpClean
+08-06 18:12:17.564  2139  2231 I ActivityManager: Start proc 29477:pro.getline.vpn.alpha/u0a560 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 18:12:17.821 29477 29477 D GetLineVPN: Process pro.getline.vpn.alpha started
+08-06 18:12:17.876  2139  2231 I ActivityManager: Start proc 29513:pro.getline.vpn.alpha:background/u0a560 for service {pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService} caller=pro.getline.vpn.alpha
+08-06 18:12:17.935 29513 29513 D GetLineVPN: Process pro.getline.vpn.alpha:background started
+08-06 18:12:18.172 29477 29477 I GetLineVPN: startup_route dest=onboarding reason=no_import store=ok prefs=enc prefs_other=0 prefs_raw=0 prefs_age_h=0 prefs_reset=0 session=0 managed=0 pending_import=0 imported=0 backend=ok
+08-06 18:12:21.347  2139  2278 I ActivityManager: Killing 29477:pro.getline.vpn.alpha/u0a560 (adj 900): SwipeUpClean
+08-06 18:12:21.348  2139  2278 I ActivityManager: Killing 29513:pro.getline.vpn.alpha:background/u0a560 (adj 905): SwipeUpClean
+08-06 18:12:43.697  2139  2231 I ActivityManager: Start proc 30330:pro.getline.vpn.alpha/u0a561 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 18:12:43.913 30330 30330 D GetLineVPN: Process pro.getline.vpn.alpha started
+08-06 18:12:43.963  2139  2231 I ActivityManager: Start proc 30369:pro.getline.vpn.alpha:background/u0a561 for service {pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService} caller=pro.getline.vpn.alpha
+08-06 18:12:44.016 30369 30369 D GetLineVPN: Process pro.getline.vpn.alpha:background started
+08-06 18:12:44.259 30330 30330 I GetLineVPN: startup_route dest=onboarding reason=no_import store=ok prefs=enc prefs_other=0 prefs_raw=0 prefs_age_h=0 prefs_reset=0 session=0 managed=0 pending_import=0 imported=0 backend=ok
+08-06 18:12:52.016  2139  2278 I ActivityManager: Killing 30330:pro.getline.vpn.alpha/u0a561 (adj 900): SwipeUpClean
+08-06 18:12:52.020  2139  2278 I ActivityManager: Killing 30369:pro.getline.vpn.alpha:background/u0a561 (adj 700): SwipeUpClean
+08-06 18:17:06.120  2139  2231 I ActivityManager: Start proc 32630:pro.getline.vpn.alpha/u0a562 for next-top-activity {pro.getline.vpn.alpha/com.github.kr328.clash.MainActivityAlias} caller=com.miui.global.packageinstaller
+08-06 18:17:06.288 32630 32630 D GetLineVPN: Process pro.getline.vpn.alpha started
+08-06 18:17:14.619 32630 32630 I GetLineVPN: startup_route dest=home reason=backend_unavailable store=ok prefs=enc prefs_other=0 prefs_raw=0 prefs_age_h=0 prefs_reset=0 session=0 managed=0 pending_import=0 imported=na backend=unavailable

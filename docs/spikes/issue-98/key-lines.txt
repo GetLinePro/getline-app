@@ -1,0 +1,68 @@
+583:08-06 17:31:48.876  2139  4133 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 18993
+1529:08-06 17:32:03.739  2139  7243 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 18993
+3984:08-06 17:32:37.373  2139  5768 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+3985:08-06 17:32:37.373  2139  5768 W ActivityManager: Unable to launch app pro.getline.vpn.alpha/10555 for service Intent { cmp=pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService }: process is bad
+3987:08-06 17:32:37.374  2139  5481 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+3988:08-06 17:32:37.374  2139  5481 W ContentProviderHelper: Unable to launch app pro.getline.vpn.alpha/10555 for provider pro.getline.vpn.alpha.status: process is bad
+4277:08-06 17:32:45.655  2139  2701 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 20618
+4399:08-06 17:32:49.180  2139  5773 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 20618
+4773:08-06 17:32:53.959  2139  4585 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 20618
+4868:08-06 17:32:54.225  2139  2192 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 20618
+4972:08-06 17:32:55.718  2139  4585 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 20618
+10815:08-06 17:39:52.346  2139  5766 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+10816:08-06 17:39:52.346  2139  5766 W ActivityManager: Unable to launch app pro.getline.vpn.alpha/10555 for service Intent { cmp=pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService }: process is bad
+10817:08-06 17:39:52.347  2139  5765 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+10818:08-06 17:39:52.347  2139  5765 W ContentProviderHelper: Unable to launch app pro.getline.vpn.alpha/10555 for provider pro.getline.vpn.alpha.status: process is bad
+11329:08-06 17:39:58.142  2139  5765 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 25821
+12852:08-06 17:40:25.068  2139  5768 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 26401
+12863:08-06 17:40:25.074  2139  5480 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 26401
+13962:08-06 17:40:45.643  2139  5768 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 26401
+17355:08-06 17:45:00.689  2139  4009 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 26401
+17678:08-06 17:45:05.990  2139  4009 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 26401
+17848:08-06 17:45:09.113  2139  4586 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 26401
+19867:08-06 17:45:42.396  2139  2192 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 30713
+20473:08-06 17:45:52.916  2139  7202 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 30713
+25294:08-06 17:48:19.393  2139  5772 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+25295:08-06 17:48:19.393  2139  5772 W ActivityManager: Unable to launch app pro.getline.vpn.alpha/10556 for service Intent { cmp=pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService }: process is bad
+25297:08-06 17:48:19.395  2139  6071 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+25298:08-06 17:48:19.395  2139  6071 W ContentProviderHelper: Unable to launch app pro.getline.vpn.alpha/10556 for provider pro.getline.vpn.alpha.status: process is bad
+25612:08-06 17:48:27.704  2139  4133 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 3774
+26150:08-06 17:49:35.097  2139  5480 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 3774
+27222:08-06 17:49:59.298  2139  4493 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 3774
+27300:08-06 17:49:59.457  2139  4586 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 3774
+28338:08-06 17:50:17.980  2139  9156 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 6319
+28351:08-06 17:50:17.985  2139  4586 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 6319
+30541:08-06 17:50:48.249  2139  9156 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+30542:08-06 17:50:48.249  2139  9156 W ActivityManager: Unable to launch app pro.getline.vpn.alpha/10557 for service Intent { cmp=pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService }: process is bad
+30544:08-06 17:50:48.250  2139  5480 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+30545:08-06 17:50:48.250  2139  5480 W ContentProviderHelper: Unable to launch app pro.getline.vpn.alpha/10557 for provider pro.getline.vpn.alpha.status: process is bad
+30763:08-06 17:50:56.519  2139  5773 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 7489
+32913:08-06 17:51:20.996  2139  9156 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+32914:08-06 17:51:20.996  2139  9156 W ActivityManager: Unable to launch app pro.getline.vpn.alpha/10558 for service Intent { cmp=pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService }: process is bad
+32918:08-06 17:51:21.008  2139  4487 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+32919:08-06 17:51:21.008  2139  4487 W ContentProviderHelper: Unable to launch app pro.getline.vpn.alpha/10558 for provider pro.getline.vpn.alpha.status: process is bad
+33093:08-06 17:51:29.278  2139  8470 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 8532
+33103:08-06 17:51:29.283  2139  8470 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 8532
+54637:08-06 18:10:30.843  2139  2192 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 8532
+54788:08-06 18:10:31.200  2139  9156 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 8532
+59352:08-06 18:11:34.921  2139  4493 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 28132
+59425:08-06 18:11:34.962  2139  2192 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 28132
+74487:08-06 18:12:17.821 29477 29477 D GetLineVPN: Process pro.getline.vpn.alpha started
+74654:08-06 18:12:17.935 29513 29513 D GetLineVPN: Process pro.getline.vpn.alpha:background started
+75145:08-06 18:12:18.172 29477 29477 I GetLineVPN: startup_route dest=onboarding reason=no_import store=ok prefs=enc prefs_other=0 prefs_raw=0 prefs_age_h=0 prefs_reset=0 session=0 managed=0 pending_import=0 imported=0 backend=ok
+75272:08-06 18:12:18.224  2139  6071 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 29477
+75314:08-06 18:12:18.237  2139  4584 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 29477
+89613:08-06 18:12:43.913 30330 30330 D GetLineVPN: Process pro.getline.vpn.alpha started
+89778:08-06 18:12:44.016 30369 30369 D GetLineVPN: Process pro.getline.vpn.alpha:background started
+90334:08-06 18:12:44.259 30330 30330 I GetLineVPN: startup_route dest=onboarding reason=no_import store=ok prefs=enc prefs_other=0 prefs_raw=0 prefs_age_h=0 prefs_reset=0 session=0 managed=0 pending_import=0 imported=0 backend=ok
+90390:08-06 18:12:44.269  2139  2701 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 30330
+90422:08-06 18:12:44.274  2139  4487 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 30330
+128221:08-06 18:17:06.288 32630 32630 D GetLineVPN: Process pro.getline.vpn.alpha started
+128306:08-06 18:17:06.340  2139  5766 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+128307:08-06 18:17:06.340  2139  5766 W ActivityManager: Unable to launch app pro.getline.vpn.alpha/10562 for service Intent { cmp=pro.getline.vpn.alpha/com.github.kr328.clash.service.RemoteService }: process is bad
+128312:08-06 18:17:06.342  2139  4009 D ProcessStarter: proc frequent died! proc = pro.getline.vpn.alpha:background callerPkg = pro.getline.vpn.alpha
+128313:08-06 18:17:06.342  2139  4009 W ContentProviderHelper: Unable to launch app pro.getline.vpn.alpha/10562 for provider pro.getline.vpn.alpha.status: process is bad
+128315:08-06 18:17:06.342 32630 32630 W GetLineVPN: Query current profile: java.lang.IllegalArgumentException: Unknown authority pro.getline.vpn.alpha.status
+128316:08-06 18:17:06.342 32630 32630 W GetLineVPN: java.lang.IllegalArgumentException: Unknown authority pro.getline.vpn.alpha.status
+134091:08-06 18:17:14.619 32630 32630 I GetLineVPN: startup_route dest=home reason=backend_unavailable store=ok prefs=enc prefs_other=0 prefs_raw=0 prefs_age_h=0 prefs_reset=0 session=0 managed=0 pending_import=0 imported=na backend=unavailable
+134153:08-06 18:17:14.643  2139  2191 I ActivityTaskManager: The Process pro.getline.vpn.alpha Already Exists in BG. So sending its PID: 32630

@@ -14,7 +14,13 @@ suspend fun <T> withClash(
     block: suspend IClashManager.() -> T
 ): T {
     while (true) {
-        val remote = Remote.service.remote.get()
+        // Fail-fast reject is profile-only ([withProfile]). bind() still fails
+        // in-flight Resource waiters; Advanced/Proxy must re-park, not crash.
+        val remote = try {
+            Remote.service.remote.get()
+        } catch (_: IllegalStateException) {
+            continue
+        }
         val client = remote.clash()
 
         try {
@@ -32,6 +38,17 @@ suspend fun <T> withProfile(
     block: suspend IProfileManager.() -> T
 ): T {
     while (true) {
+        // #98: bindService false (MIUI process is bad) must not burn the profile
+        // timeout and must not sticky-crash Advanced. Re-bind on each profile call
+        // so Home/Onboarding Retry can recover when the quarantine lifts — one
+        // bind() attempt, then fail-fast if still rejected and unbound.
+        if (Remote.service.remote.peek() == null && Remote.service.wasBindRejected()) {
+            Remote.service.bind()
+            if (Remote.service.remote.peek() == null && Remote.service.wasBindRejected()) {
+                throw IllegalStateException("bind_rejected")
+            }
+        }
+
         val remote = Remote.service.remote.get()
         val client = remote.profile()
 

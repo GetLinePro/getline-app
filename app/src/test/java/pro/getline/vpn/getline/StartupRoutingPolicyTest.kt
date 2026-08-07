@@ -11,10 +11,10 @@ import org.junit.Test
  * Where a cold start lands, as a table.
  *
  * This contract has been rewritten several times — pending import ahead of the
- * managed profile, a dead backend routed Home instead of Onboarding — and each
- * time the evidence was a user who landed on the wrong screen. The priority order
- * is the whole point: getting it wrong offers a fresh import to someone who
- * already has a working VPN profile, or drops a half-finished one.
+ * managed profile, empty+dead-backend → Onboarding (#98) vs session+dead → Home —
+ * and each time the evidence was a user who landed on the wrong screen. The
+ * priority order is the whole point: getting it wrong offers a fresh import to
+ * someone who already has a working VPN profile, or traps a clean install on Home.
  */
 class StartupRoutingPolicyTest {
 
@@ -104,13 +104,37 @@ class StartupRoutingPolicyTest {
     }
 
     /**
-     * A dead `:background` process is not an empty account. Onboarding would offer
-     * a fresh import over a profile that is still there.
+     * Proven-empty local state + dead `:background` is clean install / wipe, not a
+     * hidden profile. Home with "service unavailable" is a dead end (#98).
+     *
+     * Product decision: same branch covers inventory-only profiles with no session
+     * and no managed UUID — Onboarding (re-import clobber risk) beats trapping
+     * every clean install on Home. No local signal can prove inventory without IPC.
      */
     @Test
-    fun deadBackend_goesHomeRecoverable_notOnboarding() = runBlocking {
+    fun deadBackend_emptyLocal_goesOnboarding() = runBlocking {
         val probe = Probe(
             snapshot = SessionRoutingSnapshot(storeOk = true),
+            imported = GetLineBackendResult.Unavailable,
+        )
+
+        val route = StartupRoutingPolicy.decide(false, probe::snapshot, probe::imported)
+
+        assertEquals(LaunchTarget.Onboarding, route.target)
+        assertEquals("backend_unavailable_empty", route.reason)
+        assertTrue(route.backendUnavailable)
+        assertEquals("unavailable", route.backend)
+        assertEquals("na", route.imported)
+    }
+
+    /**
+     * Session without managed still may own inventory only visible via IPC.
+     * Onboarding would offer a fresh import over that profile.
+     */
+    @Test
+    fun deadBackend_withSession_goesHomeRecoverable() = runBlocking {
+        val probe = Probe(
+            snapshot = SessionRoutingSnapshot(storeOk = true, hasSession = true),
             imported = GetLineBackendResult.Unavailable,
         )
 
