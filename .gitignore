@@ -94,3 +94,8 @@ google-services.json
 # Local inputs for GitHub Actions runs via `act`; may contain secrets.
 /.act.secrets
 /.act.vars
+
+# Local agent / MCP tooling (machine-specific, may hold paths or tokens).
+.mcp.json
+.grok/
+.docs-mcp/

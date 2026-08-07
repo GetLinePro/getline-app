@@ -19,16 +19,52 @@ import java.net.URL
 import java.util.Locale
 import kotlin.math.min
 
-internal data class PrimaryConfigArtifact(
-    val file: File,
-    val subscriptionUserInfo: String,
-    val profileUpdateInterval: String,
-) : Closeable {
-    override fun close() {
-        if (file.exists() && !file.delete()) {
-            Log.w("Unable to delete primary config temporary file")
+/**
+ * Response headers shared by 200 and 304.
+ *
+ * Null means the header was absent (or blank for ETag). Callers map null to `""`
+ * for the native report path; empty strings are treated as absent there and do
+ * not emit SubscriptionInfo — so counters are not cleared (C4).
+ * [etag] is opaque after [usableEtag] (trim + non-empty); no weak/strong parse.
+ */
+internal data class PrimaryConfigResponseMetadata(
+    val etag: String?,
+    val subscriptionUserInfo: String?,
+    val profileUpdateInterval: String?,
+)
+
+/**
+ * Outcome of a primary-config GET. Transport failures throw [IOException]
+ * (or subclasses); there is no separate Failed type.
+ */
+internal sealed class PrimaryConfigFetchResult : Closeable {
+    abstract val metadata: PrimaryConfigResponseMetadata
+
+    class Downloaded(
+        val file: File,
+        override val metadata: PrimaryConfigResponseMetadata,
+    ) : PrimaryConfigFetchResult() {
+        override fun close() {
+            if (file.exists() && !file.delete()) {
+                Log.w("Unable to delete primary config temporary file")
+            }
         }
     }
+
+    class NotModified(
+        override val metadata: PrimaryConfigResponseMetadata,
+    ) : PrimaryConfigFetchResult() {
+        override fun close() = Unit
+    }
+}
+
+/**
+ * Blank / missing ETag → null. Trims surrounding whitespace so stored and sent
+ * values cannot carry header-injection padding. No weak/strong structure parse.
+ */
+internal fun usableEtag(raw: String?): String? {
+    val trimmed = raw?.trim() ?: return null
+    return trimmed.takeIf { it.isNotEmpty() }
 }
 
 /** Downloads the bootstrap config without entering the Mihomo runtime tunnel. */
@@ -41,8 +77,9 @@ internal class PrimaryConfigDownloader(
     suspend fun download(
         context: Context,
         source: String,
+        ifNoneMatch: String? = null,
         temporaryDirectory: File = context.cacheDir,
-    ): PrimaryConfigArtifact = withContext(Dispatchers.IO) {
+    ): PrimaryConfigFetchResult = withContext(Dispatchers.IO) {
         val initialUrl = URL(source)
         require(initialUrl.protocol == "https") {
             "Unsupported primary config scheme ${initialUrl.protocol}"
@@ -53,6 +90,7 @@ internal class PrimaryConfigDownloader(
         val underlying = pickNetwork(context)
         val userAgent = userAgent(context)
         val authorization = basicAuthorization(initialUrl)
+        val condition = usableEtag(ifNoneMatch)
 
         try {
             downloadFrom(
@@ -63,6 +101,7 @@ internal class PrimaryConfigDownloader(
                 BOUND_CONNECT_TIMEOUT_MS.takeIf { underlying != null },
                 userAgent,
                 authorization,
+                condition,
             )
         } catch (e: ConnectFailure) {
             if (underlying == null) throw e.cause
@@ -81,6 +120,7 @@ internal class PrimaryConfigDownloader(
                     null,
                     userAgent,
                     authorization,
+                    condition,
                 )
             } catch (fallback: ConnectFailure) {
                 throw fallback.cause
@@ -96,19 +136,24 @@ internal class PrimaryConfigDownloader(
         connectTimeoutLimit: Int?,
         userAgent: String,
         authorization: String?,
-    ): PrimaryConfigArtifact {
+        ifNoneMatch: String?,
+    ): PrimaryConfigFetchResult {
         var currentUrl = initialUrl
         var redirects = 0
 
         while (true) {
             val connection = openConnection(currentUrl, network)
             try {
+                val sameOriginHop = sameOrigin(initialUrl, currentUrl)
+                // Match Authorization: only send conditional validator on same-origin hops.
+                val conditionForHop = ifNoneMatch.takeIf { sameOriginHop }
                 configure(
                     connection,
                     deadline,
                     connectTimeoutLimit,
                     userAgent,
-                    authorization.takeIf { sameOrigin(initialUrl, currentUrl) },
+                    authorization.takeIf { sameOriginHop },
+                    conditionForHop,
                 )
                 try {
                     connection.connect()
@@ -129,6 +174,22 @@ internal class PrimaryConfigDownloader(
                     currentUrl = nextUrl
                     redirects++
                     continue
+                }
+
+                val metadata = responseMetadata(connection)
+
+                if (code == HttpURLConnection.HTTP_NOT_MODIFIED) {
+                    if (conditionForHop == null) {
+                        throw IOException(
+                            "Fetch ${currentUrl.host}: unexpected HTTP 304 without If-None-Match",
+                        )
+                    }
+                    logProfileMarkers(currentUrl, userAgent, connection)
+                    Log.i(
+                        "primary_config host=${currentUrl.host} inm=sent code=304 " +
+                            "etag_hdr=${if (metadata.etag != null) "present" else "absent"}",
+                    )
+                    return PrimaryConfigFetchResult.NotModified(metadata)
                 }
 
                 if (code !in 200..299) {
@@ -155,12 +216,14 @@ internal class PrimaryConfigDownloader(
                             }
                         }
                     }
-                    return PrimaryConfigArtifact(
+                    Log.i(
+                        "primary_config host=${currentUrl.host} " +
+                            "inm=${if (conditionForHop != null) "sent" else "none"} code=$code " +
+                            "etag_hdr=${if (metadata.etag != null) "present" else "absent"}",
+                    )
+                    return PrimaryConfigFetchResult.Downloaded(
                         file = temporary,
-                        subscriptionUserInfo =
-                            connection.getHeaderField("subscription-userinfo").orEmpty(),
-                        profileUpdateInterval =
-                            connection.getHeaderField("profile-update-interval").orEmpty(),
+                        metadata = metadata,
                     )
                 } catch (e: Exception) {
                     temporary.delete()
@@ -178,6 +241,7 @@ internal class PrimaryConfigDownloader(
         connectTimeoutLimit: Int?,
         userAgent: String,
         authorization: String?,
+        ifNoneMatch: String?,
     ) {
         connection.requestMethod = "GET"
         connection.connectTimeout = connectTimeoutLimit?.let {
@@ -191,6 +255,17 @@ internal class PrimaryConfigDownloader(
         if (authorization != null) {
             connection.setRequestProperty("Authorization", authorization)
         }
+        if (ifNoneMatch != null) {
+            connection.setRequestProperty("If-None-Match", ifNoneMatch)
+        }
+    }
+
+    private fun responseMetadata(connection: HttpURLConnection): PrimaryConfigResponseMetadata {
+        return PrimaryConfigResponseMetadata(
+            etag = usableEtag(connection.getHeaderField("ETag")),
+            subscriptionUserInfo = connection.getHeaderField("subscription-userinfo"),
+            profileUpdateInterval = connection.getHeaderField("profile-update-interval"),
+        )
     }
 
     private fun basicAuthorization(initialUrl: URL): String? {

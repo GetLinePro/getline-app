@@ -41,18 +41,20 @@ class PrimaryConfigDownloaderTest {
                 headers = mapOf(
                     "subscription-userinfo" to "upload=1; download=2; total=3",
                     "profile-update-interval" to "24",
+                    "ETag" to "\"abc123\"",
                 ),
             ),
         )
         val directory = temporaryFolder.newFolder("download")
         val downloader = downloader(opener, network)
 
-        val artifact = downloader.download(
+        val result = downloader.download(
             context,
             "https://example.com/subscription",
-            directory,
+            temporaryDirectory = directory,
         )
 
+        val downloaded = result as PrimaryConfigFetchResult.Downloaded
         assertEquals(listOf(network), opener.networks)
         assertEquals("GET", opener.connections.single().requestMethod)
         assertEquals(false, opener.connections.single().instanceFollowRedirects)
@@ -64,14 +66,136 @@ class PrimaryConfigDownloaderTest {
             opener.connections.single().requestHeader("User-Agent")
                 ?.startsWith("GetLineVPN/") == true,
         )
-        assertEquals("mixed-port: 7890\n", artifact.file.readText())
-        assertEquals("upload=1; download=2; total=3", artifact.subscriptionUserInfo)
-        assertEquals("24", artifact.profileUpdateInterval)
+        assertNull(opener.connections.single().requestHeader("If-None-Match"))
+        assertEquals("mixed-port: 7890\n", downloaded.file.readText())
+        assertEquals("upload=1; download=2; total=3", downloaded.metadata.subscriptionUserInfo)
+        assertEquals("24", downloaded.metadata.profileUpdateInterval)
+        assertEquals("\"abc123\"", downloaded.metadata.etag)
 
-        val file = artifact.file
-        artifact.close()
+        val file = downloaded.file
+        result.close()
         assertFalse(file.exists())
         assertEquals(1, opener.connections.single().disconnects)
+    }
+
+    @Test
+    fun noValidator_omitsIfNoneMatch() = runBlocking {
+        val opener = RecordingOpener(Response(body = "rules: []\n"))
+
+        downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+            ifNoneMatch = null,
+            temporaryDirectory = temporaryFolder.newFolder("no-inm"),
+        ).use { }
+
+        assertNull(opener.connections.single().requestHeader("If-None-Match"))
+    }
+
+    @Test
+    fun withValidator_sendsIfNoneMatch() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                body = "rules: []\n",
+                headers = mapOf("ETag" to "\"new\""),
+            ),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+            ifNoneMatch = "\"old\"",
+            temporaryDirectory = temporaryFolder.newFolder("inm"),
+        ).use { }
+
+        assertEquals("\"old\"", opener.connections.single().requestHeader("If-None-Match"))
+    }
+
+    @Test
+    fun notModified_returnsMetadataWithoutBodyFile() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 304,
+                message = "Not Modified",
+                headers = mapOf(
+                    "ETag" to "\"same\"",
+                    "subscription-userinfo" to "upload=9; download=8; total=7",
+                    "profile-update-interval" to "12",
+                ),
+            ),
+        )
+        val directory = temporaryFolder.newFolder("304")
+
+        val result = downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+            ifNoneMatch = "\"same\"",
+            temporaryDirectory = directory,
+        )
+
+        assertTrue(result is PrimaryConfigFetchResult.NotModified)
+        assertEquals("\"same\"", result.metadata.etag)
+        assertEquals("upload=9; download=8; total=7", result.metadata.subscriptionUserInfo)
+        assertEquals("12", result.metadata.profileUpdateInterval)
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+        result.close()
+    }
+
+    @Test
+    fun notModified_withoutEtag_leavesMetadataEtagNull() = runBlocking {
+        val opener = RecordingOpener(
+            Response(code = 304, message = "Not Modified"),
+        )
+
+        val result = downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+            ifNoneMatch = "\"old\"",
+            temporaryDirectory = temporaryFolder.newFolder("304-no-etag"),
+        )
+
+        assertTrue(result is PrimaryConfigFetchResult.NotModified)
+        assertNull(result.metadata.etag)
+        result.close()
+    }
+
+    @Test
+    fun notModified_blankEtag_isIgnored() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 304,
+                message = "Not Modified",
+                headers = mapOf("ETag" to "   "),
+            ),
+        )
+
+        val result = downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+            ifNoneMatch = "\"old\"",
+            temporaryDirectory = temporaryFolder.newFolder("304-blank-etag"),
+        )
+
+        assertNull(result.metadata.etag)
+        result.close()
+    }
+
+    @Test
+    fun unexpected304_withoutCondition_isRejected() = runBlocking {
+        val opener = RecordingOpener(
+            Response(code = 304, message = "Not Modified"),
+        )
+
+        val error = expectIOException {
+            downloader(opener).download(
+                context,
+                "https://example.com/subscription",
+                ifNoneMatch = null,
+                temporaryDirectory = temporaryFolder.newFolder("unexpected-304"),
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("304"))
     }
 
     @Test
@@ -82,7 +206,7 @@ class PrimaryConfigDownloaderTest {
             downloader(opener).download(
                 context,
                 "http://example.com/subscription",
-                temporaryFolder.newFolder("cleartext"),
+                temporaryDirectory = temporaryFolder.newFolder("cleartext"),
             )
             fail("expected cleartext rejection")
         } catch (_: IllegalArgumentException) {
@@ -105,7 +229,7 @@ class PrimaryConfigDownloaderTest {
         downloader(opener).download(
             context,
             "https://user%3Aname:p%40ss@example.com:443/start",
-            temporaryFolder.newFolder("basic-auth"),
+            temporaryDirectory = temporaryFolder.newFolder("basic-auth"),
         ).use { }
 
         val expected = "Basic " + android.util.Base64.encodeToString(
@@ -131,7 +255,7 @@ class PrimaryConfigDownloaderTest {
         downloader(opener).download(
             context,
             "https://user:password@example.com:443/start",
-            temporaryFolder.newFolder("basic-auth-port-change"),
+            temporaryDirectory = temporaryFolder.newFolder("basic-auth-port-change"),
         ).use { }
 
         assertEquals("Basic dXNlcjpwYXNzd29yZA==", opener.connections[0].requestHeader("Authorization"))
@@ -139,17 +263,74 @@ class PrimaryConfigDownloaderTest {
     }
 
     @Test
+    fun ifNoneMatch_isKeptAcrossSameOriginRedirect() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 302,
+                headers = mapOf("Location" to "https://example.com/final"),
+            ),
+            Response(code = 304, message = "Not Modified"),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://example.com/start",
+            ifNoneMatch = "\"v1\"",
+            temporaryDirectory = temporaryFolder.newFolder("inm-redirect"),
+        ).use { }
+
+        assertEquals("\"v1\"", opener.connections[0].requestHeader("If-None-Match"))
+        assertEquals("\"v1\"", opener.connections[1].requestHeader("If-None-Match"))
+    }
+
+    @Test
+    fun ifNoneMatch_isRemovedWhenRedirectChangesPort() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 302,
+                headers = mapOf("Location" to "https://example.com:8443/final"),
+            ),
+            Response(body = "rules: []\n"),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://example.com:443/start",
+            ifNoneMatch = "\"v1\"",
+            temporaryDirectory = temporaryFolder.newFolder("inm-port-change"),
+        ).use { }
+
+        assertEquals("\"v1\"", opener.connections[0].requestHeader("If-None-Match"))
+        assertNull(opener.connections[1].requestHeader("If-None-Match"))
+    }
+
+    @Test
+    fun ifNoneMatch_isTrimmedBeforeSend() = runBlocking {
+        val opener = RecordingOpener(Response(body = "rules: []\n"))
+
+        downloader(opener).download(
+            context,
+            "https://example.com/sub",
+            ifNoneMatch = "  \"padded\"  ",
+            temporaryDirectory = temporaryFolder.newFolder("inm-trim"),
+        ).use { }
+
+        assertEquals("\"padded\"", opener.connections.single().requestHeader("If-None-Match"))
+    }
+
+    @Test
     fun defaultTemporaryDirectory_isApplicationCache() = runBlocking {
         val opener = RecordingOpener(Response(body = "rules: []\n"))
 
-        val artifact = downloader(opener).download(
+        val result = downloader(opener).download(
             context,
             "https://example.com/subscription",
         )
 
-        assertEquals(context.cacheDir.canonicalFile, artifact.file.parentFile?.canonicalFile)
-        artifact.close()
-        assertFalse(artifact.file.exists())
+        val downloaded = result as PrimaryConfigFetchResult.Downloaded
+        assertEquals(context.cacheDir.canonicalFile, downloaded.file.parentFile?.canonicalFile)
+        result.close()
+        assertFalse(downloaded.file.exists())
     }
 
     @Test
@@ -165,9 +346,10 @@ class PrimaryConfigDownloaderTest {
         downloader(opener).download(
             context,
             "https://example.com/start",
-            temporaryFolder.newFolder("redirect"),
-        ).use { artifact ->
-            assertEquals("rules: []\n", artifact.file.readText())
+            temporaryDirectory = temporaryFolder.newFolder("redirect"),
+        ).use { result ->
+            val downloaded = result as PrimaryConfigFetchResult.Downloaded
+            assertEquals("rules: []\n", downloaded.file.readText())
         }
 
         assertEquals(2, opener.urls.size)
@@ -187,7 +369,11 @@ class PrimaryConfigDownloaderTest {
         val directory = temporaryFolder.newFolder("cross-host")
 
         expectIOException {
-            downloader(opener).download(context, "https://example.com/start", directory)
+            downloader(opener).download(
+                context,
+                "https://example.com/start",
+                temporaryDirectory = directory,
+            )
         }
 
         assertTrue(directory.listFiles().orEmpty().isEmpty())
@@ -207,7 +393,7 @@ class PrimaryConfigDownloaderTest {
             downloader(opener).download(
                 context,
                 "https://example.com/start",
-                temporaryFolder.newFolder("downgrade"),
+                temporaryDirectory = temporaryFolder.newFolder("downgrade"),
             )
         }
         Unit
@@ -222,7 +408,7 @@ class PrimaryConfigDownloaderTest {
             downloader(opener).download(
                 context,
                 "https://example.com/start",
-                temporaryFolder.newFolder("redirect-limit"),
+                temporaryDirectory = temporaryFolder.newFolder("redirect-limit"),
             )
         }
 
@@ -236,7 +422,11 @@ class PrimaryConfigDownloaderTest {
         val directory = temporaryFolder.newFolder("non-2xx")
 
         val error = expectIOException {
-            downloader(opener).download(context, "https://example.com/sub", directory)
+            downloader(opener).download(
+                context,
+                "https://example.com/sub",
+                temporaryDirectory = directory,
+            )
         }
 
         assertTrue(error.message.orEmpty().contains("HTTP 503"))
@@ -254,9 +444,10 @@ class PrimaryConfigDownloaderTest {
         downloader(opener, network).download(
             context,
             "https://example.com/sub",
-            temporaryFolder.newFolder("fallback"),
-        ).use { artifact ->
-            assertEquals("rules: []\n", artifact.file.readText())
+            temporaryDirectory = temporaryFolder.newFolder("fallback"),
+        ).use { result ->
+            val downloaded = result as PrimaryConfigFetchResult.Downloaded
+            assertEquals("rules: []\n", downloaded.file.readText())
         }
 
         assertEquals(2, opener.networks.size)
@@ -285,7 +476,7 @@ class PrimaryConfigDownloaderTest {
         downloader.download(
             context,
             "https://example.com/sub",
-            temporaryFolder.newFolder("timeout-fallback"),
+            temporaryDirectory = temporaryFolder.newFolder("timeout-fallback"),
         ).use { }
 
         assertEquals(listOf(network, null), opener.networks)
@@ -313,7 +504,7 @@ class PrimaryConfigDownloaderTest {
             downloader.download(
                 context,
                 "https://example.com/sub",
-                temporaryFolder.newFolder("expired-fallback"),
+                temporaryDirectory = temporaryFolder.newFolder("expired-fallback"),
             )
         }
 
@@ -327,7 +518,11 @@ class PrimaryConfigDownloaderTest {
         val directory = temporaryFolder.newFolder("partial")
 
         expectIOException {
-            downloader(opener).download(context, "https://example.com/sub", directory)
+            downloader(opener).download(
+                context,
+                "https://example.com/sub",
+                temporaryDirectory = directory,
+            )
         }
 
         assertTrue(directory.listFiles().orEmpty().isEmpty())
@@ -347,7 +542,7 @@ class PrimaryConfigDownloaderTest {
             downloader.download(
                 context,
                 "https://example.com/sub",
-                temporaryFolder.newFolder("deadline"),
+                temporaryDirectory = temporaryFolder.newFolder("deadline"),
             )
             fail("expected timeout")
         } catch (_: SocketTimeoutException) {

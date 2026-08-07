@@ -33,6 +33,20 @@ object ProfileProcessor {
     private val profileLock = Mutex()
     private val processLock = Mutex()
     private val primaryConfigDownloader = PrimaryConfigDownloader()
+    private val primaryConfigRefresher = PrimaryConfigRefresher(
+        download = { context, source, ifNoneMatch ->
+            primaryConfigDownloader.download(context, source, ifNoneMatch = ifNoneMatch)
+        },
+        validate = { path, localFile, subscriptionUserInfo, profileUpdateInterval, reportStatus ->
+            Clash.validateAndPrepareLocalConfig(
+                path = path,
+                localFile = localFile,
+                subscriptionUserInfo = subscriptionUserInfo,
+                profileUpdateInterval = profileUpdateInterval,
+                reportStatus = reportStatus,
+            ).await()
+        },
+    )
 
     suspend fun apply(context: Context, uuid: UUID, callback: IFetchObserver? = null) {
         withContext(NonCancellable) {
@@ -61,6 +75,7 @@ object ProfileProcessor {
                     snapshot.source,
                     force,
                     callback,
+                    allowConditional = false,
                 )
 
                 profileLock.withLock {
@@ -126,6 +141,7 @@ object ProfileProcessor {
                     snapshot.source,
                     true,
                     callback,
+                    allowConditional = true,
                 )
 
                 profileLock.withLock {
@@ -159,6 +175,7 @@ object ProfileProcessor {
         source: String,
         force: Boolean,
         callback: IFetchObserver?,
+        allowConditional: Boolean,
     ): FetchStatus? {
         var subscriptionInfo: FetchStatus? = null
         var cb = callback
@@ -192,16 +209,12 @@ object ProfileProcessor {
                     max = -1,
                 ),
             )
-            primaryConfigDownloader.download(context, source)
-                .use { artifact ->
-                    Clash.validateAndPrepareLocalConfig(
-                        path = context.processingDir,
-                        localFile = artifact.file,
-                        subscriptionUserInfo = artifact.subscriptionUserInfo,
-                        profileUpdateInterval = artifact.profileUpdateInterval,
-                        reportStatus = reportStatus,
-                    ).await()
-                }
+            primaryConfigRefresher.refresh(
+                context = context,
+                source = source,
+                allowConditional = allowConditional,
+                reportStatus = reportStatus,
+            )
         } else {
             // Android's platform HTTP stack blocks cleartext for target 28+.
             // Keep advanced http:// profiles on their existing native path instead
