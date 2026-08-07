@@ -137,6 +137,8 @@ internal class PrimaryConfigDownloader(
                     )
                 }
 
+                logProfileMarkers(currentUrl, userAgent, connection)
+
                 val temporary = File.createTempFile("primary-config-", ".yaml", directory)
                 try {
                     connection.inputStream.use { input ->
@@ -201,13 +203,33 @@ internal class PrimaryConfigDownloader(
         return "Basic $token"
     }
 
+    /**
+     * Records which template answered. The panel selects it by User-Agent and marks
+     * its own answer with these headers; once the body reaches the core, that choice
+     * is no longer observable from the app. Never fails the download: the headers are
+     * hand-edited in the panel, so a missing one is a config typo, not a bad config.
+     */
+    private fun logProfileMarkers(
+        url: URL,
+        userAgent: String,
+        connection: HttpURLConnection,
+    ) {
+        val profile = connection.getHeaderField("x-getline-profile")
+        val schema = connection.getHeaderField("x-getline-schema")
+        if (profile == null) {
+            Log.w("Fetch ${url.host}: no GetLine profile marker, sent $userAgent")
+        } else {
+            Log.i("Fetch ${url.host}: GetLine profile=$profile schema=${schema ?: "?"}, sent $userAgent")
+        }
+    }
+
     private fun userAgent(context: Context): String {
         // The package version is injected by Bridge into Go today. Reading it from
         // the service process keeps the exact backend content-negotiation token.
         @Suppress("DEPRECATION")
         val version = context.packageManager.getPackageInfo(context.packageName, 0)
             .versionName ?: "unknown"
-        return "ClashMetaForAndroid/$version"
+        return "GetLineVPN/$version"
     }
 
     private fun remainingTimeout(deadline: Long): Int {

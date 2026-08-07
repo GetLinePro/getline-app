@@ -62,7 +62,7 @@ class PrimaryConfigDownloaderTest {
         assertTrue(opener.connections.single().readTimeout in 1..60_000)
         assertTrue(
             opener.connections.single().requestHeader("User-Agent")
-                ?.startsWith("ClashMetaForAndroid/") == true,
+                ?.startsWith("GetLineVPN/") == true,
         )
         assertEquals("mixed-port: 7890\n", artifact.file.readText())
         assertEquals("upload=1; download=2; total=3", artifact.subscriptionUserInfo)

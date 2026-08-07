@@ -318,7 +318,7 @@ returns one active primary sub with
 | **Method** | **`GET`** — confirmed in Clash native fetch, not guessed |
 | **Path** | Absolute URL from subscription item (e2e: `https://app.stage.getline.pro/sub/e2e`) |
 | **Origin** | Host inside the link (API stage for mock) |
-| **Headers** | `User-Agent: ClashMetaForAndroid/{app version}` only (`core/src/main/golang/native/config/fetch.go` L41–44) |
+| **Headers** | `User-Agent: GetLineVPN/{app version}` only (`core/src/main/golang/native/config/fetch.go` L41–44) |
 | **Authorization** | **none** |
 | **Request body** | none |
 | **Success** | HTTP success body = Clash/Mihomo YAML; optional headers `Subscription-Userinfo`, `Profile-Update-Interval` read if present L50–53 |
@@ -416,7 +416,7 @@ L23–34, L71–75, L135–161.
 - me is optional; only `customer_id` is stored if present.
 - exchange sends **no** Bearer; body field name is `device_key`.
 - subscriptions require native access Bearer; prefer primary with link.
-- YAML fetch is **HTTP GET** with ClashMeta User-Agent, no auth header.
+- YAML fetch is **HTTP GET** with `GetLineVPN/{app version}` User-Agent, no auth header.
 - Device happy path through Home + kill/relaunch with saved profile
   (project acceptance notes / e2e-mock README).
 - Smoke script covers positive and negative cases for mock endpoints
