@@ -19,6 +19,14 @@ import org.junit.Test
 class StartupRoutingPolicyTest {
 
     @Test
+    fun isAdvancedLaunch_requiresDebugBuild() {
+        assertTrue(isAdvancedLaunch(openAdvancedExtra = true, isDebugBuild = true))
+        assertFalse(isAdvancedLaunch(openAdvancedExtra = true, isDebugBuild = false))
+        assertFalse(isAdvancedLaunch(openAdvancedExtra = false, isDebugBuild = true))
+        assertFalse(isAdvancedLaunch(openAdvancedExtra = false, isDebugBuild = false))
+    }
+
+    @Test
     fun openAdvanced_skipsStoreAndBackendEntirely() = runBlocking {
         val probe = Probe()
 
@@ -34,6 +42,35 @@ class StartupRoutingPolicyTest {
         assertNull(route.snapshot)
         assertEquals(0, probe.snapshotReads)
         assertEquals(0, probe.backendCalls)
+    }
+
+    /**
+     * GL-22 / #76: release builds must not honour EXTRA_OPEN_ADVANCED.
+     * MainActivity gates via [isAdvancedLaunch]; when that returns false the
+     * extra is treated as a normal product cold start.
+     */
+    @Test
+    fun openAdvanced_ignoredInRelease_routesAsNormalProductStart() = runBlocking {
+        val probe = Probe(
+            snapshot = SessionRoutingSnapshot(storeOk = true),
+            imported = GetLineBackendResult.Success(false),
+        )
+
+        val openAdvanced = isAdvancedLaunch(
+            openAdvancedExtra = true,
+            isDebugBuild = false,
+        )
+        val route = StartupRoutingPolicy.decide(
+            openAdvanced = openAdvanced,
+            readSnapshot = probe::snapshot,
+            hasImported = probe::imported,
+        )
+
+        assertFalse(openAdvanced)
+        assertEquals(LaunchTarget.Onboarding, route.target)
+        assertEquals("no_import", route.reason)
+        assertEquals(1, probe.snapshotReads)
+        assertEquals(1, probe.backendCalls)
     }
 
     @Test

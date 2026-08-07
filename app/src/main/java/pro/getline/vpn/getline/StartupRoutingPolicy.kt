@@ -54,6 +54,26 @@ internal data class LaunchRoute(
 )
 
 /**
+ * Whether an Advanced cold-start request is honoured.
+ *
+ * GL-22 / #76: the hatch is debug-only and has no UI trigger on any build type.
+ * The only way in is an explicit intent on a debug install:
+ *
+ * ```
+ * adb shell am start -n pro.getline.vpn.alpha.debug/com.github.kr328.clash.MainActivity \
+ *     --ez pro.getline.vpn.extra.OPEN_ADVANCED true
+ * ```
+ *
+ * Release builds ignore [MainActivity.EXTRA_OPEN_ADVANCED] so an external intent
+ * on exported MainActivity cannot land on the legacy CMFA home — that was the
+ * real surface, since the 14 legacy activities were already `exported="false"`.
+ * The release manifest `tools:node="remove"` is defense in depth, not the
+ * external-intent boundary.
+ */
+internal fun isAdvancedLaunch(openAdvancedExtra: Boolean, isDebugBuild: Boolean): Boolean =
+    isDebugBuild && openAdvancedExtra
+
+/**
  * Cold-start destination. Extracted from MainActivity so the priority order is a
  * table that can be read and tested, rather than five returns inside a UI class.
  */
@@ -65,6 +85,9 @@ internal object StartupRoutingPolicy {
      * no branch above the backend query may pay for an IPC round trip to a
      * `:background` process that might be dead. A test can therefore assert the
      * question was never asked.
+     *
+     * [openAdvanced] is the *already gated* request (see [isAdvancedLaunch]).
+     * Callers must not pass a raw intent extra from a release build.
      */
     suspend fun decide(
         openAdvanced: Boolean,

@@ -125,7 +125,6 @@ enum class GetLineRecoveryAction(@StringRes val label: Int) {
     None(0),
     Retry(R.string.get_line_action_retry),
     ImportSubscription(R.string.get_line_add_existing_subscription),
-    OpenProfiles(R.string.get_line_action_choose_profile),
     /**
      * Context-specific account entry: Home opens the web portal; onboarding
      * SubscriptionExpired prefers Google sign-in (reachable without VPN).

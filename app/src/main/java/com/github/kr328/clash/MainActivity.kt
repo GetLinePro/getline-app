@@ -24,6 +24,7 @@ import pro.getline.vpn.getline.LaunchTarget
 import pro.getline.vpn.getline.SessionRoutingSnapshot
 import pro.getline.vpn.getline.StartupRoutingPolicy
 import pro.getline.vpn.getline.auth.GetLineSessionStore
+import pro.getline.vpn.getline.isAdvancedLaunch
 import pro.getline.vpn.GetLineHomeActivity
 import pro.getline.vpn.GetLineOnboardingActivity
 import com.github.kr328.clash.util.startClashService
@@ -144,7 +145,11 @@ class MainActivity : BaseActivity<MainDesign>() {
      */
     private suspend fun resolveLaunchTarget(): LaunchRoute {
         val route = StartupRoutingPolicy.decide(
-            openAdvanced = intent.getBooleanExtra(EXTRA_OPEN_ADVANCED, false),
+            // GL-22: Advanced hatch is debug-only; release ignores the extra.
+            openAdvanced = isAdvancedLaunch(
+                openAdvancedExtra = intent.getBooleanExtra(EXTRA_OPEN_ADVANCED, false),
+                isDebugBuild = BuildConfig.DEBUG,
+            ),
             readSnapshot = ::readSessionRoutingSnapshot,
             hasImported = { getLineBackend.subscriptions.hasImported() },
         )

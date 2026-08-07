@@ -1,6 +1,5 @@
 package pro.getline.vpn
 
-import com.github.kr328.clash.BuildConfig
 
 import android.content.Context
 import android.content.Intent
@@ -101,9 +100,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         val design = GetLineOnboardingDesign(this)
 
         setContentDesign(design)
-        // Product release: no Advanced door. Debug keeps the button; brand multi-tap
-        // remains a quiet hatch. EXTRA_OPEN_ADVANCED route is unchanged.
-        design.setAdvancedButtonVisible(BuildConfig.DEBUG)
         // Read once: a later external import (onNewIntent) replaces the Activity
         // intent: this screen must not silently lose its exit affordance, and
         // QR / manual import stays hidden for the whole session of this entry.
@@ -256,8 +252,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             }
                         GetLineOnboardingDesign.Request.ScanQrCode ->
                             if (!busy) scanQrSubscription(design)
-                        GetLineOnboardingDesign.Request.OpenAdvanced ->
-                            openAdvanced()
                         GetLineOnboardingDesign.Request.OpenHelp ->
                             startActivity(HelpActivity::class.intent)
                         GetLineOnboardingDesign.Request.Retry ->
@@ -304,10 +298,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                         }
                         GetLineOnboardingDesign.Request.OpenHelp -> {
                             startActivity(HelpActivity::class.intent)
-                            false
-                        }
-                        GetLineOnboardingDesign.Request.OpenAdvanced -> {
-                            openAdvanced()
                             false
                         }
                         else -> false
@@ -1552,11 +1542,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             design.showEmailEntry(pending.email)
             design.setProductState(GetLineProductState.AuthEmailEntry)
         }
-    }
-
-    private fun openAdvanced() {
-        backend.navigation.openAdvanced()
-        finish()
     }
 
     private suspend fun retry(design: GetLineOnboardingDesign) {

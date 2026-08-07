@@ -95,6 +95,17 @@ jobs:
             app:testAlphaE2eDebugUnitTest
           df -h / | tail -1
 
+      # GL-22 / #76: prove release strip is not a silent no-op. process*Manifest
+      # is cheaper than assemble and is enough for the merged-manifest check.
+      - name: Advanced release gate (merged manifests)
+        if: success()
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon \
+            :app:processAlphaProdReleaseMainManifest \
+            :app:processAlphaProdDebugMainManifest
+          ./scripts/check-advanced-release-gate.sh --require-merged
+
       - name: Build
         if: success()
         env:

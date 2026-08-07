@@ -152,7 +152,6 @@ data class GetLineSession(
 )
 
 interface GetLineNavigation {
-    fun openAdvanced()
     fun openOnboarding()
     /**
      * Sign-in offered on top of a working link-only profile. Unlike [openOnboarding]

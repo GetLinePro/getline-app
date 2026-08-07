@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  GL-22 / #76: Advanced (legacy CMFA UI) is debug-only.
+  Drop entry points from every release build type (alpha/prod, any flavor).
+  Sources stay in the tree so upstream merge stays clean; activities without a
+  manifest entry cannot be started (ActivityNotFoundException).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity
+            android:name=".ProfilesActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".NewProfileActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".PropertiesActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".ProxyActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".ProvidersActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".LogsActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".LogcatActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".SettingsActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".NetworkSettingsActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".AppSettingsActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".OverrideSettingsActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".MetaFeatureSettingsActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".AccessControlActivity"
+            tools:node="remove" />
+        <activity
+            android:name=".FilesActivity"
+            tools:node="remove" />
+    </application>
+</manifest>

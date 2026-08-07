@@ -35,7 +35,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         SelectSubscription,
         Retry,
         AddSubscription,
-        OpenProfiles,
         OpenAccount,
         /**
          * Open GetLine web account portal (Custom Tab) from Subscription CTA.
@@ -233,7 +232,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 GetLineRecoveryAction.Retry -> request(Request.Retry)
                 GetLineRecoveryAction.ImportSubscription ->
                     request(Request.AddSubscription)
-                GetLineRecoveryAction.OpenProfiles -> request(Request.OpenProfiles)
                 GetLineRecoveryAction.OpenAccount -> request(Request.OpenAccount)
                 GetLineRecoveryAction.SignIn -> request(Request.SignIn)
                 GetLineRecoveryAction.ActivateTrial,
@@ -250,7 +248,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 GetLineRecoveryAction.SignIn -> request(Request.SignIn)
                 GetLineRecoveryAction.ImportSubscription ->
                     request(Request.AddSubscription)
-                GetLineRecoveryAction.OpenProfiles -> request(Request.OpenProfiles)
                 GetLineRecoveryAction.OpenAccount -> request(Request.OpenAccount)
                 GetLineRecoveryAction.ActivateTrial,
                 GetLineRecoveryAction.OpenAccountPortal,

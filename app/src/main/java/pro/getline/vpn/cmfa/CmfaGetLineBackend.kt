@@ -5,7 +5,6 @@ import android.content.Intent
 import android.os.SystemClock
 import pro.getline.vpn.GetLineHomeActivity
 import pro.getline.vpn.GetLineOnboardingActivity
-import com.github.kr328.clash.MainActivity
 import pro.getline.vpn.cmfa.servers.CmfaVpnServerSelectionRepository
 import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.common.util.intent
@@ -591,15 +590,6 @@ private fun scaleTraffic(value: Long): Long {
 private class CmfaGetLineNavigation(
     private val activity: Activity,
 ) : GetLineNavigation {
-    override fun openAdvanced() {
-        activity.startActivity(
-            MainActivity::class.intent.putExtra(
-                MainActivity.EXTRA_OPEN_ADVANCED,
-                true,
-            )
-        )
-    }
-
     override fun openOnboarding() {
         activity.startActivity(GetLineOnboardingActivity::class.intent)
         // Sign-in / logout leave Home; keep task clean so partial auth cannot

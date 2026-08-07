@@ -96,9 +96,6 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/get_line_onboarding_title_margin_top"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:onClick="@{() -> self.onBrandTitleClicked()}"
                         android:textColor="@color/getline_text_primary"
                         tools:text="GetLine" />
 
@@ -311,22 +308,6 @@
                         android:onClick="@{() -> self.onOpenHelp()}"
                         android:text="@string/get_line_action_help"
                         android:visibility="@{helpVisible ? View.VISIBLE : View.GONE}"
-                        tools:visibility="visible" />
-
-                    <!-- Release product nav: hidden. Debug or multi-tap brand title hatch. -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/open_advanced"
-                        style="@style/Widget.GetLine.Onboarding.AdvancedButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center_horizontal"
-                        android:layout_marginTop="4dp"
-                        android:alpha="0.72"
-                        android:enabled="@{actionsEnabled}"
-                        android:onClick="@{() -> self.onOpenAdvanced()}"
-                        android:text="@string/get_line_open_advanced"
-                        android:visibility="gone"
-                        tools:text="Advanced"
                         tools:visibility="visible" />
                 </LinearLayout>
             </FrameLayout>

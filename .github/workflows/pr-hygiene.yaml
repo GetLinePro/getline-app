@@ -106,6 +106,12 @@ jobs:
           fi
           echo "OK: network security config trusts no user-installed certificates"
 
+      # GL-22 / #76: tools:node="remove" is a silent no-op if the activity was
+      # renamed or dropped from main. Source-only check — no Gradle. The build
+      # job re-checks the merged release/debug manifests after process*Manifest.
+      - name: Advanced activities stay listed for release strip
+        run: ./scripts/check-advanced-release-gate.sh
+
       # Branch protection and environment protection rules are unavailable for a
       # private repo on the free plan, and same-repo pull requests DO receive
       # secrets (only forks are restricted). This compensating gate rejects key

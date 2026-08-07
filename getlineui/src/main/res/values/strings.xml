@@ -29,7 +29,6 @@
     <string name="get_line_qr_confirm_title">Import subscription?</string>
     <string name="get_line_qr_confirm_message">The subscription will be loaded from %1$s.</string>
     <string name="get_line_action_enter_link_manually">Enter link manually</string>
-    <string name="get_line_open_advanced">Advanced</string>
     <string name="get_line_import_not_completed">Subscription import was not completed</string>
     <string name="get_line_home_status_disconnected">Disconnected</string>
     <string name="get_line_home_status_connecting">Connecting…</string>
@@ -182,7 +181,6 @@
     <string name="get_line_state_expired_explanation">Renew the subscription in your GetLine Pro account, then retry the connection.</string>
     <string name="get_line_action_retry">Retry</string>
     <string name="get_line_action_send_diagnostics">Send diagnostics</string>
-    <string name="get_line_action_choose_profile">Choose profile</string>
     <string name="get_line_action_open_account">Open GetLine Pro account</string>
     <string name="get_line_vpn_stopped">VPN stopped. Retry the connection.</string>
     <string name="get_line_vpn_start_timeout">VPN did not start. Please try again.</string>

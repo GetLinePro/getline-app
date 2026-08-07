@@ -274,9 +274,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             } else {
                                 backend.navigation.openOnboarding()
                             }
-                        // Not wired from product recovery UI. Kept as internal route only.
-                        GetLineHomeDesign.Request.OpenProfiles ->
-                            backend.navigation.openAdvanced()
                         /**
                          * Home recovery (e.g. SubscriptionExpired) must not launch the
                          * web portal — that entry lives only on the Subscription tab.

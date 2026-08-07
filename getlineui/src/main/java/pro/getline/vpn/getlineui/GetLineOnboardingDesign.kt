@@ -1,7 +1,6 @@
 package pro.getline.vpn.getlineui
 
 import android.content.Context
-import android.os.SystemClock
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -37,11 +36,6 @@ class GetLineOnboardingDesign(context: Context) :
         object Dismiss : Request()
         /** Product QR import (same pipeline as [AddExistingSubscription]). */
         object ScanQrCode : Request()
-        /**
-         * Diagnostic hatch into MainActivity advanced shell.
-         * Not a release product surface — debug button or brand multi-tap only.
-         */
-        object OpenAdvanced : Request()
         /** Open existing HelpActivity (support links, about). */
         object OpenHelp : Request()
         object Retry : Request()
@@ -96,7 +90,6 @@ class GetLineOnboardingDesign(context: Context) :
                 // SubscriptionExpired uses OpenAccount → this path (not the portal).
                 GetLineRecoveryAction.OpenAccount,
                 GetLineRecoveryAction.SignIn -> request(Request.LoginGoogle)
-                GetLineRecoveryAction.OpenProfiles,
                 GetLineRecoveryAction.None -> Unit
             }
         }
@@ -370,10 +363,6 @@ class GetLineOnboardingDesign(context: Context) :
         }
     }
 
-    fun onOpenAdvanced() {
-        request(Request.OpenAdvanced)
-    }
-
     fun onOpenHelp() {
         request(Request.OpenHelp)
     }
@@ -406,33 +395,6 @@ class GetLineOnboardingDesign(context: Context) :
     }
 
     /**
-     * Show/hide the explicit Advanced button.
-     * Release product navigation keeps this gone; debug builds may show it.
-     * Multi-tap brand hatch remains available regardless.
-     */
-    fun setAdvancedButtonVisible(visible: Boolean) {
-        binding.openAdvanced.visibility = if (visible) View.VISIBLE else View.GONE
-    }
-
-    /**
-     * Quiet diagnostic hatch: N taps on the brand title within a short window.
-     * Opens Advanced without advertising it as a product control.
-     */
-    fun onBrandTitleClicked() {
-        val now = SystemClock.elapsedRealtime()
-        if (now - brandTapWindowStartMs > BRAND_TAP_WINDOW_MS) {
-            brandTapCount = 0
-            brandTapWindowStartMs = now
-        }
-        brandTapCount += 1
-        if (brandTapCount >= BRAND_TAP_THRESHOLD) {
-            brandTapCount = 0
-            brandTapWindowStartMs = 0L
-            request(Request.OpenAdvanced)
-        }
-    }
-
-    /**
      * The entry-screen title as the brand lockup: accent "Get", plain "Line",
      * soft accent "Pro" — the same split as ic_getline_wordmark, drawn as text
      * so it stays one line at any font scale.
@@ -460,15 +422,7 @@ class GetLineOnboardingDesign(context: Context) :
         )
     }
 
-    private var brandTapCount: Int = 0
-    private var brandTapWindowStartMs: Long = 0L
-
     private var lastProductState: GetLineProductState = GetLineProductState.Loading
-
-    companion object {
-        private const val BRAND_TAP_THRESHOLD = 7
-        private const val BRAND_TAP_WINDOW_MS = 3_000L
-    }
 
     private fun applyState(state: GetLineProductState) {
         lastProductState = state
