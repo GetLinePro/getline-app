@@ -7,6 +7,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.widget.TooltipCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import com.google.android.material.card.MaterialCardView
 import pro.getline.vpn.getlineui.databinding.DesignGetLineHomeBinding
 import pro.getline.vpn.getlineui.view.GetLineConnectRingView
@@ -155,10 +156,15 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     /**
      * A country row. Tapping it selects [primaryName]; the chevron expands
      * [variants]. A group with a single variant has nothing to expand.
+     *
+     * [sectionLabel] is a heading rendered above this row. The host sets it on the
+     * first row of each section and leaves it null everywhere else, so a list with
+     * one section carries no headings at all.
      */
     data class ServerGroupRow(
         val key: String,
         val label: String,
+        val sectionLabel: String? = null,
         val variantLabel: String?,
         val protocol: String?,
         val delayMs: Int?,
@@ -657,6 +663,14 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         val idleStroke = ContextCompat.getColor(context, R.color.getline_hairline)
 
         for (group in groups) {
+            group.sectionLabel?.let { heading ->
+                val view = inflater.inflate(R.layout.item_get_line_server_section, list, false)
+                (view as TextView).text = heading
+                // TalkBack can then jump between sections instead of walking every card.
+                ViewCompat.setAccessibilityHeading(view, true)
+                list.addMatchWidth(view)
+            }
+
             val expanded = group.expandable && expandedGroupKeys.contains(group.key)
             val card = inflater.inflate(R.layout.item_get_line_server_group, list, false)
 

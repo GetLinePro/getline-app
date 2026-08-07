@@ -28,6 +28,7 @@ data class ServerGroupRow(
     val key: String,
     val label: String,
     val countryCode: String?,
+    val section: ServerSection,
     val primaryRawName: String,
     val primaryVariantLabel: String?,
     val primaryProtocol: String?,
@@ -79,20 +80,40 @@ object ServerGroupingPolicy {
             buckets.getOrPut(keyOf(entry.second, entry.first)) { mutableListOf() }.add(entry)
         }
 
-        return buckets.map { (key, entries) ->
-            buildGroup(key, entries, selectedRawName, preferredByGroup[key], activeLeaf)
-        }
+        // Stable sort: sections come out in declaration order, config order holds
+        // inside each one.
+        return buckets.entries
+            .sortedBy { (_, entries) -> sectionOf(entries).ordinal }
+            .map { (key, entries) ->
+                buildGroup(key, entries, selectedRawName, preferredByGroup[key], activeLeaf)
+            }
     }
 
     /** Group key for a parsed name. Ungrouped entries never merge. */
     fun keyOf(parsed: ParsedServerName, item: VpnServerItem): String =
-        parsed.countryCode ?: "raw:${item.name}"
+        keyOf(ServerSectionPolicy.sectionOf(item.name), parsed.countryCode ?: "raw:${item.name}")
 
     /** Group key for a raw name — used when recording the user's choice. */
     fun keyOfRawName(rawName: String): String {
         val parsed = ServerNameParser.parse(rawName)
-        return parsed.countryCode ?: "raw:$rawName"
+        return keyOf(
+            ServerSectionPolicy.sectionOf(rawName),
+            parsed.countryCode ?: "raw:$rawName",
+        )
     }
+
+    /**
+     * The section is part of the key so nodes that share a flag with another
+     * section cannot merge: LTE nodes carry 🇫🇲, and a plain 🇫🇲 node would
+     * otherwise land in the same bucket. Keys live only in memory (holder
+     * preferences, expanded rows), so their shape is free to change.
+     */
+    private fun keyOf(section: ServerSection, base: String): String =
+        "${section.name}:$base"
+
+    /** Section of a bucket: its members all carry the same marker. */
+    private fun sectionOf(entries: List<Pair<VpnServerItem, ParsedServerName>>): ServerSection =
+        ServerSectionPolicy.sectionOf(entries.first().first.name)
 
     private fun buildGroup(
         key: String,
@@ -125,6 +146,7 @@ object ServerGroupingPolicy {
             key = key,
             label = first.displayLabel,
             countryCode = first.countryCode,
+            section = sectionOf(entries),
             primaryRawName = primary.rawName,
             // Always shown: a lone variant can still carry meaning ("YT no ads").
             primaryVariantLabel = primary.label.takeIf { it != first.groupLabel },

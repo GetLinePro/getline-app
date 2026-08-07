@@ -61,6 +61,9 @@
     <string name="get_line_server_now_format">now: %1$s</string>
     <string name="get_line_server_expand">Show options</string>
     <string name="get_line_server_collapse">Hide options</string>
+    <string name="get_line_servers_section_main">Main</string>
+    <string name="get_line_servers_section_lte">LTE</string>
+    <string name="get_line_servers_section_youtube">YouTube</string>
     <plurals name="get_line_server_variants_count">
         <item quantity="one">%1$d option</item>
         <item quantity="other">%1$d options</item>

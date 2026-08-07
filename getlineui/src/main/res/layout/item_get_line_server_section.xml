@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Heading above a run of server cards. Not a header view of a list adapter: the
+  Servers list is a plain LinearLayout, so this is inflated inline.
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/section_label"
+    style="@style/Widget.GetLine.Text.Caption"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:layout_marginBottom="8dp"
+    android:paddingStart="2dp"
+    android:paddingEnd="2dp"
+    android:textAllCaps="true"
+    android:textColor="@color/getline_text_secondary"
+    tools:text="LTE" />

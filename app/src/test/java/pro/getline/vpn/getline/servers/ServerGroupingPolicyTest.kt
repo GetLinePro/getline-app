@@ -10,6 +10,9 @@ class ServerGroupingPolicyTest {
     private fun item(name: String, delay: Int? = null) =
         VpnServerItem(name = name, displayName = name, delayMs = delay)
 
+    /** Key shape belongs to one test (eachSectionHasItsOwnKeyspace), not to all of them. */
+    private fun keyOf(rawName: String) = ServerGroupingPolicy.keyOfRawName(rawName)
+
     /** The list observed on a real device, in config order. */
     private fun realWorldServers() = listOf(
         item("⚡ Авто"),
@@ -231,7 +234,7 @@ class ServerGroupingPolicyTest {
         val groups = ServerGroupingPolicy.group(
             servers = servers,
             selectedRawName = "🇩🇪 Германия | vless",
-            preferredByGroup = mapOf("NL" to "🇳🇱 Нидерланды | xhttp"),
+            preferredByGroup = mapOf(keyOf("🇳🇱 Нидерланды | xhttp") to "🇳🇱 Нидерланды | xhttp"),
         )
 
         val netherlands = groups.first { it.countryCode == "NL" }
@@ -248,7 +251,7 @@ class ServerGroupingPolicyTest {
         val group = ServerGroupingPolicy.group(
             servers = servers,
             selectedRawName = "🇩🇪 Германия | hy2",
-            preferredByGroup = mapOf("DE" to "🇩🇪 Германия | vless"),
+            preferredByGroup = mapOf(keyOf("🇩🇪 Германия | vless") to "🇩🇪 Германия | vless"),
         ).single()
 
         // The core is the source of truth; a stale preference must not win.
@@ -265,7 +268,7 @@ class ServerGroupingPolicyTest {
         val group = ServerGroupingPolicy.group(
             servers = servers,
             selectedRawName = null,
-            preferredByGroup = mapOf("DE" to "🇩🇪 Германия | gone"),
+            preferredByGroup = mapOf(keyOf("🇩🇪 Германия | gone") to "🇩🇪 Германия | gone"),
         ).single()
 
         assertEquals("🇩🇪 Германия | hy2", group.primaryRawName)
@@ -289,7 +292,7 @@ class ServerGroupingPolicyTest {
 
         val groups = ServerGroupingPolicy.group(servers, selectedRawName = "⚡ Авто")
 
-        val auto = groups.first { it.key.startsWith("raw:") }
+        val auto = groups.first { it.countryCode == null }
         assertEquals("🇵🇱 Польша · grpc", auto.resolvedLabel)
 
         val poland = groups.first { it.countryCode == "PL" }
@@ -365,5 +368,117 @@ class ServerGroupingPolicyTest {
     @Test
     fun emptyInputYieldsNoGroups() {
         assertTrue(ServerGroupingPolicy.group(emptyList(), selectedRawName = null).isEmpty())
+    }
+
+    /**
+     * The core sorts the selector by ISO code, so LTE (🇫🇲) lands between EE and NL
+     * and the YouTube node (🇷🇺) between PL and US.
+     */
+    private fun sortedByCoreServers() = listOf(
+        item("🇩🇪 Германия | vless"),
+        item("🇪🇪 Эстония | xhttp"),
+        item("🇫🇲🥷NL | LTE hy2"),
+        item("🇫🇲🥷 NL | LTE-1"),
+        item("🇳🇱 Нидерланды | hy2"),
+        item("🇵🇱 Польша | grpc"),
+        item("🇷🇺  РФ | 📺 YT no ads"),
+        item("🇺🇸 США | vless"),
+    )
+
+    @Test
+    fun specialNodesSinkBelowTheCountryPool() {
+        val groups = ServerGroupingPolicy.group(sortedByCoreServers(), selectedRawName = null)
+
+        assertEquals(
+            listOf(
+                ServerSection.Main,
+                ServerSection.Main,
+                ServerSection.Main,
+                ServerSection.Main,
+                ServerSection.Main,
+                ServerSection.Lte,
+                ServerSection.Youtube,
+            ),
+            groups.map { it.section },
+        )
+    }
+
+    @Test
+    fun sectionSortIsStable_countryOrderSurvives() {
+        val groups = ServerGroupingPolicy.group(sortedByCoreServers(), selectedRawName = null)
+
+        assertEquals(
+            listOf("DE", "EE", "NL", "PL", "US", "FM", "RU"),
+            groups.map { it.countryCode },
+        )
+    }
+
+    @Test
+    fun lteVariantsStayOneExpandableRow() {
+        val lte = ServerGroupingPolicy
+            .group(sortedByCoreServers(), selectedRawName = null)
+            .single { it.section == ServerSection.Lte }
+
+        assertEquals(2, lte.variants.size)
+        assertTrue(lte.expandable)
+    }
+
+    @Test
+    fun bothKeyEntryPointsAgree() {
+        // group() keys the buckets, keyOfRawName() looks a preference up later.
+        val groups = ServerGroupingPolicy.group(sortedByCoreServers(), selectedRawName = null)
+
+        for (group in groups) {
+            assertEquals(group.key, ServerGroupingPolicy.keyOfRawName(group.primaryRawName))
+        }
+    }
+
+    @Test
+    fun eachSectionHasItsOwnKeyspace() {
+        val groups = ServerGroupingPolicy.group(sortedByCoreServers(), selectedRawName = null)
+
+        assertEquals("Main:DE", groups.first { it.countryCode == "DE" }.key)
+        assertEquals("Lte:FM", groups.single { it.section == ServerSection.Lte }.key)
+        assertEquals("Youtube:RU", groups.single { it.section == ServerSection.Youtube }.key)
+    }
+
+    @Test
+    fun aPlainNodeSharingTheLteFlagDoesNotMergeIntoIt() {
+        val servers = listOf(
+            item("🇫🇲🥷NL | LTE hy2"),
+            item("🇫🇲 Микронезия | vless"),
+        )
+
+        val groups = ServerGroupingPolicy.group(servers, selectedRawName = null)
+
+        assertEquals(2, groups.size)
+        assertEquals(
+            listOf(ServerSection.Main, ServerSection.Lte),
+            groups.map { it.section },
+        )
+    }
+
+    @Test
+    fun preferenceIsRememberedInsideTheLteSection() {
+        val servers = listOf(
+            item("🇫🇲🥷NL | LTE hy2", delay = 40),
+            item("🇫🇲🥷 NL | LTE-1", delay = 90),
+        )
+
+        val lte = ServerGroupingPolicy.group(
+            servers = servers,
+            selectedRawName = null,
+            preferredByGroup = mapOf(keyOf("🇫🇲🥷 NL | LTE-1") to "🇫🇲🥷 NL | LTE-1"),
+        ).single()
+
+        assertEquals("🇫🇲🥷 NL | LTE-1", lte.primaryRawName)
+    }
+
+    @Test
+    fun oneSectionListIsUnchanged() {
+        val groups = ServerGroupingPolicy.group(realWorldServers(), selectedRawName = null)
+
+        assertEquals(1, groups.distinctBy { it.section }.size)
+        assertEquals(ServerSection.Main, groups.first().section)
     }
 }

@@ -56,6 +56,9 @@
     <string name="get_line_server_now_format">сейчас: %1$s</string>
     <string name="get_line_server_expand">Показать варианты</string>
     <string name="get_line_server_collapse">Скрыть варианты</string>
+    <string name="get_line_servers_section_main">Основные</string>
+    <string name="get_line_servers_section_lte">LTE</string>
+    <string name="get_line_servers_section_youtube">YouTube</string>
     <plurals name="get_line_server_variants_count">
         <item quantity="one">%1$d вариант</item>
         <item quantity="few">%1$d варианта</item>

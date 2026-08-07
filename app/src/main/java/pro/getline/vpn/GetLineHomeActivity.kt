@@ -46,6 +46,8 @@ import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.common.util.ticker
 import java.util.concurrent.atomic.AtomicBoolean
 import pro.getline.vpn.getline.servers.ServerGroupingPolicy
+import pro.getline.vpn.getline.servers.ServerSection
+import pro.getline.vpn.getline.servers.ServerSectionPolicy
 import pro.getline.vpn.getline.servers.ServerNameParser
 import pro.getline.vpn.getline.servers.VpnServerLoadResult
 import pro.getline.vpn.getline.servers.VpnServerStateHolder
@@ -876,14 +878,16 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     selectedRawName = selectedName,
                     preferredByGroup = serverState.preferences,
                 )
+                val headings = ServerSectionPolicy.headings(groups.map { it.section })
                 GetLineHomeDesign.ServersScreen.Ready(
                     currentDisplayName = current.ifBlank {
                         getString(GetLineUiR.string.get_line_shell_location_unknown)
                     },
-                    groups = groups.map { group ->
+                    groups = groups.mapIndexed { index, group ->
                         GetLineHomeDesign.ServerGroupRow(
                             key = group.key,
                             label = group.label,
+                            sectionLabel = headings[index]?.let { getString(sectionLabelRes(it)) },
                             variantLabel = group.primaryVariantLabel,
                             protocol = group.primaryProtocol,
                             delayMs = group.primaryDelayMs,
@@ -912,6 +916,12 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             is VpnServerUiState.Failed ->
                 GetLineHomeDesign.ServersScreen.Failed
         }
+    }
+
+    private fun sectionLabelRes(section: ServerSection): Int = when (section) {
+        ServerSection.Main -> GetLineUiR.string.get_line_servers_section_main
+        ServerSection.Lte -> GetLineUiR.string.get_line_servers_section_lte
+        ServerSection.Youtube -> GetLineUiR.string.get_line_servers_section_youtube
     }
 
     /**
