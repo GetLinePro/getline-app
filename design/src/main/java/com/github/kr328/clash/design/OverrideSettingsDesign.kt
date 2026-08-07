@@ -69,114 +69,18 @@ class OverrideSettingsDesign(
             R.string.disabled
         )
 
+        // Inbound / external-controller fields are app-owned in Go
+        // (detectInbound → patchExternalController / patchInbound after
+        // patchOverride). Showing them here would save values that have no
+        // effect — GL-02/0 hard policy for the phone path.
         val screen = preferenceScreen(context) {
             category(R.string.general)
-
-            editableText(
-                value = configuration::httpPort,
-                adapter = NullableTextAdapter.Port,
-                title = R.string.http_port,
-                placeholder = R.string.dont_modify,
-                empty = R.string.disabled,
-            )
-
-            editableText(
-                value = configuration::socksPort,
-                adapter = NullableTextAdapter.Port,
-                title = R.string.socks_port,
-                placeholder = R.string.dont_modify,
-                empty = R.string.disabled,
-            )
-
-            editableText(
-                value = configuration::redirectPort,
-                adapter = NullableTextAdapter.Port,
-                title = R.string.redirect_port,
-                placeholder = R.string.dont_modify,
-                empty = R.string.disabled,
-            )
-
-            editableText(
-                value = configuration::tproxyPort,
-                adapter = NullableTextAdapter.Port,
-                title = R.string.tproxy_port,
-                placeholder = R.string.dont_modify,
-                empty = R.string.disabled,
-            )
-
-            editableText(
-                value = configuration::mixedPort,
-                adapter = NullableTextAdapter.Port,
-                title = R.string.mixed_port,
-                placeholder = R.string.dont_modify,
-                empty = R.string.disabled,
-            )
-
-            editableTextList(
-                value = configuration::authentication,
-                adapter = TextAdapter.String,
-                title = R.string.authentication,
-                placeholder = R.string.dont_modify,
-            )
-
-            selectableList(
-                value = configuration::allowLan,
-                values = booleanValues,
-                valuesText = booleanValuesText,
-                title = R.string.allow_lan,
-            )
 
             selectableList(
                 value = configuration::ipv6,
                 values = booleanValues,
                 valuesText = booleanValuesText,
                 title = R.string.ipv6,
-            )
-
-            editableText(
-                value = configuration::bindAddress,
-                adapter = NullableTextAdapter.String,
-                title = R.string.bind_address,
-                placeholder = R.string.dont_modify,
-                empty = R.string.default_
-            )
-
-            editableText(
-                value = configuration::externalController,
-                adapter = NullableTextAdapter.String,
-                title = R.string.external_controller,
-                placeholder = R.string.dont_modify,
-                empty = R.string.default_
-            )
-
-            editableText(
-                value = configuration::externalControllerTLS,
-                adapter = NullableTextAdapter.String,
-                title = R.string.external_controller_tls,
-                placeholder = R.string.dont_modify,
-                empty = R.string.default_
-            )
-
-            editableTextList(
-                value = configuration.externalControllerCors::allowOrigins,
-                adapter = TextAdapter.String,
-                title = R.string.allow_origins,
-                placeholder = R.string.dont_modify,
-            )
-
-            selectableList(
-                value = configuration.externalControllerCors::allowPrivateNetwork,
-                values = booleanValues,
-                valuesText = booleanValuesText,
-                title = R.string.allow_private_network,
-            )
-
-            editableText(
-                value = configuration::secret,
-                adapter = NullableTextAdapter.String,
-                title = R.string.secret,
-                placeholder = R.string.dont_modify,
-                empty = R.string.default_
             )
 
             selectableList(
@@ -264,14 +168,7 @@ class OverrideSettingsDesign(
                 configure = dnsDependencies::add,
             )
 
-            editableText(
-                value = configuration.dns::listen,
-                adapter = NullableTextAdapter.String,
-                title = R.string.listen,
-                placeholder = R.string.dont_modify,
-                empty = R.string.disabled,
-                configure = dnsDependencies::add,
-            )
+            // dns.listen is app-owned (patchInbound); not exposed in Override UI.
 
             selectableList(
                 value = configuration.app::appendSystemDns,

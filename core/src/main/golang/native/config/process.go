@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"github.com/dlclark/regexp2"
@@ -17,8 +18,15 @@ import (
 )
 
 var processors = []processor{
-	patchExternalController, // must before patchOverride, so we only apply ExternalController in Override settings
+	// Signal while RawConfig is still pure subscription YAML — before override
+	// merges app state and origin is lost.
+	detectInbound,
 	patchOverride,
+	// After override: app security policy wins over both subscription and the
+	// untyped override slot (which can re-inject inbound / controller into
+	// full RawConfig).
+	patchExternalController,
+	patchInbound,
 	patchGeneral,
 	patchProfile,
 	patchDns,
@@ -41,19 +49,32 @@ func patchOverride(cfg *config.RawConfig, _ string) error {
 	return nil
 }
 
+// patchExternalController owns the control API surface. Clears every transport,
+// secret, and residual controller metadata (UI path/url/name, cors,
+// routing-mark) so subscription/override cannot open or decorate a local
+// management server. Transports gate applyRoute; the extras are inert without
+// an address but still app-owned for a consistent surface.
 func patchExternalController(cfg *config.RawConfig, _ string) error {
 	cfg.ExternalController = ""
 	cfg.ExternalControllerTLS = ""
+	cfg.ExternalControllerUnix = ""
+	cfg.ExternalControllerPipe = ""
+	cfg.ExternalDohServer = ""
+	cfg.Secret = ""
+	cfg.ExternalUI = ""
+	cfg.ExternalUIURL = ""
+	cfg.ExternalUIName = ""
+	cfg.ExternalControllerRoutingMark = 0
+	cfg.ExternalControllerCors = config.RawCors{}
 
 	return nil
 }
 
-func patchGeneral(cfg *config.RawConfig, profileDir string) error {
+func patchGeneral(cfg *config.RawConfig, _ string) error {
 	cfg.Interface = ""
 	cfg.RoutingMark = 0
-	if cfg.ExternalController != "" || cfg.ExternalControllerTLS != "" {
-		cfg.ExternalUI = profileDir + "/ui"
-	}
+	// ExternalUI used to be set here when a controller address was present.
+	// Controllers are hard-cleared by patchExternalController immediately above.
 
 	return nil
 }
@@ -91,6 +112,164 @@ func patchTun(cfg *config.RawConfig, _ string) error {
 	return nil
 }
 
+// detectInbound logs inbound/control fields present in the subscription YAML.
+// Must run before patchOverride: after override, app-owned values are mixed in
+// and field origin is unrecoverable. Names only — never values (auth secrets).
+func detectInbound(cfg *config.RawConfig, _ string) error {
+	names := inboundFieldsPresent(cfg)
+	if len(names) == 0 {
+		return nil
+	}
+	log.Warnln("subscription attempted fields: %s", strings.Join(names, ", "))
+	return nil
+}
+
+// patchInbound owns the inbound surface after override. Subscription and the
+// untyped override slot must not open local listeners (classic ports, ss/vmess
+// URI inbounds, tuic-server, listeners:, tunnels:, dns.listen) or LAN access.
+//
+// Safe defaults match a phone VPN path: no local proxy ports, allow-lan off.
+// LanAllowedIPs keeps DefaultRawConfig's allow-all list: mihomo treats an empty
+// list as deny-all, which would break the app's own 127.x system-proxy listener
+// (VpnService HTTP proxy on Android 10+). LAN exposure is gated by AllowLan=false
+// and zeroed public ports, not by this list.
+//
+// Future product needs (e.g. TV LAN share) must set these consciously here or
+// via a typed AppOverride (#24), not from subscription YAML.
+func patchInbound(cfg *config.RawConfig, _ string) error {
+	cfg.Port = 0
+	cfg.SocksPort = 0
+	cfg.RedirPort = 0
+	cfg.TProxyPort = 0
+	cfg.MixedPort = 0
+	cfg.ShadowSocksConfig = ""
+	cfg.VmessConfig = ""
+	cfg.TuicServer = config.RawTuicServer{}
+	cfg.InboundTfo = false
+	cfg.InboundMPTCP = false
+	cfg.AllowLan = false
+	cfg.BindAddress = "*"
+	cfg.LanAllowedIPs = config.DefaultRawConfig().LanAllowedIPs
+	cfg.LanDisAllowedIPs = nil
+	cfg.SkipAuthPrefixes = nil
+	cfg.Authentication = nil
+	cfg.Listeners = nil
+	cfg.Tunnels = nil
+	cfg.DNS.Listen = ""
+	cfg.DNS.ListenRoutingMark = 0
+
+	return nil
+}
+
+// inboundFieldsPresent returns YAML-ish names of inbound/control fields that
+// look set. Defaults from DefaultRawConfig (allow-lan:false, bind-address:"*",
+// empty ports/listeners, tuic disabled) do not count — clean profiles silent.
+func inboundFieldsPresent(cfg *config.RawConfig) []string {
+	var names []string
+	if cfg.Port != 0 {
+		names = append(names, "port")
+	}
+	if cfg.SocksPort != 0 {
+		names = append(names, "socks-port")
+	}
+	if cfg.RedirPort != 0 {
+		names = append(names, "redir-port")
+	}
+	if cfg.TProxyPort != 0 {
+		names = append(names, "tproxy-port")
+	}
+	if cfg.MixedPort != 0 {
+		names = append(names, "mixed-port")
+	}
+	if cfg.ShadowSocksConfig != "" {
+		names = append(names, "ss-config")
+	}
+	if cfg.VmessConfig != "" {
+		names = append(names, "vmess-config")
+	}
+	if tuicServerPresent(cfg.TuicServer) {
+		names = append(names, "tuic-server")
+	}
+	if cfg.InboundTfo {
+		names = append(names, "inbound-tfo")
+	}
+	if cfg.InboundMPTCP {
+		names = append(names, "inbound-mptcp")
+	}
+	if cfg.AllowLan {
+		names = append(names, "allow-lan")
+	}
+	if cfg.BindAddress != "" && cfg.BindAddress != "*" {
+		names = append(names, "bind-address")
+	}
+	if len(cfg.LanAllowedIPs) > 0 {
+		// DefaultRawConfig seeds 0.0.0.0/0 + ::/0; only signal non-default sets.
+		if !isDefaultLanAllowedIPs(cfg.LanAllowedIPs) {
+			names = append(names, "lan-allowed-ips")
+		}
+	}
+	if len(cfg.LanDisAllowedIPs) > 0 {
+		names = append(names, "lan-disallowed-ips")
+	}
+	if len(cfg.SkipAuthPrefixes) > 0 {
+		names = append(names, "skip-auth-prefixes")
+	}
+	if len(cfg.Authentication) > 0 {
+		names = append(names, "authentication")
+	}
+	if len(cfg.Listeners) > 0 {
+		names = append(names, "listeners")
+	}
+	if len(cfg.Tunnels) > 0 {
+		names = append(names, "tunnels")
+	}
+	if cfg.DNS.Listen != "" {
+		names = append(names, "dns.listen")
+	}
+	if cfg.DNS.ListenRoutingMark != 0 {
+		names = append(names, "dns.listen-routing-mark")
+	}
+	if cfg.ExternalController != "" {
+		names = append(names, "external-controller")
+	}
+	if cfg.ExternalControllerTLS != "" {
+		names = append(names, "external-controller-tls")
+	}
+	if cfg.ExternalControllerUnix != "" {
+		names = append(names, "external-controller-unix")
+	}
+	if cfg.ExternalControllerPipe != "" {
+		names = append(names, "external-controller-pipe")
+	}
+	if cfg.ExternalDohServer != "" {
+		names = append(names, "external-doh-server")
+	}
+	if cfg.Secret != "" {
+		names = append(names, "secret")
+	}
+	return names
+}
+
+func tuicServerPresent(t config.RawTuicServer) bool {
+	return t.Enable ||
+		t.Listen != "" ||
+		t.Certificate != "" ||
+		t.PrivateKey != "" ||
+		len(t.Token) > 0 ||
+		len(t.Users) > 0
+}
+
+func isDefaultLanAllowedIPs(ips []netip.Prefix) bool {
+	if len(ips) != 2 {
+		return false
+	}
+	a := netip.MustParsePrefix("0.0.0.0/0")
+	b := netip.MustParsePrefix("::/0")
+	return (ips[0] == a && ips[1] == b) || (ips[0] == b && ips[1] == a)
+}
+
+// patchListeners drops tproxy/redir/tun listener types. Redundant after
+// patchInbound (Listeners is already nil); kept as upstream CMFA behaviour.
 func patchListeners(cfg *config.RawConfig, _ string) error {
 	newListeners := make([]map[string]any, 0, len(cfg.Listeners))
 	for _, mapping := range cfg.Listeners {
