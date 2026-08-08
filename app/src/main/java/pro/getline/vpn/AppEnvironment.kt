@@ -39,8 +39,9 @@ object AppEnvironment {
         get() = "${BuildConfig.APPLICATION_ID}:/oauth2redirect"
 
     /**
-     * Telegram-only portal trampoline (sets edge marker cookie, runs OIDC start
-     * in the browser jar). Google uses native PKCE and does not open this URL.
+     * Legacy Telegram-only portal trampoline (sets edge marker cookie, runs OIDC
+     * start in the browser jar). The current client uses native PKCE and does
+     * not open this URL; retain it for code-only rollback builds.
      * Must not be `/` — that is the HTTPS completion path.
      *
      * `app_id` is read by trampoline HTML to set `gl_app_id` for the auth

@@ -23,7 +23,7 @@ import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
  * (`${applicationId}:/oauth2redirect`).
  *
  * Dual payload:
- * - `?code=` + pending verifier → native exchange (Google, Custom Tab / VIEW)
+ * - `?code=` + pending verifier → native exchange (Google/Telegram, Custom Tab / VIEW)
  * - `?auth_token=` → web-token establish (Telegram / edge page)
  *
  * Auth Tab may also deliver a package-scheme VIEW in parallel with ActivityResult;
@@ -70,10 +70,7 @@ class NativeAuthCallbackActivity : Activity() {
 
         when (parsed) {
             is AuthCallbackResult.NativeCode -> {
-                val pending = pendingStore.takeIfMatches(
-                    callbackUri = uri.toString(),
-                    provider = AuthMethod.Google.name,
-                )
+                val pending = takeNativeCodePending(pendingStore, uri.toString())
                 if (pending == null) {
                     if (store.hasRefreshToken()) {
                         Log.i("native_auth_callback_ok kind=code already_session")
@@ -158,4 +155,24 @@ class NativeAuthCallbackActivity : Activity() {
         job.cancel()
         super.onDestroy()
     }
+}
+
+/**
+ * Accept native-code callbacks only for providers using the app-owned PKCE flow.
+ * Peek first so an unknown provider never gets consumed by a generic callback.
+ */
+internal fun takeNativeCodePending(
+    pendingStore: PendingNativeAuthStore,
+    callbackUri: String,
+): PendingNativeAuth? {
+    val pending = pendingStore.peek() ?: return null
+    if (pending.provider != AuthMethod.Google.name &&
+        pending.provider != AuthMethod.Telegram.name
+    ) {
+        return null
+    }
+    return pendingStore.takeIfMatches(
+        callbackUri = callbackUri,
+        provider = pending.provider,
+    )
 }

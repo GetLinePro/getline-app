@@ -21,8 +21,9 @@ import pro.getline.vpn.product.GetLineActivity
 /**
  * How Auth Tab should recognize completion.
  *
- * [NativeScheme] — Google PKCE (`EXTRA_REDIRECT_SCHEME`).
- * [HttpsCallback] — Telegram trampoline path (`EXTRA_HTTPS_REDIRECT_*`).
+ * [NativeScheme] — Google/Telegram PKCE (`EXTRA_REDIRECT_SCHEME`).
+ * [HttpsCallback] — legacy HTTPS trampoline completion for rollback only
+ * (`EXTRA_HTTPS_REDIRECT_*`).
  */
 enum class AuthTabRedirectMode {
     NativeScheme,
@@ -31,7 +32,9 @@ enum class AuthTabRedirectMode {
 
 /**
  * Opens a server-provided auth URL using the best available browser capability:
- * Auth Tab → Custom Tabs → external browser ([Intent.ACTION_VIEW]).
+ * Auth Tab → Custom Tabs → external browser ([Intent.ACTION_VIEW]). The current
+ * Google and Telegram flows use [AuthTabRedirectMode.NativeScheme];
+ * [AuthTabRedirectMode.HttpsCallback] remains for the legacy rollback path.
  *
  * Auth Tab returns the callback via [ActivityResult]; Custom Tab and external
  * browser complete only through the exported deep-link Activity (or edge page).

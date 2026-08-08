@@ -8,7 +8,7 @@ import pro.getline.vpn.GetLineControlPlaneHostPolicy
  * Dual browser-callback parser (issue #19 step 23).
  *
  * 1. Native package URI `{applicationId}:/oauth2redirect`:
- *    - `?code=` → [AuthCallbackResult.NativeCode] (Google PKCE)
+ *    - `?code=` → [AuthCallbackResult.NativeCode] (Google/Telegram PKCE)
  *    - `?auth_token=` → [AuthCallbackResult.WebToken] (Telegram deep link / edge page)
  * 2. HTTPS Auth Tab completion `https://{callbackHost}/#/login?auth_token=…`
  *    → [AuthCallbackResult.WebToken] (Telegram with Auth Tab)

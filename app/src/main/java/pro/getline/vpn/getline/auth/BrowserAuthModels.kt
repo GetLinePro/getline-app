@@ -13,7 +13,7 @@ data class WebAuthCallback(
 /**
  * Unified browser-callback payload. Discriminated by parameters, not provider.
  *
- * - [NativeCode] — Google PKCE: `{applicationId}:/oauth2redirect?code=…`
+ * - [NativeCode] — Google/Telegram PKCE: `{applicationId}:/oauth2redirect?code=…`
  * - [WebToken] — Telegram: HTTPS fragment or `{applicationId}:/oauth2redirect?auth_token=…`
  */
 sealed interface AuthCallbackResult {

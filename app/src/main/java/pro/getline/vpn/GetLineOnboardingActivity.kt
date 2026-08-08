@@ -831,8 +831,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
 
         try {
             when (method) {
-                AuthMethod.Google -> signInGoogleNativePkce(design)
-                AuthMethod.Telegram -> signInTelegramTrampoline(design)
+                AuthMethod.Google,
+                AuthMethod.Telegram,
+                -> signInNativePkce(design, method)
                 AuthMethod.Email -> error("unreachable: Email requiresBrowser is false")
             }
         } catch (_: GetLineAuthException.Cancelled) {
@@ -893,15 +894,18 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     /**
-     * Google: app-owned PKCE + native package callback.
+     * Browser provider: app-owned PKCE + native package callback.
      * Caller holds [busy]; does not clear it.
      */
-    private suspend fun signInGoogleNativePkce(design: GetLineOnboardingDesign) {
+    private suspend fun signInNativePkce(
+        design: GetLineOnboardingDesign,
+        method: AuthMethod,
+    ) {
         val pkce = NativeAuthPkce.generate()
         val callbackUri = AppEnvironment.nativeCallbackUri
         pendingNativeAuthStore.put(
             PendingNativeAuth(
-                provider = AuthMethod.Google.name,
+                provider = method.name,
                 verifier = pkce.verifier,
                 callbackUri = callbackUri,
                 createdAtMs = System.currentTimeMillis(),
@@ -910,11 +914,11 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         )
 
         val start = authApi.startBrowserAuth(
-            method = AuthMethod.Google,
+            method = method,
             codeChallenge = pkce.challenge,
             appRedirect = callbackUri,
         )
-        Log.i("browser_auth_launch method=Google")
+        Log.i("browser_auth_launch method=${method.name}")
         val launchResult = browserAuthLauncher.launch(
             activity = this,
             authUrl = start.authUrl,
@@ -922,41 +926,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         )
         handleBrowserLaunchResult(
             design = design,
-            method = AuthMethod.Google,
-            launchResult = launchResult,
-            nativeCallbackUri = callbackUri,
-        )
-    }
-
-    /**
-     * Telegram: portal trampoline + HTTPS Auth Tab completion (D6).
-     * No app-level PKCE; web token → device-key. Caller holds [busy].
-     *
-     * Pending is required so a cold deep link with `auth_token` cannot mint a
-     * session without an in-app start (plan-issue-19-final steps 1–2).
-     */
-    private suspend fun signInTelegramTrampoline(design: GetLineOnboardingDesign) {
-        val callbackUri = AppEnvironment.nativeCallbackUri
-        // Replaces any Google pending. Verifier is unused for Telegram.
-        pendingNativeAuthStore.put(
-            PendingNativeAuth(
-                provider = AuthMethod.Telegram.name,
-                verifier = UUID.randomUUID().toString(),
-                callbackUri = callbackUri,
-                createdAtMs = System.currentTimeMillis(),
-                correlationId = UUID.randomUUID().toString(),
-            ),
-        )
-        val authUrl = AppEnvironment.telegramTrampolineUrl
-        Log.i("browser_auth_launch method=Telegram")
-        val launchResult = browserAuthLauncher.launch(
-            activity = this,
-            authUrl = authUrl,
-            redirectMode = AuthTabRedirectMode.HttpsCallback,
-        )
-        handleBrowserLaunchResult(
-            design = design,
-            method = AuthMethod.Telegram,
+            method = method,
             launchResult = launchResult,
             nativeCallbackUri = callbackUri,
         )
@@ -976,7 +946,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             ?: AppEnvironment.nativeCallbackUri
                         val pending = pendingNativeAuthStore.takeIfMatches(
                             callbackUri = pendingUri,
-                            provider = AuthMethod.Google.name,
+                            provider = method.name,
                         )
                         if (pending != null) {
                             completeLoginFromNativeCode(design, parsed.code, pending)

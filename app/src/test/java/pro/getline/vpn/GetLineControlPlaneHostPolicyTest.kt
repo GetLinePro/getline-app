@@ -136,7 +136,8 @@ class GetLineControlPlaneHostPolicyTest {
             AppEnvironment.callbackHost,
             "auth.getline.pro",
         )
-        // Telegram trampoline stays a valid browser-launch URL (Google is native).
+        // Legacy Telegram trampoline stays a valid rollback browser-launch URL;
+        // current Google and Telegram flows use native PKCE.
         assertTrue(
             GetLineControlPlaneHostPolicy.isAllowedBrowserLaunchUrl(
                 AppEnvironment.telegramTrampolineUrl,
