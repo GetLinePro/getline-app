@@ -313,8 +313,12 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             )
                     }
                 }
-                trafficTicker.onReceive {
-                    design.refreshSession()
+                // The rendezvous ticker blocks without a receiver, so a stopped
+                // Activity neither polls the service nor updates its hidden UI.
+                if (activityStarted) {
+                    trafficTicker.onReceive {
+                        design.refreshSession()
+                    }
                 }
             }
         }
