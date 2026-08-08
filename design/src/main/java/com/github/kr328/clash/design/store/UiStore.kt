@@ -75,11 +75,6 @@ class UiStore(context: Context) {
         defaultValue = false
     )
 
-    var accessControlSystemApp: Boolean by store.boolean(
-        key = "access_control_system_app",
-        defaultValue = false,
-    )
-
     companion object {
         private const val PREFERENCE_NAME = "ui"
 

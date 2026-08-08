@@ -3,6 +3,7 @@ package com.github.kr328.clash.service
 import android.annotation.TargetApi
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ProxyInfo
 import android.net.VpnService
 import android.os.Build
@@ -156,16 +157,30 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
             }
 
             // Access Control
+            //
+            // A stored package the system will not resolve cannot be applied, and the two
+            // modes then fail in opposite directions: an unapplied allow leaves the app
+            // outside the tunnel, while an unapplied deny leaves it inside — the opposite
+            // of what the user asked for, with no error anywhere. Log it rather than
+            // swallowing it, and never catch anything wider than the lookup failure.
             when (store.accessControlMode) {
                 AccessControlMode.AcceptAll -> Unit
                 AccessControlMode.AcceptSelected -> {
                     (store.accessControlPackages + packageName).forEach {
-                        runCatching { addAllowedApplication(it) }
+                        try {
+                            addAllowedApplication(it)
+                        } catch (e: PackageManager.NameNotFoundException) {
+                            Log.w("Access control: cannot allow $it, staying outside the tunnel", e)
+                        }
                     }
                 }
                 AccessControlMode.DenySelected -> {
                     (store.accessControlPackages - packageName).forEach {
-                        runCatching { addDisallowedApplication(it) }
+                        try {
+                            addDisallowedApplication(it)
+                        } catch (e: PackageManager.NameNotFoundException) {
+                            Log.w("Access control: cannot exclude $it, it stays in the tunnel", e)
+                        }
                     }
                 }
             }

@@ -10,15 +10,6 @@
         android:id="@+id/select_invert"
         android:title="@string/select_invert" />
 
-    <item android:title="@string/filter">
-        <menu>
-            <item
-                android:id="@+id/system_apps"
-                android:checkable="true"
-                android:title="@string/system_apps" />
-        </menu>
-    </item>
-
     <item android:title="@string/sort">
         <menu>
             <group android:checkableBehavior="single">

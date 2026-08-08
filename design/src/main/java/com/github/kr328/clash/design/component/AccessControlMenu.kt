@@ -33,11 +33,6 @@ class AccessControlMenu(
                 requests.trySend(Request.SelectNone)
             R.id.select_invert ->
                 requests.trySend(Request.SelectInvert)
-            R.id.system_apps -> {
-                uiStore.accessControlSystemApp = !item.isChecked
-
-                requests.trySend(Request.ReloadApps)
-            }
             R.id.name -> {
                 uiStore.accessControlSort = AppInfoSort.Label
 
@@ -89,7 +84,6 @@ class AccessControlMenu(
                 menu.menu.findItem(R.id.update_time).isChecked = true
         }
 
-        menu.menu.findItem(R.id.system_apps).isChecked = !uiStore.accessControlSystemApp
         menu.menu.findItem(R.id.reverse).isChecked = uiStore.accessControlReverse
 
         menu.setOnMenuItemClickListener(this)

@@ -11,9 +11,13 @@
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Deliberately absent: package visibility comes from <queries> below.
+         Kept as an explicit remove so a module or library cannot merge it back in
+         (it already rejects the one from :service). Measured coverage and the
+         reasons are in docs/engineering-decisions.md. -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
+        tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.CAMERA" />
@@ -28,6 +32,28 @@
          It can only be granted via ADB. -->
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS"
         tools:ignore="ProtectedPermissions" />
+
+    <!-- Package visibility without QUERY_ALL_PACKAGES.
+         MAIN+LAUNCHER: user apps for access-control and the uid→name cache that
+             PROCESS-NAME rules depend on. A package with no launcher activity stays
+             invisible and such a rule silently will not match it.
+         VIEW https: browsers, required by BrowserAuthLauncher / Custom Tabs.
+         LEANBACK_LAUNCHER: TV launchers. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
 
     <application
         android:name=".MainApplication"

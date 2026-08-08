@@ -3,8 +3,7 @@ package com.github.kr328.clash
 import android.Manifest.permission.INTERNET
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageInfo
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.content.getSystemService
 import com.github.kr328.clash.design.AccessControlDesign
@@ -121,13 +120,17 @@ class AccessControlActivity : BaseActivity<AccessControlDesign>() {
         withContext(Dispatchers.IO) {
             val reverse = uiStore.accessControlReverse
             val sort = uiStore.accessControlSort
-            val systemApp = uiStore.accessControlSystemApp
 
             val base = compareByDescending<AppInfo> { it.packageName in selected }
             val comparator = if (reverse) base.thenDescending(sort) else base.then(sort)
 
             val pm = packageManager
             val packages = pm.getInstalledPackages(PackageManager.GET_PERMISSIONS)
+
+            // What the user recognises is a launcher icon, not a partition. FLAG_SYSTEM
+            // deliberately does not filter here: Chrome, Gmail and the dialer are system
+            // packages on most builds and are ordinary apps to the person routing them.
+            val launchable = launchablePackages(pm)
 
             packages.asSequence()
                 .filter {
@@ -137,10 +140,10 @@ class AccessControlActivity : BaseActivity<AccessControlDesign>() {
                     it.applicationInfo != null
                 }
                 .filter {
-                    it.requestedPermissions?.contains(INTERNET) == true || it.applicationInfo!!.uid < android.os.Process.FIRST_APPLICATION_UID
+                    it.requestedPermissions?.contains(INTERNET) == true
                 }
                 .filter {
-                    systemApp || !it.isSystemApp
+                    it.packageName in launchable
                 }
                 .map {
                     it.toAppInfo(pm)
@@ -149,8 +152,19 @@ class AccessControlActivity : BaseActivity<AccessControlDesign>() {
                 .toList()
         }
 
-    private val PackageInfo.isSystemApp: Boolean
-        get() {
-            return applicationInfo?.flags?.and(ApplicationInfo.FLAG_SYSTEM) != 0
+    /**
+     * Packages with a launcher entry, in either phone or TV form.
+     *
+     * This is a presentation filter only. A stored selection is never narrowed by it —
+     * a package that loses its launcher activity, or is temporarily uninstalled, keeps
+     * its routing decision in [ServiceStore.accessControlPackages].
+     */
+    private fun launchablePackages(pm: PackageManager): Set<String> {
+        val categories = listOf(Intent.CATEGORY_LAUNCHER, Intent.CATEGORY_LEANBACK_LAUNCHER)
+
+        return categories.flatMapTo(mutableSetOf()) { category ->
+            pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(category), 0)
+                .map { it.activityInfo.packageName }
         }
+    }
 }
