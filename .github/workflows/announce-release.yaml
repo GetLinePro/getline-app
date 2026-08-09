@@ -1,0 +1,66 @@
+name: Announce release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'GitHub Release tag to announce (for example, v0.6.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  main_ref:
+    name: Refuse non-main dispatch
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require main ref
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "ERROR: Announce release must be run from main (got $WORKFLOW_REF)" >&2
+            exit 1
+          fi
+
+  announce:
+    needs: main_ref
+    # workflow_dispatch exposes a branch selector. Do not run a workflow
+    # definition from another branch with release credentials.
+    if: ${{ github.ref == 'refs/heads/main' && needs.main_ref.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: main
+
+      - name: Fetch selected GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_JSON: ${{ runner.temp }}/getline-release.json
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > "$RELEASE_JSON"; then
+            echo "ERROR: GitHub Release does not exist for tag ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          jq -e --arg tag "$RELEASE_TAG" '
+            .tag_name == $tag
+            and (.html_url | type == "string" and length > 0)
+            and ((.name == null) or (.name | type == "string"))
+            and ((.body == null) or (.body | type == "string"))
+          ' "$RELEASE_JSON" >/dev/null
+          echo "Using GitHub Release ${RELEASE_TAG}."
+
+      - name: Publish Release to Telegram
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          bash scripts/announce-release.sh "$RUNNER_TEMP/getline-release.json"
