@@ -78,6 +78,23 @@ android {
             resValue("string", "getline_account_url", "https://app.stage.getline.pro/")
         }
     }
+
+    buildTypes {
+        named("debug") {
+            val forceBrowserRung = project.providers.gradleProperty("forceBrowserRung")
+                .map { value ->
+                    when (value.trim().lowercase()) {
+                        "customtab", "external" -> value.trim().lowercase()
+                        else -> ""
+                    }
+                }
+                .getOrElse("")
+            buildConfigField("String", "GETLINE_FORCE_BROWSER_RUNG", "\"$forceBrowserRung\"")
+        }
+        named("release") {
+            buildConfigField("String", "GETLINE_FORCE_BROWSER_RUNG", "\"\"")
+        }
+    }
 }
 
 // Keep e2e limited to alphaDebug (side-channel smoke). Production package and

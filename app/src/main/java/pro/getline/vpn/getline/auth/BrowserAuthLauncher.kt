@@ -12,6 +12,7 @@ import androidx.browser.auth.AuthTabIntent
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.browser.customtabs.CustomTabsService
+import com.github.kr328.clash.BuildConfig
 import com.github.kr328.clash.common.log.Log
 import pro.getline.vpn.AppEnvironment
 import pro.getline.vpn.GetLineControlPlaneHostPolicy
@@ -159,6 +160,29 @@ class BrowserAuthLauncher {
      * handlers for a product host do not count as "has a browser".
      */
     fun resolveBrowserCapability(context: Context): BrowserCapability {
+        val forcedRung = BuildConfig.GETLINE_FORCE_BROWSER_RUNG
+        if (forcedRung == "customtab" || forcedRung == "external") {
+            val customTabPackage = if (forcedRung == "customtab") {
+                CustomTabsClient.getPackageName(context, null, false)
+                    ?: installedCustomTabsPackages(context).firstOrNull()
+            } else {
+                null
+            }
+            val forcedCapability = resolveForcedBrowserRung(
+                forcedRung,
+                customTabPackage,
+                hasGenericHttpsBrowser(context),
+            ) ?: error("Unsupported forced browser rung: $forcedRung")
+            val rungLabel = when (forcedCapability) {
+                is BrowserCapability.AuthTab -> "AuthTab"
+                is BrowserCapability.CustomTab -> "CustomTab"
+                BrowserCapability.ExternalBrowser -> "ExternalBrowser"
+                BrowserCapability.None -> "None"
+            }
+            Log.i("browser_auth_forced_rung mode=$forcedRung rung=$rungLabel")
+            return forcedCapability
+        }
+
         resolveAuthTabPackage(context)?.let { return BrowserCapability.AuthTab(it) }
 
         val customTabPackage = CustomTabsClient.getPackageName(context, null, false)
@@ -249,6 +273,25 @@ class BrowserAuthLauncher {
             "com.microsoft.emmx",
             "com.brave.browser",
         )
+
+        internal fun resolveForcedBrowserRung(
+            forceBrowserRung: String,
+            customTabPackage: String?,
+            hasGenericHttpsBrowser: Boolean,
+        ): BrowserCapability? = when (forceBrowserRung) {
+            "customtab" -> customTabPackage?.let(BrowserCapability::CustomTab)
+                ?: if (hasGenericHttpsBrowser) {
+                    BrowserCapability.ExternalBrowser
+                } else {
+                    BrowserCapability.None
+                }
+            "external" -> if (hasGenericHttpsBrowser) {
+                BrowserCapability.ExternalBrowser
+            } else {
+                BrowserCapability.None
+            }
+            else -> null
+        }
 
         fun parseAndValidateLaunchUrl(authUrl: String): Uri {
             val trimmed = authUrl.trim()
