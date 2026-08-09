@@ -227,8 +227,6 @@
     <string name="block_loopback">阻止本地回环</string>
     <string name="block_loopback_summary">阻止本地回环连接</string>
     <string name="geoip_fallback_code">GeoIP Fallback 区域代码</string>
-    <string name="allow_bypass">允许应用绕过</string>
-    <string name="allow_bypass_summary">允许其他应用绕过 VPN</string>
     <string name="allow_ipv6">允许 Ipv6</string>
     <string name="allow_ipv6_summary">通过 VpnService 代理 Ipv6 流量</string>
     <string name="clash_meta_wiki">Mihomo 文档（上游）</string>

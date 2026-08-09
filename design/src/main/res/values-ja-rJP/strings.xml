@@ -106,8 +106,6 @@
     <string name="dns_hijacking_summary">すべてのDNSパケットの処理</string>
     <string name="block_loopback">ループバックをブロックする</string>
     <string name="block_loopback_summary">ループバックをブロック</string>
-    <string name="allow_bypass">アプリのバイパスを許可</string>
-    <string name="allow_bypass_summary">アプリにVPNのバイパスを許可</string>
     <string name="system_proxy">システムプロキシ</string>
     <string name="system_proxy_summary">VPNサービスにHTTPプロキシを追加</string>
     <string name="access_control_mode">アクセスコントロールモード</string>

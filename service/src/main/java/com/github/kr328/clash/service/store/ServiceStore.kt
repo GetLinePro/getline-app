@@ -46,11 +46,6 @@ class ServiceStore(context: Context) {
         defaultValue = true
     )
 
-    var allowBypass by store.boolean(
-        key = "allow_bypass",
-        defaultValue = true
-    )
-
     var allowIpv6 by store.boolean(
         key = "allow_ipv6",
         defaultValue = false
