@@ -42,8 +42,23 @@ What the app does now (see Status table above):
 
 Browser capability ladder: Auth Tab → Custom Tabs → external `ACTION_VIEW`.  
 External rung resolves a **hostless** `https://` + `CATEGORY_BROWSABLE` package (generic browsers), then `setPackage` on the real launch URI — so a portal WebAPK is not the default target when a browser is installed.  
-Auth Tab Google and Telegram both use native scheme completion. Custom Tabs and
+Google and Telegram both use native scheme completion. Custom Tabs and
 external browsers return through the same package callback Activity.
+
+**Telegram is capped below Auth Tab** (`browserRungCeilingFor`). Chrome's Auth
+Tab does not complete `oauth.telegram.org` when the user confirms from the
+Telegram **push notification** instead of the page's own "Open Telegram to
+confirm" button: the page never leaves its pre-confirmed state, and Telegram's
+one-shot confirmation expires unclaimed — a reload cannot recover the attempt.
+Reproduced on both alpha devices; Custom Tab completes with Chrome *and*
+Firefox (#112). Cost of the cap: Chrome's "open app?" banner on the callback
+intent. Google keeps the Auth Tab rung and does not pay it.
+
+The Auth Tab rung gives the **user's default Custom Tabs provider** first
+refusal (`ignoreDefault = false`), then known Chromium packages, then any
+provider advertising the Auth Tab category. Until #116 the argument was `true`,
+which pinned Chrome regardless of that choice and contradicted the ladder's own
+KDoc; nothing in this spike ever asked for the pin.
 
 **`auth-callback.html` / trampoline whitelist:** own-property check only (`hasOwnProperty`); packages include `pro.getline.vpn`, `.alpha`, `.alpha.debug`, `.alpha.e2e.debug` (see Status: edge vs backend).
 

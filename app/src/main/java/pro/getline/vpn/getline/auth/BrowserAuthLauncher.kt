@@ -32,10 +32,45 @@ enum class AuthTabRedirectMode {
 }
 
 /**
+ * Highest ladder rung a caller accepts.
+ *
+ * [AuthTab] is the whole ladder. [CustomTab] skips the Auth Tab rung — see
+ * [browserRungCeilingFor] for the one provider that needs it.
+ */
+enum class BrowserRungCeiling {
+    AuthTab,
+    CustomTab,
+}
+
+/**
+ * Ceiling for [method].
+ *
+ * Telegram is capped below Auth Tab. Chrome's Auth Tab does not complete the
+ * `oauth.telegram.org` flow when the user confirms from the Telegram push
+ * notification instead of the page's own "Open Telegram to confirm" button:
+ * the page never leaves its pre-confirmed state, and Telegram's one-shot
+ * confirmation expires unclaimed, so reloading cannot recover the attempt.
+ * Reproduced on both alpha devices; Custom Tab completes on the same page with
+ * both Chrome and Firefox (#112).
+ *
+ * The cost is Chrome's "open app?" banner on the callback intent, which the
+ * Auth Tab rung avoids. Paid for Telegram only — Google works on Auth Tab today
+ * and must not inherit the banner.
+ */
+internal fun browserRungCeilingFor(method: AuthMethod): BrowserRungCeiling =
+    when (method) {
+        AuthMethod.Telegram -> BrowserRungCeiling.CustomTab
+        AuthMethod.Google,
+        AuthMethod.Email,
+        -> BrowserRungCeiling.AuthTab
+    }
+
+/**
  * Opens a server-provided auth URL using the best available browser capability:
- * Auth Tab → Custom Tabs → external browser ([Intent.ACTION_VIEW]). The current
- * Google and Telegram flows use [AuthTabRedirectMode.NativeScheme];
- * [AuthTabRedirectMode.HttpsCallback] remains for the legacy rollback path.
+ * Auth Tab → Custom Tabs → external browser ([Intent.ACTION_VIEW]), capped by
+ * the caller's [BrowserRungCeiling]. The current Google and Telegram flows use
+ * [AuthTabRedirectMode.NativeScheme]; [AuthTabRedirectMode.HttpsCallback]
+ * remains for the legacy rollback path.
  *
  * Auth Tab returns the callback via [ActivityResult]; Custom Tab and external
  * browser complete only through the exported deep-link Activity (or edge page).
@@ -45,10 +80,11 @@ class BrowserAuthLauncher {
         activity: GetLineActivity<D>,
         authUrl: String,
         redirectMode: AuthTabRedirectMode = AuthTabRedirectMode.NativeScheme,
+        rungCeiling: BrowserRungCeiling = BrowserRungCeiling.AuthTab,
     ): BrowserAuthLaunchResult {
         val launchUri = parseAndValidateLaunchUrl(authUrl)
 
-        return when (val capability = resolveBrowserCapability(activity)) {
+        return when (val capability = resolveBrowserCapability(activity, rungCeiling)) {
             is BrowserCapability.AuthTab ->
                 launchAuthTab(activity, launchUri, capability.packageName, redirectMode)
             is BrowserCapability.CustomTab ->
@@ -156,10 +192,17 @@ class BrowserAuthLauncher {
      * Capability ladder: Auth Tab → any Custom Tabs provider → generic HTTPS browser → none.
      * Chrome is not prioritized outside the existing Auth Tab preferred list.
      *
+     * [ceiling] drops rungs above it before the ladder is walked; the debug
+     * `-PforceBrowserRung` switch still wins over both, and only forces rungs
+     * at or below any ceiling.
+     *
      * External rung uses a hostless `https://` probe so WebAPK / verified app-link
      * handlers for a product host do not count as "has a browser".
      */
-    fun resolveBrowserCapability(context: Context): BrowserCapability {
+    fun resolveBrowserCapability(
+        context: Context,
+        ceiling: BrowserRungCeiling = BrowserRungCeiling.AuthTab,
+    ): BrowserCapability {
         val forcedRung = BuildConfig.GETLINE_FORCE_BROWSER_RUNG
         if (forcedRung == "customtab" || forcedRung == "external") {
             val customTabPackage = if (forcedRung == "customtab") {
@@ -183,7 +226,9 @@ class BrowserAuthLauncher {
             return forcedCapability
         }
 
-        resolveAuthTabPackage(context)?.let { return BrowserCapability.AuthTab(it) }
+        if (ceiling == BrowserRungCeiling.AuthTab) {
+            resolveAuthTabPackage(context)?.let { return BrowserCapability.AuthTab(it) }
+        }
 
         val customTabPackage = CustomTabsClient.getPackageName(context, null, false)
             ?: installedCustomTabsPackages(context).firstOrNull()
@@ -235,7 +280,11 @@ class BrowserAuthLauncher {
      * advertises the Auth Tab category.
      */
     fun resolveAuthTabPackage(context: Context): String? {
-        val preferred = CustomTabsClient.getPackageName(context, PREFERRED_BROWSERS, true)
+        // ignoreDefault = false: the user's default provider gets first refusal.
+        // It used to be true, which pinned Chrome regardless of that choice and
+        // contradicted this KDoc; nothing in the spike or the journal ever asked
+        // for the pin — PREFERRED_BROWSERS is inherited from the #4 spike.
+        val preferred = CustomTabsClient.getPackageName(context, PREFERRED_BROWSERS, false)
         if (preferred != null && CustomTabsClient.isAuthTabSupported(context, preferred)) {
             return preferred
         }

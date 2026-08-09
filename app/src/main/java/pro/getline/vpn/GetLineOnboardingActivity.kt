@@ -28,6 +28,7 @@ import pro.getline.vpn.getline.auth.AuthCallbackResult
 import pro.getline.vpn.getline.auth.AuthTabRedirectMode
 import pro.getline.vpn.getline.auth.BrowserAuthLauncher
 import pro.getline.vpn.getline.auth.BrowserAuthLaunchResult
+import pro.getline.vpn.getline.auth.browserRungCeilingFor
 import pro.getline.vpn.getline.auth.AuthMethod
 import pro.getline.vpn.getline.auth.GetLineAuthException
 import pro.getline.vpn.diagnostics.DiagnosticReportShare
@@ -923,6 +924,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             activity = this,
             authUrl = start.authUrl,
             redirectMode = AuthTabRedirectMode.NativeScheme,
+            rungCeiling = browserRungCeilingFor(method),
         )
         handleBrowserLaunchResult(
             design = design,
