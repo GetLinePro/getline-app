@@ -84,6 +84,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     /**
      * Serializes server list loads and patchSelector calls so overlapping taps and
      * resume reconcile cannot leave Mihomo/SelectionDao vs UI out of order.
+     * Latency health checks deliberately stay outside: they may re-pick a nested
+     * dynamic group's leaf but do not write the main selector's own choice, can
+     * take seconds, and must not delay a user selection behind them.
      */
     private val serversIoMutex = Mutex()
     private var connecting = false
@@ -790,9 +793,11 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         if (!serverState.shouldHealthCheck(now)) return
         serverState.onHealthCheckStarted(now)
 
-        val measured = serversIoMutex.withLock {
-            backend.servers.healthCheckMainGroup()
-        }
+        // A probe may take several seconds and may re-pick the leaf of a nested
+        // dynamic group, but it does not write the main selector's own choice.
+        // Keeping it under serversIoMutex would make a user tap wait before
+        // patchSelector can run and before Servers can return to Home.
+        val measured = backend.servers.healthCheckMainGroup()
         if (!measured || !isActive) return
 
         val refreshed = serversIoMutex.withLock {
