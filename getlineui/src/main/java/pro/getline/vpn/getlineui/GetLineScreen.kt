@@ -3,6 +3,7 @@ package pro.getline.vpn.getlineui
 import android.app.Activity
 import android.content.Context
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
@@ -60,8 +61,29 @@ abstract class GetLineScreen<R>(val context: Context) :
                     ToastDuration.Long -> Snackbar.LENGTH_LONG
                     ToastDuration.Indefinite -> Snackbar.LENGTH_INDEFINITE
                 },
-            ).apply(configure).show()
+            ).apply(configure).also { currentToast = it }.show()
         }
+    }
+
+    /**
+     * Toast currently on screen, if any. Kept only so a screen with its own
+     * touch handling can leave the toast alone; cleared implicitly by
+     * [Snackbar.isShown] going false.
+     */
+    private var currentToast: Snackbar? = null
+
+    /**
+     * True when [event] is over a visible toast. Layouts root at a
+     * CoordinatorLayout, so a toast comes with its own horizontal
+     * swipe-to-dismiss — a screen watching touches for its own gestures must
+     * not take that swipe away.
+     */
+    protected fun isOverVisibleToast(event: MotionEvent): Boolean {
+        val view = currentToast?.takeIf { it.isShown }?.view ?: return false
+        val origin = IntArray(2)
+        view.getLocationOnScreen(origin)
+        return event.rawX >= origin[0] && event.rawX < origin[0] + view.width &&
+            event.rawY >= origin[1] && event.rawY < origin[1] + view.height
     }
 
     init {

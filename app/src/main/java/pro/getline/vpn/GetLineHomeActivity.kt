@@ -4,6 +4,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.MotionEvent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import pro.getline.vpn.getlineui.GetLineHomeDesign
@@ -1825,6 +1826,32 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             GetLineHomeDesign.Tab.Home -> TAB_HOME
             GetLineHomeDesign.Tab.Servers -> TAB_SERVERS
             GetLineHomeDesign.Tab.Subscription -> TAB_SUBSCRIPTION
+        }
+    }
+
+    /**
+     * Horizontal swipe between the three destinations. Every event is still
+     * delivered normally, so vertical scrolling and taps are untouched; the
+     * design only watches the stream and reports a completed fling.
+     *
+     * On such a fling the up event is swapped for a cancel before it reaches
+     * the view tree. Without that the view under the finger — a server row is
+     * full width, so the finger never leaves its bounds — would also perform
+     * its click, selecting a server or toggling the VPN behind the swipe. That
+     * holds for a swipe off the first or last tab too, where nothing changes
+     * on screen and a stray click would be the only visible result.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        val consumed = design?.onHostTouchEvent(ev) ?: false
+        if (!consumed || ev.actionMasked != MotionEvent.ACTION_UP) {
+            return super.dispatchTouchEvent(ev)
+        }
+        val cancel = MotionEvent.obtain(ev)
+        cancel.action = MotionEvent.ACTION_CANCEL
+        return try {
+            super.dispatchTouchEvent(cancel)
+        } finally {
+            cancel.recycle()
         }
     }
 

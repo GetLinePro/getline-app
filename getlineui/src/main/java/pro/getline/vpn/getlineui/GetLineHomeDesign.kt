@@ -1,7 +1,10 @@
 package pro.getline.vpn.getlineui
 
 import android.content.Context
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -25,6 +28,7 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.coroutines.resume
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Request>(context) {
@@ -218,6 +222,50 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
      */
     private var serversOpenedFromHome = false
 
+    /**
+     * Set by [swipeDetector] while [onHostTouchEvent] is running, read right
+     * after. A fling is reported from inside `GestureDetector.onTouchEvent`, so
+     * the flag is already correct when the host decides how to deliver the
+     * event.
+     */
+    private var swipeConsumedGesture = false
+
+    /** A toast owned the gesture that started this stream; keep hands off it. */
+    private var swipeYieldedToToast = false
+
+    private val swipeSlop = ViewConfiguration.get(context).scaledPagingTouchSlop
+    private val swipeMinVelocity = ViewConfiguration.get(context).scaledMinimumFlingVelocity
+
+    private val swipeDetector = GestureDetector(
+        context,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onFling(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                velocityX: Float,
+                velocityY: Float,
+            ): Boolean {
+                val start = e1 ?: return false
+                val dx = e2.x - start.x
+                val dy = e2.y - start.y
+                // Unambiguously horizontal, in both travel and speed, so a
+                // vertical ScrollView drag never lands here.
+                if (abs(dx) < swipeSlop || abs(dx) <= abs(dy)) return false
+                if (abs(velocityX) < swipeMinVelocity || abs(velocityX) <= abs(velocityY)) {
+                    return false
+                }
+                // Claimed from here on, including a swipe off the first or last
+                // tab: the tab does not change, but the gesture was still a
+                // swipe and must not fall through as a click.
+                swipeConsumedGesture = true
+                adjacentTab(currentTab, forward = dx < 0)?.let(::onTabClicked)
+                return true
+            }
+        },
+    )
+
     val selectedTab: Tab
         get() = currentTab
 
@@ -284,6 +332,15 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         applyTab(tab)
     }
 
+    /**
+     * Neighbour in shell-bar order. `null` at either end — the swipe stops
+     * there instead of wrapping around, so the edges stay predictable.
+     */
+    private fun adjacentTab(current: Tab, forward: Boolean): Tab? {
+        val order = Tab.entries
+        return order.getOrNull(order.indexOf(current) + if (forward) 1 else -1)
+    }
+
     private fun onTabClicked(tab: Tab) {
         if (tab == currentTab) return
         applyTab(tab)
@@ -294,6 +351,30 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 Tab.Subscription -> Request.SelectSubscription
             }
         )
+    }
+
+    /**
+     * Feed a touch event seen by the host window. Returns `true` when this very
+     * event completed a horizontal fling the screen took for itself — whether
+     * or not the tab actually changed.
+     *
+     * The host must keep delivering events to the view tree as usual, but when
+     * this returns `true` it has to hand the children `ACTION_CANCEL` instead
+     * of the `ACTION_UP`: the finger normally stays inside the bounds of the
+     * view it started on (a full-width server row, the connect button), so that
+     * view would otherwise still fire its click on the back of the swipe.
+     *
+     * A gesture that starts on a visible toast is left alone entirely — that
+     * one already means swipe-to-dismiss.
+     */
+    fun onHostTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            swipeYieldedToToast = isOverVisibleToast(event)
+        }
+        if (swipeYieldedToToast) return false
+        swipeConsumedGesture = false
+        swipeDetector.onTouchEvent(event)
+        return swipeConsumedGesture
     }
 
     /** Home location card — switch to Servers without touching VPN. */
