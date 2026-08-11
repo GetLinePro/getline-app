@@ -9,15 +9,16 @@ package pro.getline.vpn.getline.servers
 interface VpnServerSelectionRepository {
     /**
      * Load proxies from the product main selector group.
-     * Same group resolution as [queryMainSelectedName] / Home location.
+     * Same group resolution as [queryMainSelection] / Home location.
      */
     suspend fun loadMainGroup(): VpnServerLoadResult
 
     /**
-     * Selected proxy name in the main group (Home location row).
+     * Selected proxy in the main group (Home location row), resolved through a
+     * nested group when the selection is one.
      * Uses the same main-group policy as [loadMainGroup].
      */
-    suspend fun queryMainSelectedName(): String?
+    suspend fun queryMainSelection(): VpnMainSelection?
 
     /**
      * Measure latency for the main group so variants can be ranked.

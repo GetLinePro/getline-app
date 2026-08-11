@@ -22,6 +22,22 @@ data class VpnServerItem(
 )
 
 /**
+ * What the main group currently routes through, for the Home location row.
+ *
+ * [selectedName] is the selector's own choice. When that choice is a nested
+ * group ("⚡ Авто") it names the mode, not the node, so [resolvedName] carries
+ * the leaf traffic actually goes through.
+ *
+ * [resolvedName] is null for a plain node, and also when the chain could not be
+ * followed. A failed descent degrades to mode-only — it never invalidates a
+ * selection that was read successfully.
+ */
+data class VpnMainSelection(
+    val selectedName: String,
+    val resolvedName: String? = null,
+)
+
+/**
  * Servers destination state. Owned by the Home shell Activity (not per-tab Views).
  * Does not own Clash lifecycle or latency tests.
  */

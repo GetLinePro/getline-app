@@ -46,9 +46,9 @@ import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.common.util.ticker
 import java.util.concurrent.atomic.AtomicBoolean
 import pro.getline.vpn.getline.servers.ServerGroupingPolicy
+import pro.getline.vpn.getline.servers.ServerLocationLabel
 import pro.getline.vpn.getline.servers.ServerSection
 import pro.getline.vpn.getline.servers.ServerSectionPolicy
-import pro.getline.vpn.getline.servers.ServerNameParser
 import pro.getline.vpn.getline.servers.VpnServerLoadResult
 import pro.getline.vpn.getline.servers.VpnServerStateHolder
 import pro.getline.vpn.getline.servers.VpnServerUiState
@@ -667,7 +667,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     /**
      * Current selector group selection for Home/Servers location row.
      * Best-effort; failures yield unknown without affecting VPN.
-     * Main group via [VpnServerSelectionRepository.queryMainSelectedName]
+     * Main group via [VpnServerSelectionRepository.queryMainSelection]
      * ([MainProxyGroupPolicy] — not silent first-in-list).
      */
     private suspend fun GetLineHomeDesign.refreshLocation() {
@@ -675,9 +675,17 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             setLocation(null)
             return
         }
-        val name = backend.servers.queryMainSelectedName()
-        setLocation(name?.let { ServerNameParser.parse(it).displayQualifiedLabel })
+        val selection = backend.servers.queryMainSelection()
+        setLocation(ServerLocationLabel.of(selection?.selectedName, selection?.resolvedName))
     }
+
+    /**
+     * Leaf a selected nested group routes through, from the list already loaded.
+     * Same value [VpnServerSelectionRepository.queryMainSelection] would return,
+     * without a second trip to the core — so both paths paint the same row.
+     */
+    private fun VpnServerUiState.Ready.resolvedNameOf(rawName: String): String? =
+        servers.firstOrNull { it.name == rawName && it.isGroup }?.resolvedName
 
     /**
      * Ensure Servers UI is up to date without unnecessary Clash queries.
@@ -791,11 +799,15 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             backend.servers.loadMainGroup()
         }
         if (!isActive) return
-        // Only delays changed; a failed re-read must not clobber a good list.
+        // A failed re-read must not clobber a good list.
         if (refreshed !is VpnServerLoadResult.Success) return
 
         serverState.applyLoadResult(refreshed)
         paintServersState()
+        // Not only delays: a dynamic group re-picks its leaf off exactly these
+        // measurements, so the Home row would otherwise name the previous node
+        // until the next resume.
+        applyServerLocationFromState()
     }
 
     private suspend fun GetLineHomeDesign.applyServerLocationFromState() {
@@ -804,9 +816,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             // Home showed the raw name ("🇵🇱 Польша | grpc") while Servers showed
             // it parsed — same node, two spellings.
             setLocation(
-                ready.selectedName
-                    .takeIf { it.isNotBlank() }
-                    ?.let { ServerNameParser.parse(it).displayQualifiedLabel },
+                ServerLocationLabel.of(
+                    ready.selectedName,
+                    ready.resolvedNameOf(ready.selectedName),
+                ),
             )
         } else {
             refreshLocation()
@@ -831,7 +844,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         if (serverState.beginSelection(name) == null) return
 
         paintServersState()
-        launch { setLocation(name) }
+        // Optimistic row uses the same formatting as the settled one, so a
+        // confirmed pick does not visibly respell itself.
+        launch { setLocation(ServerLocationLabel.of(name, ready.resolvedNameOf(name))) }
 
         launch {
             // Any queued worker may service the latest intent. A later worker sees

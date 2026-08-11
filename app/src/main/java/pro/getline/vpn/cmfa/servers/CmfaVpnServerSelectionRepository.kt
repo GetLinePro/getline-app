@@ -5,6 +5,7 @@ import com.github.kr328.clash.core.model.ProxyGroup
 import com.github.kr328.clash.core.model.ProxySort
 import com.github.kr328.clash.design.store.UiStore
 import pro.getline.vpn.getline.servers.MainProxyGroupPolicy
+import pro.getline.vpn.getline.servers.VpnMainSelection
 import pro.getline.vpn.getline.servers.VpnServerItem
 import pro.getline.vpn.getline.servers.VpnServerLoadResult
 import pro.getline.vpn.getline.servers.VpnServerSelectionRepository
@@ -71,14 +72,30 @@ class CmfaVpnServerSelectionRepository(
         }
     }
 
-    override suspend fun queryMainSelectedName(): String? {
+    override suspend fun queryMainSelection(): VpnMainSelection? {
         val excludeNotSelectable = uiStore.proxyExcludeNotSelectable
         val sort = uiStore.proxySort
         return try {
             withClash {
                 val resolved = queryMainProxyGroup(excludeNotSelectable, sort)
                     ?: return@withClash null
-                resolved.second.now.takeIf { it.isNotBlank() }
+                val group = resolved.second
+                val now = group.now.takeIf { it.isNotBlank() } ?: return@withClash null
+                val selectedIsGroup = group.proxies.firstOrNull { it.name == now }?.isGroup == true
+                VpnMainSelection(
+                    selectedName = now,
+                    // Same descent [loadMainGroup] runs per entry, but only for the
+                    // one Home names — a selected group otherwise hides its node.
+                    // Scoped runCatching: a failed descent costs the leaf, not the
+                    // selection, so Home degrades to "⚡ Авто", never to "unknown".
+                    resolvedName = if (selectedIsGroup) {
+                        runCatching {
+                            resolveLeafName(now) { queryProxyGroup(it, sort) }
+                        }.getOrNull()
+                    } else {
+                        null
+                    },
+                )
             }
         } catch (e: CancellationException) {
             throw e
