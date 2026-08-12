@@ -28,8 +28,6 @@ import pro.getline.vpn.getline.auth.AuthCallbackResult
 import pro.getline.vpn.getline.auth.AuthTabRedirectMode
 import pro.getline.vpn.getline.auth.BrowserAuthLauncher
 import pro.getline.vpn.getline.auth.BrowserAuthLaunchResult
-import pro.getline.vpn.getline.auth.BrowserLoginFailureDisposition
-import pro.getline.vpn.getline.auth.BrowserLoginFailurePolicy
 import pro.getline.vpn.getline.auth.browserRungCeilingFor
 import pro.getline.vpn.getline.auth.AuthMethod
 import pro.getline.vpn.getline.auth.GetLineAuthException
@@ -41,6 +39,7 @@ import pro.getline.vpn.getline.auth.LinkOnlyBindingPolicy
 import pro.getline.vpn.getline.auth.NativeAuthPkce
 import pro.getline.vpn.getline.auth.PendingNativeAuth
 import pro.getline.vpn.getline.auth.PendingNativeAuthStore
+import pro.getline.vpn.getline.auth.PostLoginPipeline
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
 import pro.getline.vpn.getline.auth.SubscriptionLinkMatcher
 import java.util.UUID
@@ -75,13 +74,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private var busy = false
     /** True after Custom Tab / external browser launch until deep-link or UI leave. */
     private var awaitingNativeDeepLink = false
-    /**
-     * Deep-link handoff found an established session while browser-auth still
-     * held [busy] (Auth Tab + package VIEW race). Run import once busy clears.
-     */
-    private var deferredNativeImport = false
-    /** Prefer one preferred-subscription import per browser-auth attempt. */
-    private var postLoginImportConsumed = false
+    /** Single owner for the post-login step across Auth Tab / package VIEW delivery. */
+    private val postLoginPipeline = PostLoginPipeline()
     /**
      * Completes on each [onStart]; replaced on [onStop] so [awaitActivityStarted]
      * can suspend without polling or competing for [events].
@@ -191,9 +185,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                         awaitingNativeDeepLink -> {
                             awaitingNativeDeepLink = false
                             if (sessionRepository.hasSession()) {
-                                if (!postLoginImportConsumed) {
-                                    runPostNativeLoginImport(design)
-                                }
+                                runPostNativeLoginImport(design)
                             } else {
                                 // Unblock UI; pending stays until TTL / take / new put.
                                 design.showProviders()
@@ -459,9 +451,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         if (sessionRepository.hasSession()) {
             // Includes: success handoff, or failure handoff after sibling Auth Tab won.
             if (busy) {
-                if (!postLoginImportConsumed) {
-                    deferredNativeImport = true
-                }
+                postLoginPipeline.defer()
                 return
             }
             runPostNativeLoginImport(design)
@@ -485,13 +475,11 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     private suspend fun runPostNativeLoginImport(design: GetLineOnboardingDesign) {
-        if (postLoginImportConsumed) return
-        postLoginImportConsumed = true
-        deferredNativeImport = false
+        if (!postLoginPipeline.tryStart()) return
         val acquiredBusy = !busy
         if (acquiredBusy) busy = true
-        design.setProductState(GetLineProductState.Loading)
         try {
+            design.setProductState(GetLineProductState.Loading)
             retryTarget = RetryTarget.ImportPreferredSubscription
             design.setSessionEstablished(true)
             importPreferredSubscription(design)
@@ -502,6 +490,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         } catch (e: Exception) {
             applyLoginFailure(design, RetryTarget.ImportPreferredSubscription, e)
         } finally {
+            postLoginPipeline.finish()
             if (acquiredBusy) busy = false
         }
     }
@@ -826,10 +815,11 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             return
         }
 
+        // Keep before reset and before any suspension: a Running post-login
+        // pipeline owns busy, so the guard above must reject a second attempt.
         busy = true
         awaitingNativeDeepLink = false
-        deferredNativeImport = false
-        postLoginImportConsumed = false
+        postLoginPipeline.reset()
         design.setProductState(GetLineProductState.Loading)
 
         try {
@@ -875,42 +865,34 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             applyBrowserLoginFailure(design, method, e)
         } finally {
             busy = false
-            if (deferredNativeImport &&
-                !postLoginImportConsumed &&
-                sessionRepository.hasSession()
-            ) {
-                runPostNativeLoginImport(design)
-            } else {
-                deferredNativeImport = false
+            if (postLoginPipeline.isDeferred) {
+                if (sessionRepository.hasSession()) {
+                    runPostNativeLoginImport(design)
+                } else {
+                    // Keep a late package callback eligible to own the step.
+                    postLoginPipeline.clearDeferred()
+                }
             }
         }
     }
 
     /**
-     * Routes a throw from [signInNativePkce] after exchange and/or post-session
-     * subscription load. See [BrowserLoginFailurePolicy].
+     * Routes a throw from [signInNativePkce]. Post-session failures are handled
+     * inside [runPostNativeLoginImport], so a live session here belongs to the
+     * sibling package callback and still needs one import attempt.
      */
     private suspend fun applyBrowserLoginFailure(
         design: GetLineOnboardingDesign,
         method: AuthMethod,
         error: Exception,
     ) {
-        when (
-            BrowserLoginFailurePolicy.disposition(
-                hasSession = sessionRepository.hasSession(),
-                postLoginImportConsumed = postLoginImportConsumed,
-            )
-        ) {
-            BrowserLoginFailureDisposition.PostSessionFailure ->
-                applyLoginFailure(design, RetryTarget.ImportPreferredSubscription, error)
-            BrowserLoginFailureDisposition.SiblingSessionImport ->
-                // Package VIEW established the session while Auth Tab path threw.
-                runPostNativeLoginImport(design)
-            BrowserLoginFailureDisposition.PreSessionFailure -> {
-                // Exchange/network failure: completeLoginFrom* may have re-put pending.
-                // Do not clear — Retry within TTL can still use dual delivery / re-tap.
-                applyLoginFailure(design, RetryTarget.BrowserLogin(method), error)
-            }
+        if (sessionRepository.hasSession()) {
+            // Package VIEW established the session while Auth Tab path threw.
+            runPostNativeLoginImport(design)
+        } else {
+            // Exchange/network failure: completeLoginFrom* may have re-put pending.
+            // Do not clear — Retry within TTL can still use dual delivery / re-tap.
+            applyLoginFailure(design, RetryTarget.BrowserLogin(method), error)
         }
     }
 
@@ -1055,11 +1037,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             pendingNativeAuthStore.put(pending)
             throw e
         }
-        postLoginImportConsumed = true
-        deferredNativeImport = false
-        retryTarget = RetryTarget.ImportPreferredSubscription
-        design.setSessionEstablished(true)
-        importPreferredSubscription(design)
+        runPostNativeLoginImport(design)
     }
 
     private suspend fun completeLoginFromWebTokenRestoringPending(
@@ -1073,11 +1051,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             pendingNativeAuthStore.put(pending)
             throw e
         }
-        postLoginImportConsumed = true
-        deferredNativeImport = false
-        retryTarget = RetryTarget.ImportPreferredSubscription
-        design.setSessionEstablished(true)
-        importPreferredSubscription(design)
+        runPostNativeLoginImport(design)
     }
 
     /**
