@@ -278,10 +278,8 @@
                         android:visibility="@{otpStepVisible ? View.VISIBLE : View.GONE}"
                         tools:text="Back" />
 
-                    <!--
-                      Link-only sign-in only: an explicit way back to the running VPN.
-                      Home is still alive underneath, so this just finishes the screen.
-                    -->
+                    <!-- Idle flow exit. Standalone finishes the last Activity; link-only
+                         reveals the still-running Home underneath. -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/dismiss_sign_in"
                         style="@style/Widget.GetLine.Onboarding.SecondaryButton"

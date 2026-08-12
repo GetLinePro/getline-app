@@ -120,6 +120,7 @@
     <string name="get_line_account_portal_no_browser">На устройстве не найден подходящий браузер.</string>
     <string name="get_line_action_sign_in">Войти</string>
     <string name="get_line_action_help">Помощь</string>
+    <string name="get_line_action_close">Закрыть</string>
     <string name="get_line_action_not_now">Не сейчас</string>
     <string name="get_line_action_logout">Выйти из аккаунта</string>
     <string name="get_line_action_remove_subscription">Удалить подписку с устройства</string>

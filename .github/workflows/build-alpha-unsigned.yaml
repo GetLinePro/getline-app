@@ -91,6 +91,7 @@ jobs:
           df -h / | tail -1
           ./gradlew --no-daemon \
             service:testAlphaReleaseUnitTest \
+            getlineui:testAlphaReleaseUnitTest \
             app:testAlphaProdReleaseUnitTest \
             app:testAlphaE2eDebugUnitTest
           df -h / | tail -1

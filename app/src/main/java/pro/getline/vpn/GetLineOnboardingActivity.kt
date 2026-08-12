@@ -239,8 +239,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             backFromEmail(design)
                         GetLineOnboardingDesign.Request.AddExistingSubscription ->
                             if (!busy) addExistingSubscription(design)
-                        // Home is still below (openLinkOnlySignIn does not finish it);
-                        // finishing here returns to the running VPN.
+                        // Standalone: this is the last Activity, so finish exits the app.
+                        // Link-only: Home is still below, so finish returns to the VPN.
                         GetLineOnboardingDesign.Request.Dismiss ->
                             if (!busy) {
                                 finish()

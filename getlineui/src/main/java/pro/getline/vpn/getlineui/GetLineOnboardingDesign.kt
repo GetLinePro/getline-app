@@ -32,7 +32,7 @@ class GetLineOnboardingDesign(context: Context) :
         /** Email entry → provider list. */
         object BackFromEmail : Request()
         object AddExistingSubscription : Request()
-        /** Leave sign-in without signing in (link-only entry only). */
+        /** Leave idle onboarding. Standalone closes; link-only reveals the Home below. */
         object Dismiss : Request()
         /** Product QR import (same pipeline as [AddExistingSubscription]). */
         object ScanQrCode : Request()
@@ -47,16 +47,10 @@ class GetLineOnboardingDesign(context: Context) :
         object SendDiagnostics : Request()
     }
 
-    private enum class AuthStep {
-        Providers,
-        EmailEntry,
-        OtpEntry,
-    }
-
     private val binding = DesignGetLineOnboardingBinding
         .inflate(layoutInflater, contentRoot, false)
 
-    private var authStep: AuthStep = AuthStep.Providers
+    private var authStep: OnboardingAuthStep = OnboardingAuthStep.Providers
     private var pendingEmail: String = ""
     private var resendSecondsRemaining: Int = 0
     /**
@@ -242,7 +236,7 @@ class GetLineOnboardingDesign(context: Context) :
     /** Provider list (Google / Email / Telegram). Clears OTP input. */
     suspend fun showProviders() {
         withContext(Dispatchers.Main) {
-            authStep = AuthStep.Providers
+            authStep = OnboardingAuthStep.Providers
             pendingEmail = ""
             clearOtpField()
             applyAuthStepVisibility(lastProductState)
@@ -252,7 +246,7 @@ class GetLineOnboardingDesign(context: Context) :
     /** Email entry step. Keeps typed email when returning from OTP. */
     suspend fun showEmailEntry(email: String? = null) {
         withContext(Dispatchers.Main) {
-            authStep = AuthStep.EmailEntry
+            authStep = OnboardingAuthStep.EmailEntry
             if (email != null) {
                 pendingEmail = email
                 binding.emailField.setText(email)
@@ -268,7 +262,7 @@ class GetLineOnboardingDesign(context: Context) :
      */
     suspend fun showOtpEntry(email: String, clearCode: Boolean = true) {
         withContext(Dispatchers.Main) {
-            authStep = AuthStep.OtpEntry
+            authStep = OnboardingAuthStep.OtpEntry
             pendingEmail = email
             if (binding.emailField.text?.toString() != email) {
                 binding.emailField.setText(email)
@@ -351,15 +345,15 @@ class GetLineOnboardingDesign(context: Context) :
         // on the link-only entry it swallows the way home.
         if (!showsLoginChrome(lastProductState)) return false
         return when (authStep) {
-            AuthStep.OtpEntry -> {
+            OnboardingAuthStep.OtpEntry -> {
                 request(Request.BackFromOtp)
                 true
             }
-            AuthStep.EmailEntry -> {
+            OnboardingAuthStep.EmailEntry -> {
                 request(Request.BackFromEmail)
                 true
             }
-            AuthStep.Providers -> false
+            OnboardingAuthStep.Providers -> false
         }
     }
 
@@ -502,22 +496,25 @@ class GetLineOnboardingDesign(context: Context) :
 
     private fun applyAuthStepVisibility(state: GetLineProductState) {
         val loginChrome = showsLoginChrome(state)
-        binding.providersVisible = loginChrome && authStep == AuthStep.Providers
-        binding.emailStepVisible = loginChrome && authStep == AuthStep.EmailEntry
-        binding.otpStepVisible = loginChrome && authStep == AuthStep.OtpEntry
+        binding.providersVisible = loginChrome && authStep == OnboardingAuthStep.Providers
+        binding.emailStepVisible = loginChrome && authStep == OnboardingAuthStep.EmailEntry
+        binding.otpStepVisible = loginChrome && authStep == OnboardingAuthStep.OtpEntry
         // Offline/ImportFailed hide login chrome (including mid-email/OTP). Alternate
         // import must stay; pure authStep==Providers would hide it after email→offline.
         binding.alternateImportVisible =
             !linkOnlySignIn &&
                 showsAlternateImport(state) &&
-                (authStep == AuthStep.Providers || !loginChrome)
-        // Hidden only while an email/OTP step is on screen — that step has its own
-        // "Back". Where the chrome is hidden (post-session errors) this is the only
-        // way out, and an exit racing an in-flight import (loading) is a trap.
-        binding.dismissVisible = linkOnlySignIn &&
-            (authStep == AuthStep.Providers || !loginChrome) &&
-            !state.loading &&
-            state != GetLineProductState.Content
+                (authStep == OnboardingAuthStep.Providers || !loginChrome)
+        val exitAction = OnboardingExitPolicy.actionFor(
+            state = state,
+            authStep = authStep,
+            linkOnlySignIn = linkOnlySignIn,
+            sessionEstablished = sessionEstablished,
+        )
+        binding.dismissVisible = exitAction != OnboardingExitAction.None
+        if (exitAction != OnboardingExitAction.None) {
+            binding.dismissSignIn.setText(exitAction.label)
+        }
     }
 
     /** States where QR + manual link must stay reachable. */
@@ -546,8 +543,11 @@ class GetLineOnboardingDesign(context: Context) :
      * re-running login there mints a new device key or burns another OTP.
      */
     private fun showsLoginChrome(state: GetLineProductState): Boolean {
-        return keepsEmailLoginChrome(state) ||
-            (linkOnlySignIn && !sessionEstablished && state == GetLineProductState.Offline)
+        return OnboardingExitPolicy.showsLoginChrome(
+            state = state,
+            linkOnlySignIn = linkOnlySignIn,
+            sessionEstablished = sessionEstablished,
+        )
     }
 
     private fun applyResendBinding() {
@@ -564,20 +564,4 @@ class GetLineOnboardingDesign(context: Context) :
         binding.otpField.text = null
     }
 
-    /** Keep email/OTP fields visible (do not bounce to empty provider list). */
-    private fun keepsEmailLoginChrome(state: GetLineProductState): Boolean {
-        return when (state) {
-            GetLineProductState.NoProfile,
-            GetLineProductState.AuthEmailEntry,
-            GetLineProductState.AuthEmailOtpSent,
-            GetLineProductState.AuthFailed,
-            GetLineProductState.SessionStorageRecovered,
-            GetLineProductState.AuthInvalidOtp,
-            GetLineProductState.AuthOtpExpired,
-            GetLineProductState.AuthEmailDomainNotAllowed,
-            GetLineProductState.AuthNoAccount,
-            GetLineProductState.AuthRateLimited -> true
-            else -> false
-        }
-    }
 }
