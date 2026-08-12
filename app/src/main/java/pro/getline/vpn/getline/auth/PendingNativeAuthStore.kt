@@ -12,8 +12,8 @@ import androidx.security.crypto.MasterKey
  * Encrypted prefs (same MasterKey scheme as [GetLineSessionStore]) so the
  * PKCE verifier is not readable from a rooted backup of the plaintext file.
  *
- * [put] / [takeIfMatches] / [clear] are process-serialized via [lock] so Auth Tab
- * and deep-link receivers cannot both consume the same pending.
+ * Pending claim and explicit cancel are process-serialized via [lock] so Auth Tab,
+ * the deep-link receiver and the UI cannot own the same attempt.
  */
 class PendingNativeAuthStore internal constructor(
     context: Context,
@@ -49,7 +49,7 @@ class PendingNativeAuthStore internal constructor(
         synchronized(lock) {
             val pending = read() ?: return null
             if (pending.isExpired()) {
-                clearLocked()
+                clearPendingLocked()
                 return null
             }
             if (!callbackBasesMatch(pending.callbackUri, callbackUri)) {
@@ -60,7 +60,7 @@ class PendingNativeAuthStore internal constructor(
             ) {
                 return null
             }
-            clearLocked()
+            clearPendingLocked()
             return pending
         }
     }
@@ -71,8 +71,56 @@ class PendingNativeAuthStore internal constructor(
         }
     }
 
+    /** Remove only the active verifier; keep any cancelled-predecessor fence. */
+    fun clearPending() {
+        synchronized(lock) {
+            clearPendingLocked()
+        }
+    }
+
+    /**
+     * Atomically abandon the still-unclaimed attempt.
+     *
+     * A callback that already consumed pending wins the race and returns false.
+     * A successful cancel removes the PKCE verifier and keeps only a non-secret,
+     * TTL-bounded marker so that this attempt's late callback can finish silently.
+     */
+    fun cancelPending(): Boolean {
+        synchronized(lock) {
+            val pending = read() ?: return false
+            prefs.edit {
+                removePendingKeys()
+                putString(KEY_CANCELLED_PROVIDER, pending.provider)
+                putString(KEY_CANCELLED_CALLBACK_URI, pending.callbackUri)
+                putLong(KEY_CANCELLED_AT, System.currentTimeMillis())
+            }
+            return true
+        }
+    }
+
+    /** Match an explicit-cancel marker; unsolicited callbacks stay errors. */
+    fun isCancellationMatching(
+        callbackUri: String,
+        allowedProviders: Set<String>,
+    ): Boolean {
+        synchronized(lock) {
+            val cancelled = readCancellation() ?: return false
+            if (System.currentTimeMillis() - cancelled.cancelledAtMs > PendingNativeAuth.TTL_MS) {
+                clearCancellationLocked()
+                return false
+            }
+            if (!callbackBasesMatch(cancelled.callbackUri, callbackUri) ||
+                cancelled.provider !in allowedProviders
+            ) {
+                return false
+            }
+            return true
+        }
+    }
+
     private fun write(pending: PendingNativeAuth) {
         prefs.edit {
+            removePendingKeys()
             putString(KEY_PROVIDER, pending.provider)
             putString(KEY_VERIFIER, pending.verifier)
             putString(KEY_CALLBACK_URI, pending.callbackUri)
@@ -83,6 +131,32 @@ class PendingNativeAuthStore internal constructor(
 
     private fun clearLocked() {
         prefs.edit { clear() }
+    }
+
+    private fun clearPendingLocked() {
+        prefs.edit { removePendingKeys() }
+    }
+
+    fun clearCancellation() {
+        synchronized(lock) {
+            clearCancellationLocked()
+        }
+    }
+
+    private fun clearCancellationLocked() {
+        prefs.edit {
+            remove(KEY_CANCELLED_PROVIDER)
+            remove(KEY_CANCELLED_CALLBACK_URI)
+            remove(KEY_CANCELLED_AT)
+        }
+    }
+
+    private fun SharedPreferences.Editor.removePendingKeys() {
+        remove(KEY_PROVIDER)
+        remove(KEY_VERIFIER)
+        remove(KEY_CALLBACK_URI)
+        remove(KEY_CREATED_AT)
+        remove(KEY_CORRELATION_ID)
     }
 
     private fun read(): PendingNativeAuth? {
@@ -104,6 +178,24 @@ class PendingNativeAuthStore internal constructor(
         )
     }
 
+    private fun readCancellation(): CancelledNativeAuth? {
+        val provider = prefs.getString(KEY_CANCELLED_PROVIDER, null) ?: return null
+        val callbackUri = prefs.getString(KEY_CANCELLED_CALLBACK_URI, null) ?: return null
+        if (!prefs.contains(KEY_CANCELLED_AT)) return null
+        if (provider.isBlank() || callbackUri.isBlank()) return null
+        return CancelledNativeAuth(
+            provider = provider,
+            callbackUri = callbackUri,
+            cancelledAtMs = prefs.getLong(KEY_CANCELLED_AT, 0L),
+        )
+    }
+
+    private data class CancelledNativeAuth(
+        val provider: String,
+        val callbackUri: String,
+        val cancelledAtMs: Long,
+    )
+
     companion object {
         const val PREFS_FILE = "getline_pending_native_auth"
 
@@ -115,6 +207,9 @@ class PendingNativeAuthStore internal constructor(
         private const val KEY_CALLBACK_URI = "callback_uri"
         private const val KEY_CREATED_AT = "created_at_ms"
         private const val KEY_CORRELATION_ID = "correlation_id"
+        private const val KEY_CANCELLED_PROVIDER = "cancelled_provider"
+        private const val KEY_CANCELLED_CALLBACK_URI = "cancelled_callback_uri"
+        private const val KEY_CANCELLED_AT = "cancelled_at_ms"
 
         /**
          * Compare base callback URIs: ignore query/fragment; require same

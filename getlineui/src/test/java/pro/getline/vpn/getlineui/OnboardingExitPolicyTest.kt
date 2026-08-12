@@ -6,7 +6,11 @@ import pro.getline.vpn.getlineui.model.GetLineProductState
 
 class OnboardingExitPolicyTest {
     @Test
-    fun standaloneIdleState_closesTheLastActivity() {
+    fun standaloneEntry_doesNotShowRedundantClose_butTerminalStateDoes() {
+        assertEquals(
+            OnboardingExitAction.None,
+            actionFor(GetLineProductState.NoProfile),
+        )
         assertEquals(
             OnboardingExitAction.Close,
             actionFor(GetLineProductState.NoSubscription, sessionEstablished = true),
@@ -84,15 +88,69 @@ class OnboardingExitPolicyTest {
         )
     }
 
+    @Test
+    fun onlyExplicitOperationWaitMakesLoadingCancelable() {
+        assertEquals(
+            OnboardingExitAction.Cancel,
+            actionFor(
+                GetLineProductState.Loading,
+                browserAuthCancelable = true,
+            ),
+        )
+        assertEquals(
+            OnboardingExitAction.Cancel,
+            actionFor(
+                GetLineProductState.Loading,
+                importWaitCancelable = true,
+            ),
+        )
+        assertEquals(
+            OnboardingExitAction.NotNow,
+            actionFor(
+                GetLineProductState.Loading,
+                importWaitCancelable = true,
+                importWaitLeavesFlow = true,
+            ),
+        )
+        assertEquals(
+            OnboardingExitAction.None,
+            actionFor(
+                GetLineProductState.PreparingVpn,
+                browserAuthCancelable = true,
+            ),
+        )
+        assertEquals(
+            OnboardingExitAction.None,
+            actionFor(
+                GetLineProductState.PreparingVpn,
+                importWaitCancelable = true,
+            ),
+        )
+        assertEquals(
+            OnboardingExitAction.Cancel,
+            actionFor(
+                GetLineProductState.Loading,
+                linkOnlySignIn = true,
+                browserAuthCancelable = true,
+            ),
+        )
+    }
+
     private fun actionFor(
         state: GetLineProductState,
         authStep: OnboardingAuthStep = OnboardingAuthStep.Providers,
         linkOnlySignIn: Boolean = false,
         sessionEstablished: Boolean = false,
+        browserAuthCancelable: Boolean = false,
+        importWaitCancelable: Boolean = false,
+        importWaitLeavesFlow: Boolean = false,
     ): OnboardingExitAction = OnboardingExitPolicy.actionFor(
         state = state,
         authStep = authStep,
         linkOnlySignIn = linkOnlySignIn,
         sessionEstablished = sessionEstablished,
+        browserAuthCancelable = browserAuthCancelable,
+        importWaitCancelable = importWaitCancelable,
+        importWaitLeavesFlow = importWaitLeavesFlow,
     )
 }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -180,6 +181,26 @@ class GetLineImportCoordinatorTest {
 
         assertEquals(GetLineImportCoordinator.ImportTerminal.Superseded, result)
         assertEquals("onTerminal must not run after reset", 0, terminals)
+    }
+
+    @Test
+    fun cancelIfActive_onlySupersedesMatchingLiveImport() = runBlocking {
+        val request = request("k-cancel", "https://example.test/cancel")
+        val waiter = async {
+            GetLineImportCoordinator.run(
+                request = request,
+                import = {
+                    delay(300)
+                    GetLineBackendResult.Success(GetLineSubscriptionId("uuid-late"))
+                },
+            )
+        }
+        delay(30)
+
+        assertFalse(GetLineImportCoordinator.cancelIfActive("foreign-key"))
+        assertTrue(GetLineImportCoordinator.cancelIfActive(request.key))
+        assertEquals(GetLineImportCoordinator.ImportTerminal.Cancelled, waiter.await())
+        assertFalse(GetLineImportCoordinator.cancelIfActive(request.key))
     }
 
     @Test

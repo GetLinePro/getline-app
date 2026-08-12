@@ -50,12 +50,15 @@ import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
 
 class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private val backend by lazy { GetLineBackendProvider.create(this) }
@@ -72,8 +75,18 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private val accountPortalLauncher = DefaultAccountPortalLauncher()
     private val imports = Channel<GetLineSubscriptionDraft>(Channel.UNLIMITED)
     private var busy = false
-    /** True after Custom Tab / external browser launch until deep-link or UI leave. */
-    private var awaitingNativeDeepLink = false
+    /** Browser attempt runs beside the request loop so explicit Cancel can be received. */
+    private var browserAuthJob: Job? = null
+    /** Custom Tab / external waits here; callback completes it after exchange. */
+    private var browserHandoffSignal: CompletableDeferred<Unit>? = null
+    /** True only while pending auth can still be atomically claimed by Cancel. */
+    private var browserAuthCancelable = false
+    /** Import wait can be left without discarding an established session/profile. */
+    private var importWaitCancelable = false
+    /** Same source drives the visible label and dismiss behavior. */
+    private var importWaitLeavesFlow = false
+    /** Exact coordinator key that a manual-import Cancel may supersede. */
+    private var activeImportKey: String? = null
     /** Single owner for the post-login step across Auth Tab / package VIEW delivery. */
     private val postLoginPipeline = PostLoginPipeline()
     /**
@@ -94,7 +107,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private var linkOnlySignIn = false
 
     override suspend fun main() {
-        val design = GetLineOnboardingDesign(this)
+        val design = GetLineOnboardingDesign(this, onDismissRequested = ::handleBackPressed)
 
         setContentDesign(design)
         // Read once: a later external import (onNewIntent) replaces the Activity
@@ -173,25 +186,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 events.onReceive {
                     when {
                         it != Event.ActivityStart || busy -> Unit
-                        // Custom Tab / external: resume is not cancel. Intermediate
-                        // onStart while the tab is still open, and ActivityStart vs
-                        // onNewIntent handoff, both fire here — clearing pending was
-                        // a false-cancel.
-                        //
-                        // Invariant: no session without an in-app start (pending only
-                        // exists after put()). Abandon window is PendingNativeAuth TTL
-                        // (~10 min), not "until first resume" — intentional so a late
-                        // deep-link after UI leave can still complete.
-                        awaitingNativeDeepLink -> {
-                            awaitingNativeDeepLink = false
-                            if (sessionRepository.hasSession()) {
-                                runPostNativeLoginImport(design)
-                            } else {
-                                // Unblock UI; pending stays until TTL / take / new put.
-                                design.showProviders()
-                                design.setProductState(entryProductState())
-                            }
-                        }
                         // Re-join only while coordinator still running (HOME without destroy).
                         // Failed imports keep pending for Retry / next cold start, not every onStart.
                         GetLineImportCoordinator.isInFlight() -> {
@@ -224,9 +218,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 design.requests.onReceive {
                     when (it) {
                         GetLineOnboardingDesign.Request.LoginTelegram ->
-                            signInWithBrowserProvider(design, AuthMethod.Telegram)
+                            startBrowserSignIn(design, AuthMethod.Telegram)
                         GetLineOnboardingDesign.Request.LoginGoogle ->
-                            signInWithBrowserProvider(design, AuthMethod.Google)
+                            startBrowserSignIn(design, AuthMethod.Google)
                         GetLineOnboardingDesign.Request.LoginEmail ->
                             openEmailEntry(design)
                         is GetLineOnboardingDesign.Request.SendEmailOtp ->
@@ -239,12 +233,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             backFromEmail(design)
                         GetLineOnboardingDesign.Request.AddExistingSubscription ->
                             if (!busy) addExistingSubscription(design)
-                        // Standalone: this is the last Activity, so finish exits the app.
-                        // Link-only: Home is still below, so finish returns to the VPN.
-                        GetLineOnboardingDesign.Request.Dismiss ->
-                            if (!busy) {
-                                finish()
-                            }
                         GetLineOnboardingDesign.Request.ScanQrCode ->
                             if (!busy) scanQrSubscription(design)
                         GetLineOnboardingDesign.Request.OpenHelp ->
@@ -443,15 +431,17 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
      */
     private suspend fun handleNativeAuthHandoff(intent: Intent) {
         val design = design ?: return
-        awaitingNativeDeepLink = false
         val success = intent.getBooleanExtra(EXTRA_NATIVE_AUTH_SUCCESS, false)
         // One-shot: config change / recreate must not re-run import or paint failure.
         clearNativeAuthExtras(intent)
+        // The callback has already claimed pending; Cancel must no longer race it.
+        setBrowserAuthCancelable(design, false)
 
         if (sessionRepository.hasSession()) {
             // Includes: success handoff, or failure handoff after sibling Auth Tab won.
             if (busy) {
                 postLoginPipeline.defer()
+                browserHandoffSignal?.complete(Unit)
                 return
             }
             runPostNativeLoginImport(design)
@@ -460,6 +450,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         if (success) {
             Log.w("native_auth_handoff success_flag_without_session")
         }
+        val waitingBrowser = browserHandoffSignal
+        waitingBrowser?.complete(Unit)
+        if (waitingBrowser != null) return
         retryTarget = RetryTarget.Refresh
         design.showProviders()
         design.setProductState(authFailureState())
@@ -475,6 +468,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     private suspend fun runPostNativeLoginImport(design: GetLineOnboardingDesign) {
+        setBrowserAuthCancelable(design, false)
         if (!postLoginPipeline.tryStart()) return
         val acquiredBusy = !busy
         if (acquiredBusy) busy = true
@@ -800,6 +794,18 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         else -> ""
     }
 
+    private fun startBrowserSignIn(
+        design: GetLineOnboardingDesign,
+        method: AuthMethod,
+    ) {
+        if (busy || browserAuthJob?.isActive == true) return
+        val job = launch { signInWithBrowserProvider(design, method) }
+        browserAuthJob = job
+        job.invokeOnCompletion {
+            if (browserAuthJob === job) browserAuthJob = null
+        }
+    }
+
     private suspend fun signInWithBrowserProvider(
         design: GetLineOnboardingDesign,
         method: AuthMethod,
@@ -818,7 +824,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         // Keep before reset and before any suspension: a Running post-login
         // pipeline owns busy, so the guard above must reject a second attempt.
         busy = true
-        awaitingNativeDeepLink = false
+        browserHandoffSignal = CompletableDeferred()
         postLoginPipeline.reset()
         design.setProductState(GetLineProductState.Loading)
 
@@ -835,7 +841,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 runPostNativeLoginImport(design)
             } else {
                 // Abandon attempt — drop pending (not an exchange re-put case).
-                pendingNativeAuthStore.clear()
+                pendingNativeAuthStore.clearPending()
                 retryTarget = RetryTarget.Refresh
                 refreshEntryState(design)
             }
@@ -843,7 +849,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             if (sessionRepository.hasSession()) {
                 runPostNativeLoginImport(design)
             } else {
-                pendingNativeAuthStore.clear()
+                pendingNativeAuthStore.clearPending()
                 retryTarget = RetryTarget.BrowserLogin(method)
                 design.setProductState(GetLineProductState.AuthFailed)
             }
@@ -852,7 +858,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 runPostNativeLoginImport(design)
             } else {
                 // Missing/foreign callback — not a re-put after take.
-                pendingNativeAuthStore.clear()
+                pendingNativeAuthStore.clearPending()
                 Log.w("browser_auth_invalid_callback method=${method.name}")
                 retryTarget = RetryTarget.BrowserLogin(method)
                 design.setProductState(GetLineProductState.AuthFailed)
@@ -864,6 +870,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         } catch (e: Exception) {
             applyBrowserLoginFailure(design, method, e)
         } finally {
+            setBrowserAuthCancelable(design, false)
+            browserHandoffSignal = null
             busy = false
             if (postLoginPipeline.isDeferred) {
                 if (sessionRepository.hasSession()) {
@@ -915,6 +923,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 correlationId = UUID.randomUUID().toString(),
             ),
         )
+        setBrowserAuthCancelable(design, true)
 
         val start = authApi.startBrowserAuth(
             method = method,
@@ -944,6 +953,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     ) {
         when (launchResult) {
             is BrowserAuthLaunchResult.Completed -> {
+                setBrowserAuthCancelable(design, false)
                 when (val parsed = AuthCallbackParser.parse(launchResult.callbackUri)) {
                     is AuthCallbackResult.NativeCode -> {
                         val pendingUri = nativeCallbackUri
@@ -984,35 +994,46 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             }
             BrowserAuthLaunchResult.AwaitingDeepLink -> {
                 // Custom Tab / external: NativeAuthCallbackActivity.
-                awaitingNativeDeepLink = true
-            }
-            BrowserAuthLaunchResult.Cancelled -> {
+                browserHandoffSignal?.await()
                 if (sessionRepository.hasSession()) {
                     runPostNativeLoginImport(design)
                 } else {
-                    pendingNativeAuthStore.clear()
+                    // Callback Activity re-puts pending on exchange/network failure.
+                    // Route through the generic failure path so Retry remains eligible.
+                    throw GetLineAuthException.Protocol("Deep-link handoff failed")
+                }
+            }
+            BrowserAuthLaunchResult.Cancelled -> {
+                setBrowserAuthCancelable(design, false)
+                if (sessionRepository.hasSession()) {
+                    runPostNativeLoginImport(design)
+                } else {
+                    pendingNativeAuthStore.clearPending()
                     throw GetLineAuthException.Cancelled()
                 }
             }
             BrowserAuthLaunchResult.VerificationFailed -> {
+                setBrowserAuthCancelable(design, false)
                 if (sessionRepository.hasSession()) {
                     runPostNativeLoginImport(design)
                 } else {
-                    pendingNativeAuthStore.clear()
+                    pendingNativeAuthStore.clearPending()
                     throw GetLineAuthException.VerificationFailed()
                 }
             }
             BrowserAuthLaunchResult.NoBrowser -> {
-                pendingNativeAuthStore.clear()
+                setBrowserAuthCancelable(design, false)
+                pendingNativeAuthStore.clearPending()
                 Log.w("browser_auth_no_browser method=${method.name}")
                 retryTarget = RetryTarget.BrowserLogin(method)
                 design.setProductState(GetLineProductState.AuthFailed)
             }
             is BrowserAuthLaunchResult.Invalid -> {
+                setBrowserAuthCancelable(design, false)
                 if (sessionRepository.hasSession()) {
                     runPostNativeLoginImport(design)
                 } else {
-                    pendingNativeAuthStore.clear()
+                    pendingNativeAuthStore.clearPending()
                     throw GetLineAuthException.InvalidCallback(launchResult.message)
                 }
             }
@@ -1037,6 +1058,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             pendingNativeAuthStore.put(pending)
             throw e
         }
+        pendingNativeAuthStore.clearCancellation()
         runPostNativeLoginImport(design)
     }
 
@@ -1051,6 +1073,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             pendingNativeAuthStore.put(pending)
             throw e
         }
+        pendingNativeAuthStore.clearCancellation()
         runPostNativeLoginImport(design)
     }
 
@@ -1084,7 +1107,14 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
      * [GetLineProductState.NoSubscription] via [applyLoginFailure].
      */
     private suspend fun importPreferredSubscription(design: GetLineOnboardingDesign) {
-        val load = sessionRepository.loadPreferredSubscriptionWithList()
+        setImportWaitCancelable(design, cancelable = true, leavesFlow = true)
+        val load = try {
+            sessionRepository.loadPreferredSubscriptionWithList()
+        } finally {
+            setImportWaitCancelable(design, false)
+        }
+        // Account-mismatch choice is intentionally non-cancelable. The concrete
+        // subscription import enables Cancel again inside importSubscription.
         continueImportFromPreferredLoad(design, load)
     }
 
@@ -1267,26 +1297,11 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         // User-driven link import (not post-login) can leave email OTP mid-flow.
         val userDrivenImport = !alreadyBusy && subscriptionIdToRemember == null
         val emailToRestore = if (userDrivenImport) pendingEmailAuth else null
+        val cancelState = design.productState
+        val cancelRetryTarget = retryTarget
 
         retryTarget = RetryTarget.ImportSubscription(
             request = request,
-            reuseId = reuseId,
-            subscriptionIdToRemember = subscriptionIdToRemember,
-            previousManagedUuidToDelete = previousManagedUuidToDelete,
-        )
-        if (!hasValidatedInternetConnection()) {
-            design.setProductState(GetLineProductState.Offline)
-            return
-        }
-
-        if (!alreadyBusy) {
-            busy = true
-        }
-        design.setProductState(GetLineProductState.Loading)
-
-        // Durable request so HOME/relaunch resumes instead of dead-ending.
-        sessionRepository.savePendingImport(
-            draft = request,
             reuseId = reuseId,
             subscriptionIdToRemember = subscriptionIdToRemember,
             previousManagedUuidToDelete = previousManagedUuidToDelete,
@@ -1296,7 +1311,30 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             subscriptionIdToRemember = subscriptionIdToRemember,
             reuseId = reuseId,
         )
+        activeImportKey = importKey
+        if (!hasValidatedInternetConnection()) {
+            activeImportKey = null
+            design.setProductState(GetLineProductState.Offline)
+            return
+        }
 
+        if (!alreadyBusy) {
+            busy = true
+        }
+        setImportWaitCancelable(
+            design = design,
+            cancelable = true,
+            leavesFlow = subscriptionIdToRemember != null || cancelState.loading,
+        )
+        design.setProductState(GetLineProductState.Loading)
+
+        // Durable request so HOME/relaunch resumes instead of dead-ending.
+        sessionRepository.savePendingImport(
+            draft = request,
+            reuseId = reuseId,
+            subscriptionIdToRemember = subscriptionIdToRemember,
+            previousManagedUuidToDelete = previousManagedUuidToDelete,
+        )
         try {
             // Process-scoped import: Activity destroy cancels this waiter only,
             // not the fetch (until supersede/reset). Terminal binding in onTerminal
@@ -1364,6 +1402,24 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     }
                 },
             )
+            if (activeImportKey == importKey) activeImportKey = null
+            setImportWaitCancelable(design, false)
+
+            if (terminal == GetLineImportCoordinator.ImportTerminal.Cancelled) {
+                if (sessionRepository.hasSession()) {
+                    if (cancelState.loading) {
+                        finish()
+                    } else {
+                        retryTarget = cancelRetryTarget
+                        design.setProductState(cancelState)
+                    }
+                } else if (emailToRestore != null) {
+                    restoreEmailAuth(design)
+                } else {
+                    refreshEntryState(design)
+                }
+                return
+            }
 
             // Prefer a newer external import over Home / fail UI.
             if (drainAndContinueImport(design)) {
@@ -1396,6 +1452,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     // a replacement (logout) leaves this Activity until navigation.
                     design.setProductState(GetLineProductState.Loading)
                 }
+                GetLineImportCoordinator.ImportTerminal.Cancelled -> Unit
             }
         } catch (e: CancellationException) {
             // UI gone (HOME / renav). Import may still be running; pending kept only
@@ -1404,6 +1461,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             Log.i("import_waiter_cancelled in_flight=${GetLineImportCoordinator.isInFlight()}")
             throw e
         } finally {
+            if (activeImportKey == importKey) activeImportKey = null
+            setImportWaitCancelable(design, false)
             if (!alreadyBusy) {
                 busy = false
             }
@@ -1514,7 +1573,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         when (val target = retryTarget) {
             RetryTarget.Refresh -> refreshEntryState(design)
             is RetryTarget.BrowserLogin ->
-                signInWithBrowserProvider(design, target.method)
+                startBrowserSignIn(design, target.method)
             is RetryTarget.EmailSend ->
                 sendEmailOtp(design, target.email)
             is RetryTarget.EmailVerify ->
@@ -1539,12 +1598,82 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     override fun handleBackPressed() {
+        if (tryCancelBrowserAuth()) return
+        if (tryCancelImportWait()) return
         if (busy) return
         val design = design
         if (design != null && design.tryNavigateEmailAuthBack()) {
             return
         }
         super.handleBackPressed()
+    }
+
+    private fun setBrowserAuthCancelable(
+        design: GetLineOnboardingDesign,
+        cancelable: Boolean,
+    ) {
+        browserAuthCancelable = cancelable
+        design.setBrowserAuthCancelable(cancelable)
+    }
+
+    private fun setImportWaitCancelable(
+        design: GetLineOnboardingDesign,
+        cancelable: Boolean,
+        leavesFlow: Boolean = false,
+    ) {
+        importWaitCancelable = cancelable
+        importWaitLeavesFlow = leavesFlow
+        design.setImportWaitCancelable(cancelable, leavesFlow)
+    }
+
+    /**
+     * Cancel wins only while pending is still unclaimed. If a callback already
+     * took it, that callback owns completion and the cancel tap is swallowed.
+     */
+    private fun tryCancelBrowserAuth(): Boolean {
+        val design = design ?: return false
+        val job = browserAuthJob
+        if (!browserAuthCancelable ||
+            job?.isActive != true ||
+            retryTarget !is RetryTarget.BrowserLogin
+        ) {
+            return false
+        }
+        setBrowserAuthCancelable(design, false)
+        launch {
+            if (withContext(Dispatchers.IO) { pendingNativeAuthStore.cancelPending() }) {
+                job.cancelAndJoin()
+                refreshEntryState(design)
+            } // Otherwise the callback already claimed pending and owns the result.
+        }
+        return true
+    }
+
+    /**
+     * Manual import is cancelled and restores its prior state. Account import
+     * keeps running headlessly; "Not now" only detaches this UI.
+     */
+    private fun tryCancelImportWait(): Boolean {
+        if (!importWaitCancelable) return false
+        val design = design ?: return false
+        val target = retryTarget
+
+        if (importWaitLeavesFlow) {
+            setImportWaitCancelable(design, false)
+            finish()
+            return true
+        }
+
+        if (target !is RetryTarget.ImportSubscription) return false
+        val key = activeImportKey ?: return false
+        setImportWaitCancelable(design, false)
+        launch {
+            if (GetLineImportCoordinator.cancelIfActive(key)) {
+                // reset/cancel invalidates onTerminal; remove the durable resume too.
+                sessionRepository.clearPendingImport()
+            }
+        }
+        return true
     }
 
     private suspend fun refreshEntryState(design: GetLineOnboardingDesign) {

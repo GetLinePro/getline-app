@@ -1,8 +1,10 @@
 package pro.getline.vpn.getline.auth
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -13,7 +15,9 @@ import pro.getline.vpn.AppEnvironment
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class PendingNativeAuthStoreTest {
-    private fun store() = PendingNativeAuthStore.testStore(RuntimeEnvironment.getApplication())
+    private fun store() = PendingNativeAuthStore
+        .testStore(RuntimeEnvironment.getApplication())
+        .also { it.clear() }
 
     private fun sample(
         createdAtMs: Long = System.currentTimeMillis(),
@@ -76,6 +80,59 @@ class PendingNativeAuthStoreTest {
         store.put(sample())
         store.clear()
         assertNull(store.peek())
+    }
+
+    @Test
+    fun expiredAttempt_canStillBeExplicitlyCancelled() {
+        val store = store()
+        store.put(
+            sample(createdAtMs = System.currentTimeMillis() - PendingNativeAuth.TTL_MS - 1),
+        )
+
+        assertTrue(store.cancelPending())
+
+        assertNull(store.peek())
+        assertTrue(
+            store.isCancellationMatching(
+                callbackUri = AppEnvironment.nativeCallbackUri,
+                allowedProviders = setOf("Google"),
+            ),
+        )
+    }
+
+    @Test
+    fun newAttempt_preservesExplicitCancelMarker() {
+        val store = store()
+        store.put(sample())
+        assertTrue(store.cancelPending())
+
+        store.put(sample().copy(correlationId = "new-attempt"))
+
+        assertTrue(
+            store.isCancellationMatching(
+                callbackUri = AppEnvironment.nativeCallbackUri,
+                allowedProviders = setOf("Google"),
+            ),
+        )
+        assertEquals("new-attempt", store.peek()!!.correlationId)
+    }
+
+    @Test
+    fun clearingNewPending_keepsCancelledPredecessorFence() {
+        val store = store()
+        store.put(sample().copy(correlationId = "attempt-a"))
+        assertTrue(store.cancelPending())
+        store.put(sample().copy(correlationId = "attempt-b"))
+
+        store.clearPending()
+
+        assertNull(store.peek())
+        assertTrue(
+            store.isCancellationMatching(
+                callbackUri = AppEnvironment.nativeCallbackUri,
+                allowedProviders = setOf("Google"),
+            ),
+        )
     }
 
     @Test

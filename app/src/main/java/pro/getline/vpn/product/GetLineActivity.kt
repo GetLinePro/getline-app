@@ -31,6 +31,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 /**
@@ -69,9 +70,9 @@ abstract class GetLineActivity<D : GetLineScreen<*>> : AppCompatActivity(),
         val requestKey = nextRequestKey.getAndIncrement().toString()
 
         ActivityResultLifecycle().use { lifecycle, start ->
-            suspendCoroutine { c ->
+            suspendCancellableCoroutine { c ->
                 activityResultRegistry.register(requestKey, lifecycle, contracts) {
-                    c.resume(it)
+                    if (c.isActive) c.resume(it)
                 }.apply { start() }.launch(input)
             }
         }

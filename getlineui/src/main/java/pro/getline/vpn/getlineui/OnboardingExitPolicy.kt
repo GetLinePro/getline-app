@@ -11,21 +11,31 @@ internal enum class OnboardingAuthStep {
 
 internal enum class OnboardingExitAction(@StringRes val label: Int) {
     None(0),
+    Cancel(R.string.cancel),
     Close(R.string.get_line_action_close),
     NotNow(R.string.get_line_action_not_now),
 }
 
-/** Visible exit for an idle onboarding screen. Loading cancellation is separate. */
+/** Visible exit for idle screens and explicitly cancellable operation waits. */
 internal object OnboardingExitPolicy {
     fun actionFor(
         state: GetLineProductState,
         authStep: OnboardingAuthStep,
         linkOnlySignIn: Boolean,
         sessionEstablished: Boolean,
+        browserAuthCancelable: Boolean,
+        importWaitCancelable: Boolean,
+        importWaitLeavesFlow: Boolean,
     ): OnboardingExitAction {
-        // New loading states must fail closed until their cancellation semantics
-        // are explicitly defined.
-        if (state.loading) return OnboardingExitAction.None
+        if (state.loading) {
+            if (state != GetLineProductState.Loading) return OnboardingExitAction.None
+            return when {
+                browserAuthCancelable -> OnboardingExitAction.Cancel
+                importWaitCancelable && importWaitLeavesFlow -> OnboardingExitAction.NotNow
+                importWaitCancelable -> OnboardingExitAction.Cancel
+                else -> OnboardingExitAction.None
+            }
+        }
 
         val loginChrome = showsLoginChrome(
             state = state,
@@ -38,7 +48,7 @@ internal object OnboardingExitPolicy {
         }
 
         return when (state) {
-            // Content is leaving; Loading cancellation belongs to the browser-race slice.
+            // Content is leaving; cancellable Loading cases returned above.
             GetLineProductState.Content,
             GetLineProductState.Loading,
             // Home-only states: explicitly outside the onboarding exit contract.
@@ -47,9 +57,16 @@ internal object OnboardingExitPolicy {
             GetLineProductState.ConnectionRestoreFailed,
             GetLineProductState.SubscriptionExpired -> OnboardingExitAction.None
 
+            // The entry provider screen already has system Back; a second exit CTA
+            // above Help only adds noise. Link-only still needs an explicit Home exit.
+            GetLineProductState.NoProfile -> if (linkOnlySignIn) {
+                OnboardingExitAction.NotNow
+            } else {
+                OnboardingExitAction.None
+            }
+
             GetLineProductState.Offline,
             GetLineProductState.BackendUnavailable,
-            GetLineProductState.NoProfile,
             GetLineProductState.ImportFailed,
             GetLineProductState.NoSubscription,
             GetLineProductState.TrialUnavailable,

@@ -286,7 +286,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/get_line_onboarding_cta_gap"
-                        android:enabled="@{actionsEnabled}"
+                        android:enabled="@{dismissVisible}"
                         android:onClick="@{() -> self.onDismiss()}"
                         android:text="@string/get_line_action_not_now"
                         android:visibility="@{dismissVisible ? View.VISIBLE : View.GONE}"

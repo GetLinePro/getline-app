@@ -19,7 +19,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
-class GetLineOnboardingDesign(context: Context) :
+class GetLineOnboardingDesign(
+    context: Context,
+    private val onDismissRequested: () -> Unit,
+) :
     GetLineScreen<GetLineOnboardingDesign.Request>(context) {
     sealed class Request {
         object LoginTelegram : Request()
@@ -32,8 +35,6 @@ class GetLineOnboardingDesign(context: Context) :
         /** Email entry → provider list. */
         object BackFromEmail : Request()
         object AddExistingSubscription : Request()
-        /** Leave idle onboarding. Standalone closes; link-only reveals the Home below. */
-        object Dismiss : Request()
         /** Product QR import (same pipeline as [AddExistingSubscription]). */
         object ScanQrCode : Request()
         /** Open existing HelpActivity (support links, about). */
@@ -61,9 +62,18 @@ class GetLineOnboardingDesign(context: Context) :
     private var linkOnlySignIn: Boolean = false
     /** Session persisted; only the subscription step is left (see [setSessionEstablished]). */
     private var sessionEstablished: Boolean = false
+    /** True only while the current browser attempt still owns cancellable pending auth. */
+    private var browserAuthCancelable: Boolean = false
+    /** True while the visible import wait has a defined Cancel destination. */
+    private var importWaitCancelable: Boolean = false
+    /** Post-session import keeps running headlessly; the UI action only leaves. */
+    private var importWaitLeavesFlow: Boolean = false
 
     override val root: View
         get() = binding.root
+
+    val productState: GetLineProductState
+        get() = lastProductState
 
     init {
         binding.self = this
@@ -373,7 +383,8 @@ class GetLineOnboardingDesign(context: Context) :
     }
 
     fun onDismiss() {
-        request(Request.Dismiss)
+        // Direct callback: the request loop may itself be suspended in import.
+        onDismissRequested()
     }
 
     /**
@@ -386,6 +397,22 @@ class GetLineOnboardingDesign(context: Context) :
         if (sessionEstablished == established) return
         sessionEstablished = established
         applyState(lastProductState)
+    }
+
+    fun setBrowserAuthCancelable(cancelable: Boolean) {
+        if (browserAuthCancelable == cancelable) return
+        browserAuthCancelable = cancelable
+        applyAuthStepVisibility(lastProductState)
+    }
+
+    fun setImportWaitCancelable(
+        cancelable: Boolean,
+        leavesFlow: Boolean = false,
+    ) {
+        if (importWaitCancelable == cancelable && importWaitLeavesFlow == leavesFlow) return
+        importWaitCancelable = cancelable
+        importWaitLeavesFlow = leavesFlow
+        applyAuthStepVisibility(lastProductState)
     }
 
     /**
@@ -510,6 +537,9 @@ class GetLineOnboardingDesign(context: Context) :
             authStep = authStep,
             linkOnlySignIn = linkOnlySignIn,
             sessionEstablished = sessionEstablished,
+            browserAuthCancelable = browserAuthCancelable,
+            importWaitCancelable = importWaitCancelable,
+            importWaitLeavesFlow = importWaitLeavesFlow,
         )
         binding.dismissVisible = exitAction != OnboardingExitAction.None
         if (exitAction != OnboardingExitAction.None) {

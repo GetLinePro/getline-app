@@ -65,6 +65,8 @@ object GetLineImportCoordinator {
 
         /** A newer import or logout invalidated this waiter; never sent to [onTerminal]. */
         data object Superseded : ImportTerminal()
+        /** Explicit user cancellation of this exact active key. */
+        data object Cancelled : ImportTerminal()
     }
 
     fun isInFlight(): Boolean {
@@ -183,6 +185,20 @@ object GetLineImportCoordinator {
         }
     }
 
+    /**
+     * Cancel only the still-active import identified by [key]. A completed or
+     * replaced import wins the race and remains authoritative.
+     */
+    suspend fun cancelIfActive(key: String): Boolean {
+        return terminalCommit.withLock {
+            mutex.withLock {
+                if (!canJoinLocked(terminal, key)) return@withLock false
+                supersedeLocked(ImportTerminal.Cancelled)
+                true
+            }
+        }
+    }
+
     private fun canJoinLocked(
         existing: CompletableDeferred<ImportTerminal>?,
         key: String,
@@ -195,15 +211,17 @@ object GetLineImportCoordinator {
 
     /**
      * Must hold [mutex]. When superseding an in-flight terminal commit, caller
-     * must also hold [terminalCommit] (see [run] / [reset]).
+     * must also hold [terminalCommit] (see [run], [reset], [cancelIfActive]).
      */
-    private fun supersedeLocked() {
+    private fun supersedeLocked(
+        waiterTerminal: ImportTerminal = ImportTerminal.Superseded,
+    ) {
         generation.incrementAndGet()
         val previous = job
         val previousTerminal = terminal
         previous?.cancel()
         if (previousTerminal != null && !previousTerminal.isCompleted) {
-            previousTerminal.complete(ImportTerminal.Superseded)
+            previousTerminal.complete(waiterTerminal)
         }
         clearBookkeepingLocked()
     }
