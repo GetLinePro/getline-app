@@ -17,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import com.github.kr328.clash.util.BinderDiedException
 import pro.getline.vpn.getline.GetLineBackendResult
 import java.io.IOException
 
@@ -156,5 +157,21 @@ class ProfileBackendCallTest {
     @Test
     fun description_survivesMissingMessageAndCause() {
         assertEquals("IOException", describeFailure(IOException()))
+    }
+
+    @Test
+    fun binderDied_isRethrown_andNotFlattenedToUnavailable() = runBlocking {
+        val reported = mutableListOf<String>()
+
+        try {
+            callProfileBackend(onUnavailable = reported::add) {
+                throw BinderDiedException()
+            }
+            fail("expected BinderDiedException")
+        } catch (_: BinderDiedException) {
+            // expected
+        }
+
+        assertTrue(reported.isEmpty())
     }
 }

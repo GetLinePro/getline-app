@@ -1074,7 +1074,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             )
                         }
                         is GetLineImportCoordinator.ImportTerminal.Unavailable -> {
-                            sessionRepository.clearPendingImport()
+                            if (result.clearsPendingImport()) {
+                                sessionRepository.clearPendingImport()
+                            }
                             // reason is a safe discriminator (kind=/code=), never raw t.message.
                             Log.w(
                                 "import_terminal unavailable " +

@@ -33,7 +33,9 @@ import com.github.kr328.clash.service.remote.IProfileManager
 import com.github.kr328.clash.util.startClashService
 import com.github.kr328.clash.util.stopClashService
 import com.github.kr328.clash.util.withClash
+import com.github.kr328.clash.util.BinderDiedException
 import com.github.kr328.clash.util.withProfile
+import com.github.kr328.clash.util.withProfileOnce
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
@@ -181,16 +183,21 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         managedId: GetLineSubscriptionId?,
     ): GetLineBackendResult<GetLineSubscriptionId> {
         // activate=true keeps orphan cleanup across setActive (same try block as commit).
-        return callProfileBackend(op = "reimport", timeoutMs = REIMPORT_TIMEOUT_MS) {
-            withProfile {
-                importPending(
-                    draft = draft,
-                    reuseId = managedId,
-                    onProgress = {},
-                    activate = true,
-                    diagnosticOp = null,
-                )
+        return try {
+            callProfileBackend(op = "reimport", timeoutMs = REIMPORT_TIMEOUT_MS) {
+                withProfileOnce {
+                    importPending(
+                        draft = draft,
+                        reuseId = managedId,
+                        onProgress = {},
+                        activate = true,
+                        diagnosticOp = null,
+                    )
+                }
             }
+        } catch (_: BinderDiedException) {
+            // Repair has no pending-import journal; keep its existing Unavailable contract.
+            GetLineBackendResult.Unavailable
         }
     }
 
@@ -204,20 +211,29 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
         var unavailableKind = "unknown"
         Log.i("profile_import start op=$op reuse=${if (reuseId == null) 0 else 1}")
 
-        val result = callProfileBackend(
-            timeoutMs = REIMPORT_TIMEOUT_MS,
-            onUnavailable = { kind -> unavailableKind = kind },
-        ) {
-            withProfile {
-                Log.i("profile_import stage=remote_acquired op=$op")
-                importPending(
-                    draft = draft,
-                    reuseId = reuseId,
-                    onProgress = onProgress,
-                    activate = false,
-                    diagnosticOp = op,
-                )
+        val result = try {
+            callProfileBackend(
+                timeoutMs = REIMPORT_TIMEOUT_MS,
+                onUnavailable = { kind -> unavailableKind = kind },
+            ) {
+                withProfileOnce {
+                    Log.i("profile_import stage=remote_acquired op=$op")
+                    importPending(
+                        draft = draft,
+                        reuseId = reuseId,
+                        onProgress = onProgress,
+                        activate = false,
+                        diagnosticOp = op,
+                    )
+                }
             }
+        } catch (e: BinderDiedException) {
+            val elapsedMs = SystemClock.elapsedRealtime() - startedAt
+            Log.w(
+                "profile_import end op=$op outcome=unavailable " +
+                    "elapsed_ms=$elapsedMs kind=binder_died",
+            )
+            throw e
         }
 
         val elapsedMs = SystemClock.elapsedRealtime() - startedAt
@@ -306,6 +322,8 @@ internal suspend fun <T> callProfileBackend(
     } catch (_: TimeoutCancellationException) {
         unavailable("timeout")
     } catch (e: CancellationException) {
+        throw e
+    } catch (e: BinderDiedException) {
         throw e
     } catch (e: Exception) {
         unavailable(describeFailure(e))

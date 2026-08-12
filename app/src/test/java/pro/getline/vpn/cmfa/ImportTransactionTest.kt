@@ -20,6 +20,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import com.github.kr328.clash.util.BinderDiedException
+import com.github.kr328.clash.util.runProfileRemoteBlock
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
@@ -338,6 +340,36 @@ class ImportTransactionTest {
         assertEquals(listOf(GetLineImportStage.Checking), stages)
     }
 
+    /**
+     * #85: commit side effect then DeadObjectException must not re-enter create.
+     * Orphan delete on the failed call is existing importPending behaviour.
+     */
+    @Test
+    fun oneShot_commitThenDeadObject_doesNotCreateAgain() = runBlocking {
+        val backend = FakeProfileManager(onCommit = { uuid, _ ->
+            markImported(uuid)
+            throw android.os.DeadObjectException("died after commit")
+        })
+        var attempts = 0
+
+        try {
+            runProfileRemoteBlock(
+                retryOnDeadObject = false,
+                onDeadObject = {},
+            ) {
+                attempts++
+                backend.importPending(draft, null, {}, activate = false, diagnosticOp = null)
+            }
+            fail("expected BinderDiedException")
+        } catch (_: BinderDiedException) {
+            // expected
+        }
+
+        assertEquals(1, attempts)
+        assertEquals(1, backend.created.size)
+        assertEquals(1, backend.committed.size)
+    }
+
     private inline fun <reified T : Throwable> assertFails(block: () -> Unit): T {
         try {
             block()
@@ -364,6 +396,7 @@ private class FakeProfileManager(
 
     val created = mutableListOf<UUID>()
     val patched = mutableListOf<UUID>()
+    val committed = mutableListOf<UUID>()
     val deleted = mutableListOf<UUID>()
     val activated = mutableListOf<UUID>()
     val updated = mutableListOf<UUID>()
@@ -406,6 +439,7 @@ private class FakeProfileManager(
     }
 
     override suspend fun commit(uuid: UUID, callback: IFetchObserver?) {
+        committed += uuid
         onCommit.invoke(this, uuid, callback)
     }
 

@@ -11,6 +11,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.github.kr328.clash.util.BinderDiedException
 import pro.getline.vpn.getline.auth.GetLineAuthException
 import pro.getline.vpn.getlineui.model.GetLineImportStage
 import java.util.concurrent.atomic.AtomicInteger
@@ -289,6 +290,63 @@ class GetLineImportCoordinatorTest {
         val a = GetLineImportCoordinator.importKey("https://x", "sub", GetLineSubscriptionId("u"))
         val b = GetLineImportCoordinator.importKey("https://x", "sub", GetLineSubscriptionId("u"))
         assertEquals(a, b)
+    }
+
+    @Test
+    fun binderDied_mapsToBinderDiedKind_andKeepsPending() = runBlocking {
+        val seen = mutableListOf<GetLineImportCoordinator.ImportTerminal.Settled>()
+        val terminal = GetLineImportCoordinator.run(
+            request = request("k-binder", "https://example.test/binder"),
+            import = { throw BinderDiedException() },
+            onTerminal = { seen += it },
+        )
+
+        val expected = GetLineImportCoordinator.ImportTerminal.Unavailable(
+            ImportUnavailableKind.BINDER_DIED,
+            "kind=binder_died",
+        )
+        assertEquals(expected, terminal)
+        assertEquals(listOf(expected), seen)
+        assertFalse(expected.clearsPendingImport())
+    }
+
+    @Test
+    fun backendUnavailable_mapsToBackendKind_andClearsPending() = runBlocking {
+        val terminal = GetLineImportCoordinator.run(
+            request = request("k-backend", "https://example.test/backend"),
+            import = { GetLineBackendResult.Unavailable },
+        )
+
+        val expected = GetLineImportCoordinator.ImportTerminal.Unavailable(
+            ImportUnavailableKind.BACKEND,
+            "kind=backend",
+        )
+        assertEquals(expected, terminal)
+        assertTrue(expected.clearsPendingImport())
+    }
+
+    @Test
+    fun thrownBackendFailure_mapsToBackendKind() = runBlocking {
+        val terminal = GetLineImportCoordinator.run(
+            request = request("k-io", "https://example.test/io"),
+            import = { throw java.io.IOException("EOF") },
+        )
+
+        assertEquals(
+            GetLineImportCoordinator.ImportTerminal.Unavailable(
+                ImportUnavailableKind.BACKEND,
+                "kind=IOException",
+            ),
+            terminal,
+        )
+    }
+
+    @Test
+    fun success_clearsPendingImport() {
+        val success = GetLineImportCoordinator.ImportTerminal.Success(
+            GetLineSubscriptionId("uuid-ok"),
+        )
+        assertTrue(success.clearsPendingImport())
     }
 
     @Test

@@ -1,5 +1,6 @@
 package pro.getline.vpn.getline
 
+import com.github.kr328.clash.util.BinderDiedException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -58,10 +59,23 @@ object GetLineImportCoordinator {
 
     sealed class ImportTerminal {
         /** Producer reached a real backend terminal and may be durably committed. */
-        sealed class Settled : ImportTerminal()
+        sealed class Settled : ImportTerminal() {
+            /**
+             * Success always clears pending. Among [Unavailable], only
+             * [ImportUnavailableKind.BACKEND] is a finished failure;
+             * [ImportUnavailableKind.BINDER_DIED] is ambiguous and must keep pending.
+             */
+            fun clearsPendingImport(): Boolean = when (this) {
+                is Success -> true
+                is Unavailable -> kind == ImportUnavailableKind.BACKEND
+            }
+        }
 
         data class Success(val id: GetLineSubscriptionId) : Settled()
-        data class Unavailable(val reason: String? = null) : Settled()
+        data class Unavailable(
+            val kind: ImportUnavailableKind,
+            val reason: String? = null,
+        ) : Settled()
 
         /** A newer import or logout invalidated this waiter; never sent to [onTerminal]. */
         data object Superseded : ImportTerminal()
@@ -120,13 +134,24 @@ object GetLineImportCoordinator {
                                     ImportTerminal.Success(result.value)
                                 GetLineBackendResult.Unavailable ->
                                     // Safe discriminator for GL-19 — never a raw exception body.
-                                    ImportTerminal.Unavailable("kind=backend")
+                                    ImportTerminal.Unavailable(
+                                        ImportUnavailableKind.BACKEND,
+                                        "kind=backend",
+                                    )
                             }
                         } catch (cancelled: CancellationException) {
                             throw cancelled
+                        } catch (_: BinderDiedException) {
+                            ImportTerminal.Unavailable(
+                                ImportUnavailableKind.BINDER_DIED,
+                                "kind=binder_died",
+                            )
                         } catch (t: Throwable) {
                             // kind + optional HTTP code only; t.message may hold response bodies.
-                            ImportTerminal.Unavailable(importUnavailableReason(t))
+                            ImportTerminal.Unavailable(
+                                ImportUnavailableKind.BACKEND,
+                                importUnavailableReason(t),
+                            )
                         }
 
                         // Gen check + full durable commit under terminalCommit.
@@ -244,6 +269,11 @@ object GetLineImportCoordinator {
             reuseId?.value.orEmpty(),
         ).joinToString("|")
     }
+}
+
+enum class ImportUnavailableKind {
+    BACKEND,
+    BINDER_DIED,
 }
 
 /**
