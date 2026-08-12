@@ -76,6 +76,26 @@ func patchGeneral(cfg *config.RawConfig, _ string) error {
 	// ExternalUI used to be set here when a controller address was present.
 	// Controllers are hard-cleared by patchExternalController immediately above.
 
+	// tls.custom-certifactes seeds the core's global CA pool: applying a config
+	// resets the pool and adds this field's certificates (hub/executor). The
+	// pool then backs every TLS the core speaks — rule/proxy provider and
+	// geodata fetches (component/http), DoT/DoQ resolvers (dns/dot.go,
+	// dns/doq.go), and the TLS leg of outbound adapters.
+	//
+	// The primary profile YAML is not in that set: since #75 an https:// Url
+	// profile is fetched by the platform downloader on the Kotlin side
+	// (ProfileProcessor.shouldUsePlatformPrimaryConfigTransport), and only
+	// http:// profiles still take the core's own fetch path.
+	//
+	// Ordering favours the attacker rather than us: the pool is rebuilt on
+	// apply, so a CA does not affect the fetch that carried it, but everything
+	// after. Applied once, a profile could intercept its own provider updates.
+	//
+	// The app has no private-CA scenario and the override slot does not carry
+	// this field. The rest of the tls: section only feeds the external
+	// controller's own listener, which patchExternalController disabled above.
+	cfg.TLS.CustomTrustCert = nil
+
 	return nil
 }
 

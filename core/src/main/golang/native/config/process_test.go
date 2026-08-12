@@ -224,6 +224,109 @@ rules: []
 	)
 }
 
+// A CA from the profile is trusted by every TLS the core speaks once the config
+// is applied — provider and geodata fetches, DoT/DoQ, outbound TLS. Both entry
+// points are covered: the YAML key is misspelled upstream
+// ("custom-certifactes"), so a subscription case that silently parses into
+// nothing would pass vacuously.
+func TestCustomTrustCertIsDropped(t *testing.T) {
+	profile := `
+tls:
+  custom-certifactes:
+    - |
+      -----BEGIN CERTIFICATE-----
+      hostile
+      -----END CERTIFICATE-----
+proxies:
+  - name: sentinel-proxy
+    type: socks5
+    server: 127.0.0.1
+    port: 1080
+proxy-groups:
+  - name: sentinel-group
+    type: select
+    proxies:
+      - sentinel-proxy
+rule-providers:
+  sentinel-provider:
+    type: http
+    behavior: domain
+    url: https://example.invalid/sentinel.yaml
+rules:
+  - RULE-SET,sentinel-provider,sentinel-group
+  - MATCH,DIRECT
+`
+
+	t.Run("from subscription", func(t *testing.T) {
+		raw, err := config.UnmarshalRawConfig([]byte(profile))
+		if err != nil {
+			t.Fatalf("UnmarshalRawConfig: %v", err)
+		}
+		if len(raw.TLS.CustomTrustCert) == 0 {
+			t.Fatal("profile did not parse into CustomTrustCert — test would pass vacuously")
+		}
+
+		if err := process(raw, t.TempDir()); err != nil {
+			t.Fatalf("process: %v", err)
+		}
+
+		if len(raw.TLS.CustomTrustCert) != 0 {
+			t.Fatalf("custom trust cert not dropped: %v", raw.TLS.CustomTrustCert)
+		}
+		assertRoutingPreserved(t, raw)
+	})
+
+	t.Run("from override slot", func(t *testing.T) {
+		raw, err := config.UnmarshalRawConfig([]byte(profile))
+		if err != nil {
+			t.Fatalf("UnmarshalRawConfig: %v", err)
+		}
+
+		WriteOverride(OverrideSlotSession, `{"tls":{"custom-certifactes":["from-override"]}}`)
+		defer ClearOverride(OverrideSlotSession)
+
+		if err := process(raw, t.TempDir()); err != nil {
+			t.Fatalf("process: %v", err)
+		}
+
+		if len(raw.TLS.CustomTrustCert) != 0 {
+			t.Fatalf("custom trust cert not dropped: %v", raw.TLS.CustomTrustCert)
+		}
+		assertRoutingPreserved(t, raw)
+	})
+}
+
+// assertRoutingPreserved is the other half of app ownership: routing belongs to
+// the subscription, so taking a field away must not cost it proxies, groups,
+// rules or providers. Only the provider path is app-owned (patchProviders
+// rewrites it into the profile directory) — its url and behavior are not.
+func assertRoutingPreserved(t *testing.T, raw *config.RawConfig) {
+	t.Helper()
+
+	if len(raw.Proxy) != 1 || raw.Proxy[0]["name"] != "sentinel-proxy" {
+		t.Fatalf("proxies not preserved: %v", raw.Proxy)
+	}
+	if len(raw.ProxyGroup) != 1 || raw.ProxyGroup[0]["name"] != "sentinel-group" {
+		t.Fatalf("proxy-groups not preserved: %v", raw.ProxyGroup)
+	}
+	if len(raw.Rule) != 2 ||
+		raw.Rule[0] != "RULE-SET,sentinel-provider,sentinel-group" ||
+		raw.Rule[1] != "MATCH,DIRECT" {
+		t.Fatalf("rules not preserved: %v", raw.Rule)
+	}
+
+	provider, ok := raw.RuleProvider["sentinel-provider"]
+	if !ok {
+		t.Fatalf("rule-providers not preserved: %v", raw.RuleProvider)
+	}
+	if provider["url"] != "https://example.invalid/sentinel.yaml" {
+		t.Fatalf("rule-provider url rewritten: %v", provider["url"])
+	}
+	if provider["behavior"] != "domain" {
+		t.Fatalf("rule-provider behavior rewritten: %v", provider["behavior"])
+	}
+}
+
 func assertInboundOwned(t *testing.T, raw *config.RawConfig) {
 	t.Helper()
 	if raw.Port != 0 || raw.SocksPort != 0 || raw.RedirPort != 0 || raw.TProxyPort != 0 || raw.MixedPort != 0 {
