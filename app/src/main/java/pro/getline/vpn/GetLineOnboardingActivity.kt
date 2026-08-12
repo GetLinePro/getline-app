@@ -28,6 +28,8 @@ import pro.getline.vpn.getline.auth.AuthCallbackResult
 import pro.getline.vpn.getline.auth.AuthTabRedirectMode
 import pro.getline.vpn.getline.auth.BrowserAuthLauncher
 import pro.getline.vpn.getline.auth.BrowserAuthLaunchResult
+import pro.getline.vpn.getline.auth.BrowserLoginFailureDisposition
+import pro.getline.vpn.getline.auth.BrowserLoginFailurePolicy
 import pro.getline.vpn.getline.auth.browserRungCeilingFor
 import pro.getline.vpn.getline.auth.AuthMethod
 import pro.getline.vpn.getline.auth.GetLineAuthException
@@ -868,19 +870,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         } catch (e: CancellationException) {
             throw e
         } catch (e: GetLineAuthException) {
-            if (sessionRepository.hasSession()) {
-                runPostNativeLoginImport(design)
-            } else {
-                // Exchange/network failure: completeLoginFrom* may have re-put pending.
-                // Do not clear — Retry within TTL can still use dual delivery / re-tap.
-                applyLoginFailure(design, RetryTarget.BrowserLogin(method), e)
-            }
+            applyBrowserLoginFailure(design, method, e)
         } catch (e: Exception) {
-            if (sessionRepository.hasSession()) {
-                runPostNativeLoginImport(design)
-            } else {
-                applyLoginFailure(design, RetryTarget.BrowserLogin(method), e)
-            }
+            applyBrowserLoginFailure(design, method, e)
         } finally {
             busy = false
             if (deferredNativeImport &&
@@ -890,6 +882,34 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 runPostNativeLoginImport(design)
             } else {
                 deferredNativeImport = false
+            }
+        }
+    }
+
+    /**
+     * Routes a throw from [signInNativePkce] after exchange and/or post-session
+     * subscription load. See [BrowserLoginFailurePolicy].
+     */
+    private suspend fun applyBrowserLoginFailure(
+        design: GetLineOnboardingDesign,
+        method: AuthMethod,
+        error: Exception,
+    ) {
+        when (
+            BrowserLoginFailurePolicy.disposition(
+                hasSession = sessionRepository.hasSession(),
+                postLoginImportConsumed = postLoginImportConsumed,
+            )
+        ) {
+            BrowserLoginFailureDisposition.PostSessionFailure ->
+                applyLoginFailure(design, RetryTarget.ImportPreferredSubscription, error)
+            BrowserLoginFailureDisposition.SiblingSessionImport ->
+                // Package VIEW established the session while Auth Tab path threw.
+                runPostNativeLoginImport(design)
+            BrowserLoginFailureDisposition.PreSessionFailure -> {
+                // Exchange/network failure: completeLoginFrom* may have re-put pending.
+                // Do not clear — Retry within TTL can still use dual delivery / re-tap.
+                applyLoginFailure(design, RetryTarget.BrowserLogin(method), error)
             }
         }
     }
