@@ -23,9 +23,8 @@ import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
 import pro.getline.vpn.getline.activateImportedProfileWhenForeground
 import pro.getline.vpn.getline.runPendingManagedProfileCleanup
-import pro.getline.vpn.getline.auth.AuthCallbackParser
-import pro.getline.vpn.getline.auth.AuthCallbackResult
 import pro.getline.vpn.getline.auth.AuthTabRedirectMode
+import pro.getline.vpn.getline.auth.BrowserAuthFlow
 import pro.getline.vpn.getline.auth.BrowserAuthLauncher
 import pro.getline.vpn.getline.auth.BrowserAuthLaunchResult
 import pro.getline.vpn.getline.auth.browserRungCeilingFor
@@ -36,13 +35,9 @@ import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.GetLineSessionStorageException
 import pro.getline.vpn.getline.auth.LinkOnlyBindingPolicy
-import pro.getline.vpn.getline.auth.NativeAuthPkce
-import pro.getline.vpn.getline.auth.PendingNativeAuth
 import pro.getline.vpn.getline.auth.PendingNativeAuthStore
-import pro.getline.vpn.getline.auth.PostLoginPipeline
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
 import pro.getline.vpn.getline.auth.SubscriptionLinkMatcher
-import java.util.UUID
 import pro.getline.vpn.getline.accountportal.AccountPortalLaunchResult
 import pro.getline.vpn.getline.accountportal.AccountPortalUriPolicy
 import pro.getline.vpn.getline.accountportal.DefaultAccountPortalLauncher
@@ -50,7 +45,6 @@ import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
@@ -58,7 +52,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
-import kotlinx.coroutines.withContext
 
 class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private val backend by lazy { GetLineBackendProvider.create(this) }
@@ -72,23 +65,26 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
     private val browserAuthLauncher = BrowserAuthLauncher()
     private val pendingNativeAuthStore by lazy { PendingNativeAuthStore(this) }
+    /** Owns one browser sign-in attempt and its delivery races (see [BrowserAuthFlow]). */
+    private val browserAuth by lazy {
+        BrowserAuthFlow(
+            sessionRepository = sessionRepository,
+            pendingNativeAuthStore = pendingNativeAuthStore,
+            authApi = authApi,
+            host = BrowserAuthHost(),
+        )
+    }
     private val accountPortalLauncher = DefaultAccountPortalLauncher()
     private val imports = Channel<GetLineSubscriptionDraft>(Channel.UNLIMITED)
     private var busy = false
     /** Browser attempt runs beside the request loop so explicit Cancel can be received. */
     private var browserAuthJob: Job? = null
-    /** Custom Tab / external waits here; callback completes it after exchange. */
-    private var browserHandoffSignal: CompletableDeferred<Unit>? = null
-    /** True only while pending auth can still be atomically claimed by Cancel. */
-    private var browserAuthCancelable = false
     /** Import wait can be left without discarding an established session/profile. */
     private var importWaitCancelable = false
     /** Same source drives the visible label and dismiss behavior. */
     private var importWaitLeavesFlow = false
     /** Exact coordinator key that a manual-import Cancel may supersede. */
     private var activeImportKey: String? = null
-    /** Single owner for the post-login step across Auth Tab / package VIEW delivery. */
-    private val postLoginPipeline = PostLoginPipeline()
     /**
      * Completes on each [onStart]; replaced on [onStop] so [awaitActivityStarted]
      * can suspend without polling or competing for [events].
@@ -218,9 +214,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 design.requests.onReceive {
                     when (it) {
                         GetLineOnboardingDesign.Request.LoginTelegram ->
-                            startBrowserSignIn(design, AuthMethod.Telegram)
+                            startBrowserSignIn(AuthMethod.Telegram)
                         GetLineOnboardingDesign.Request.LoginGoogle ->
-                            startBrowserSignIn(design, AuthMethod.Google)
+                            startBrowserSignIn(AuthMethod.Google)
                         GetLineOnboardingDesign.Request.LoginEmail ->
                             openEmailEntry(design)
                         is GetLineOnboardingDesign.Request.SendEmailOtp ->
@@ -430,32 +426,12 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
      * be established (success) or the attempt failed (no session).
      */
     private suspend fun handleNativeAuthHandoff(intent: Intent) {
-        val design = design ?: return
+        // onNewIntent can arrive before main() installs the design.
+        if (design == null) return
         val success = intent.getBooleanExtra(EXTRA_NATIVE_AUTH_SUCCESS, false)
         // One-shot: config change / recreate must not re-run import or paint failure.
         clearNativeAuthExtras(intent)
-        // The callback has already claimed pending; Cancel must no longer race it.
-        setBrowserAuthCancelable(design, false)
-
-        if (sessionRepository.hasSession()) {
-            // Includes: success handoff, or failure handoff after sibling Auth Tab won.
-            if (busy) {
-                postLoginPipeline.defer()
-                browserHandoffSignal?.complete(Unit)
-                return
-            }
-            runPostNativeLoginImport(design)
-            return
-        }
-        if (success) {
-            Log.w("native_auth_handoff success_flag_without_session")
-        }
-        val waitingBrowser = browserHandoffSignal
-        waitingBrowser?.complete(Unit)
-        if (waitingBrowser != null) return
-        retryTarget = RetryTarget.Refresh
-        design.showProviders()
-        design.setProductState(authFailureState())
+        browserAuth.onDeepLinkHandoff(success)
     }
 
     private fun clearNativeAuthExtras(intent: Intent) {
@@ -465,28 +441,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         if (intent === this.intent) return
         this.intent?.removeExtra(EXTRA_NATIVE_AUTH_HANDLED)
         this.intent?.removeExtra(EXTRA_NATIVE_AUTH_SUCCESS)
-    }
-
-    private suspend fun runPostNativeLoginImport(design: GetLineOnboardingDesign) {
-        setBrowserAuthCancelable(design, false)
-        if (!postLoginPipeline.tryStart()) return
-        val acquiredBusy = !busy
-        if (acquiredBusy) busy = true
-        try {
-            design.setProductState(GetLineProductState.Loading)
-            retryTarget = RetryTarget.ImportPreferredSubscription
-            design.setSessionEstablished(true)
-            importPreferredSubscription(design)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: GetLineAuthException) {
-            applyLoginFailure(design, RetryTarget.ImportPreferredSubscription, e)
-        } catch (e: Exception) {
-            applyLoginFailure(design, RetryTarget.ImportPreferredSubscription, e)
-        } finally {
-            postLoginPipeline.finish()
-            if (acquiredBusy) busy = false
-        }
     }
 
     private suspend fun openEmailEntry(design: GetLineOnboardingDesign) {
@@ -795,286 +749,14 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     private fun startBrowserSignIn(
-        design: GetLineOnboardingDesign,
         method: AuthMethod,
     ) {
         if (busy || browserAuthJob?.isActive == true) return
-        val job = launch { signInWithBrowserProvider(design, method) }
+        val job = launch { browserAuth.signIn(method) }
         browserAuthJob = job
         job.invokeOnCompletion {
             if (browserAuthJob === job) browserAuthJob = null
         }
-    }
-
-    private suspend fun signInWithBrowserProvider(
-        design: GetLineOnboardingDesign,
-        method: AuthMethod,
-    ) {
-        if (busy) return
-        require(method.requiresBrowser()) {
-            "AuthMethod.$method does not use browser auth"
-        }
-
-        retryTarget = RetryTarget.BrowserLogin(method)
-        if (!hasValidatedInternetConnection()) {
-            design.setProductState(GetLineProductState.Offline)
-            return
-        }
-
-        // Keep before reset and before any suspension: a Running post-login
-        // pipeline owns busy, so the guard above must reject a second attempt.
-        busy = true
-        browserHandoffSignal = CompletableDeferred()
-        postLoginPipeline.reset()
-        design.setProductState(GetLineProductState.Loading)
-
-        try {
-            when (method) {
-                AuthMethod.Google,
-                AuthMethod.Telegram,
-                -> signInNativePkce(design, method)
-                AuthMethod.Email -> error("unreachable: Email requiresBrowser is false")
-            }
-        } catch (_: GetLineAuthException.Cancelled) {
-            if (sessionRepository.hasSession()) {
-                // Package VIEW completed while Auth Tab reported cancel.
-                runPostNativeLoginImport(design)
-            } else {
-                // Abandon attempt — drop pending (not an exchange re-put case).
-                pendingNativeAuthStore.clearPending()
-                retryTarget = RetryTarget.Refresh
-                refreshEntryState(design)
-            }
-        } catch (_: GetLineAuthException.VerificationFailed) {
-            if (sessionRepository.hasSession()) {
-                runPostNativeLoginImport(design)
-            } else {
-                pendingNativeAuthStore.clearPending()
-                retryTarget = RetryTarget.BrowserLogin(method)
-                design.setProductState(GetLineProductState.AuthFailed)
-            }
-        } catch (_: GetLineAuthException.InvalidCallback) {
-            if (sessionRepository.hasSession()) {
-                runPostNativeLoginImport(design)
-            } else {
-                // Missing/foreign callback — not a re-put after take.
-                pendingNativeAuthStore.clearPending()
-                Log.w("browser_auth_invalid_callback method=${method.name}")
-                retryTarget = RetryTarget.BrowserLogin(method)
-                design.setProductState(GetLineProductState.AuthFailed)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: GetLineAuthException) {
-            applyBrowserLoginFailure(design, method, e)
-        } catch (e: Exception) {
-            applyBrowserLoginFailure(design, method, e)
-        } finally {
-            setBrowserAuthCancelable(design, false)
-            browserHandoffSignal = null
-            busy = false
-            if (postLoginPipeline.isDeferred) {
-                if (sessionRepository.hasSession()) {
-                    runPostNativeLoginImport(design)
-                } else {
-                    // Keep a late package callback eligible to own the step.
-                    postLoginPipeline.clearDeferred()
-                }
-            }
-        }
-    }
-
-    /**
-     * Routes a throw from [signInNativePkce]. Post-session failures are handled
-     * inside [runPostNativeLoginImport], so a live session here belongs to the
-     * sibling package callback and still needs one import attempt.
-     */
-    private suspend fun applyBrowserLoginFailure(
-        design: GetLineOnboardingDesign,
-        method: AuthMethod,
-        error: Exception,
-    ) {
-        if (sessionRepository.hasSession()) {
-            // Package VIEW established the session while Auth Tab path threw.
-            runPostNativeLoginImport(design)
-        } else {
-            // Exchange/network failure: completeLoginFrom* may have re-put pending.
-            // Do not clear — Retry within TTL can still use dual delivery / re-tap.
-            applyLoginFailure(design, RetryTarget.BrowserLogin(method), error)
-        }
-    }
-
-    /**
-     * Browser provider: app-owned PKCE + native package callback.
-     * Caller holds [busy]; does not clear it.
-     */
-    private suspend fun signInNativePkce(
-        design: GetLineOnboardingDesign,
-        method: AuthMethod,
-    ) {
-        val pkce = NativeAuthPkce.generate()
-        val callbackUri = AppEnvironment.nativeCallbackUri
-        pendingNativeAuthStore.put(
-            PendingNativeAuth(
-                provider = method.name,
-                verifier = pkce.verifier,
-                callbackUri = callbackUri,
-                createdAtMs = System.currentTimeMillis(),
-                correlationId = UUID.randomUUID().toString(),
-            ),
-        )
-        setBrowserAuthCancelable(design, true)
-
-        val start = authApi.startBrowserAuth(
-            method = method,
-            codeChallenge = pkce.challenge,
-            appRedirect = callbackUri,
-        )
-        Log.i("browser_auth_launch method=${method.name}")
-        val launchResult = browserAuthLauncher.launch(
-            activity = this,
-            authUrl = start.authUrl,
-            redirectMode = AuthTabRedirectMode.NativeScheme,
-            rungCeiling = browserRungCeilingFor(method),
-        )
-        handleBrowserLaunchResult(
-            design = design,
-            method = method,
-            launchResult = launchResult,
-            nativeCallbackUri = callbackUri,
-        )
-    }
-
-    private suspend fun handleBrowserLaunchResult(
-        design: GetLineOnboardingDesign,
-        method: AuthMethod,
-        launchResult: BrowserAuthLaunchResult,
-        nativeCallbackUri: String?,
-    ) {
-        when (launchResult) {
-            is BrowserAuthLaunchResult.Completed -> {
-                setBrowserAuthCancelable(design, false)
-                when (val parsed = AuthCallbackParser.parse(launchResult.callbackUri)) {
-                    is AuthCallbackResult.NativeCode -> {
-                        val pendingUri = nativeCallbackUri
-                            ?: AppEnvironment.nativeCallbackUri
-                        val pending = pendingNativeAuthStore.takeIfMatches(
-                            callbackUri = pendingUri,
-                            provider = method.name,
-                        )
-                        if (pending != null) {
-                            completeLoginFromNativeCode(design, parsed.code, pending)
-                        } else if (sessionRepository.hasSession()) {
-                            // Package VIEW already established via NativeAuthCallbackActivity.
-                            runPostNativeLoginImport(design)
-                        } else {
-                            throw GetLineAuthException.InvalidCallback("No matching pending auth")
-                        }
-                    }
-                    is AuthCallbackResult.WebToken -> {
-                        val gateUri = nativeCallbackUri
-                            ?: AppEnvironment.nativeCallbackUri
-                        val pending = pendingNativeAuthStore.takeIfMatches(
-                            callbackUri = gateUri,
-                            provider = AuthMethod.Telegram.name,
-                        )
-                        if (pending != null) {
-                            completeLoginFromWebTokenRestoringPending(
-                                design,
-                                parsed.authToken,
-                                pending,
-                            )
-                        } else if (sessionRepository.hasSession()) {
-                            runPostNativeLoginImport(design)
-                        } else {
-                            throw GetLineAuthException.InvalidCallback("No matching pending auth")
-                        }
-                    }
-                }
-            }
-            BrowserAuthLaunchResult.AwaitingDeepLink -> {
-                // Custom Tab / external: NativeAuthCallbackActivity.
-                browserHandoffSignal?.await()
-                if (sessionRepository.hasSession()) {
-                    runPostNativeLoginImport(design)
-                } else {
-                    // Callback Activity re-puts pending on exchange/network failure.
-                    // Route through the generic failure path so Retry remains eligible.
-                    throw GetLineAuthException.Protocol("Deep-link handoff failed")
-                }
-            }
-            BrowserAuthLaunchResult.Cancelled -> {
-                setBrowserAuthCancelable(design, false)
-                if (sessionRepository.hasSession()) {
-                    runPostNativeLoginImport(design)
-                } else {
-                    pendingNativeAuthStore.clearPending()
-                    throw GetLineAuthException.Cancelled()
-                }
-            }
-            BrowserAuthLaunchResult.VerificationFailed -> {
-                setBrowserAuthCancelable(design, false)
-                if (sessionRepository.hasSession()) {
-                    runPostNativeLoginImport(design)
-                } else {
-                    pendingNativeAuthStore.clearPending()
-                    throw GetLineAuthException.VerificationFailed()
-                }
-            }
-            BrowserAuthLaunchResult.NoBrowser -> {
-                setBrowserAuthCancelable(design, false)
-                pendingNativeAuthStore.clearPending()
-                Log.w("browser_auth_no_browser method=${method.name}")
-                retryTarget = RetryTarget.BrowserLogin(method)
-                design.setProductState(GetLineProductState.AuthFailed)
-            }
-            is BrowserAuthLaunchResult.Invalid -> {
-                setBrowserAuthCancelable(design, false)
-                if (sessionRepository.hasSession()) {
-                    runPostNativeLoginImport(design)
-                } else {
-                    pendingNativeAuthStore.clearPending()
-                    throw GetLineAuthException.InvalidCallback(launchResult.message)
-                }
-            }
-        }
-    }
-
-    /**
-     * Native PKCE post-callback (Auth Tab). On exchange failure re-puts the same
-     * pending so a dual-delivery sibling (package VIEW) can still take it within
-     * TTL. In-app Retry for exchange errors re-runs browser login (new pending),
-     * not a browserless re-submit of the consumed code.
-     * Caller must hold [busy] = true; this method does not clear it.
-     */
-    private suspend fun completeLoginFromNativeCode(
-        design: GetLineOnboardingDesign,
-        code: String,
-        pending: PendingNativeAuth,
-    ) {
-        try {
-            sessionRepository.establishFromNativeCode(code, pending.verifier)
-        } catch (e: Exception) {
-            pendingNativeAuthStore.put(pending)
-            throw e
-        }
-        pendingNativeAuthStore.clearCancellation()
-        runPostNativeLoginImport(design)
-    }
-
-    private suspend fun completeLoginFromWebTokenRestoringPending(
-        design: GetLineOnboardingDesign,
-        webToken: String,
-        pending: PendingNativeAuth,
-    ) {
-        try {
-            sessionRepository.establishFromWebToken(webToken)
-        } catch (e: Exception) {
-            pendingNativeAuthStore.put(pending)
-            throw e
-        }
-        pendingNativeAuthStore.clearCancellation()
-        runPostNativeLoginImport(design)
     }
 
     /**
@@ -1573,7 +1255,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         when (val target = retryTarget) {
             RetryTarget.Refresh -> refreshEntryState(design)
             is RetryTarget.BrowserLogin ->
-                startBrowserSignIn(design, target.method)
+                startBrowserSignIn(target.method)
             is RetryTarget.EmailSend ->
                 sendEmailOtp(design, target.email)
             is RetryTarget.EmailVerify ->
@@ -1608,14 +1290,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         super.handleBackPressed()
     }
 
-    private fun setBrowserAuthCancelable(
-        design: GetLineOnboardingDesign,
-        cancelable: Boolean,
-    ) {
-        browserAuthCancelable = cancelable
-        design.setBrowserAuthCancelable(cancelable)
-    }
-
     private fun setImportWaitCancelable(
         design: GetLineOnboardingDesign,
         cancelable: Boolean,
@@ -1633,15 +1307,15 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private fun tryCancelBrowserAuth(): Boolean {
         val design = design ?: return false
         val job = browserAuthJob
-        if (!browserAuthCancelable ||
+        if (!browserAuth.isCancelable ||
             job?.isActive != true ||
             retryTarget !is RetryTarget.BrowserLogin
         ) {
             return false
         }
-        setBrowserAuthCancelable(design, false)
+        browserAuth.setCancelable(false)
         launch {
-            if (withContext(Dispatchers.IO) { pendingNativeAuthStore.cancelPending() }) {
+            if (browserAuth.claimCancel()) {
                 job.cancelAndJoin()
                 refreshEntryState(design)
             } // Otherwise the callback already claimed pending and owns the result.
@@ -1833,6 +1507,86 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             GetLineProductState.AuthFailed
         } else {
             GetLineProductState.Offline
+        }
+    }
+
+    /**
+     * Activity side of [BrowserAuthFlow]: the screen-wide busy guard, the retry
+     * target shared with the email/import flows, the design surface, and the two
+     * calls that need an Activity (browser launch, VPN-less connectivity probe).
+     *
+     * Design calls are no-ops before [main] installs the design; every flow entry
+     * point is reached after that (the deep-link handoff checks explicitly).
+     */
+    private inner class BrowserAuthHost : BrowserAuthFlow.Host {
+        override val isBusy: Boolean
+            get() = busy
+
+        override fun setBusy(busy: Boolean) {
+            this@GetLineOnboardingActivity.busy = busy
+        }
+
+        override fun isOnline(): Boolean = hasValidatedInternetConnection()
+
+        override fun markRetryBrowserLogin(method: AuthMethod) {
+            retryTarget = RetryTarget.BrowserLogin(method)
+        }
+
+        override fun markRetryRefresh() {
+            retryTarget = RetryTarget.Refresh
+        }
+
+        override fun markRetryImportPreferred() {
+            retryTarget = RetryTarget.ImportPreferredSubscription
+        }
+
+        override suspend fun setProductState(state: GetLineProductState) {
+            design?.setProductState(state)
+        }
+
+        override suspend fun setSessionEstablished(established: Boolean) {
+            design?.setSessionEstablished(established)
+        }
+
+        override suspend fun showProviders() {
+            design?.showProviders()
+        }
+
+        override suspend fun refreshEntryState() {
+            val design = design ?: return
+            this@GetLineOnboardingActivity.refreshEntryState(design)
+        }
+
+        override fun setCancelable(cancelable: Boolean) {
+            design?.setBrowserAuthCancelable(cancelable)
+        }
+
+        override fun authFailureState(): GetLineProductState =
+            this@GetLineOnboardingActivity.authFailureState()
+
+        override suspend fun launchBrowser(
+            method: AuthMethod,
+            authUrl: String,
+        ): BrowserAuthLaunchResult = browserAuthLauncher.launch(
+            activity = this@GetLineOnboardingActivity,
+            authUrl = authUrl,
+            redirectMode = AuthTabRedirectMode.NativeScheme,
+            rungCeiling = browserRungCeilingFor(method),
+        )
+
+        override suspend fun importPreferredSubscription() {
+            val design = design ?: return
+            this@GetLineOnboardingActivity.importPreferredSubscription(design)
+        }
+
+        override suspend fun applyBrowserLoginFailure(method: AuthMethod, error: Exception) {
+            val design = design ?: return
+            applyLoginFailure(design, RetryTarget.BrowserLogin(method), error)
+        }
+
+        override suspend fun applyPostLoginFailure(error: Exception) {
+            val design = design ?: return
+            applyLoginFailure(design, RetryTarget.ImportPreferredSubscription, error)
         }
     }
 
