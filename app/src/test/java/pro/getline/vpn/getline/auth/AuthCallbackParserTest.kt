@@ -93,6 +93,19 @@ class AuthCallbackParserTest {
     }
 
     @Test
+    fun parse_nativeSspPrefixLookalike_rejected() {
+        val uri = Uri.parse(
+            "${AppEnvironment.nativeCallbackScheme}:/oauth2redirect-evil?code=token",
+        )
+        try {
+            AuthCallbackParser.parse(uri)
+            fail("expected InvalidCallback for SSP prefix lookalike")
+        } catch (_: GetLineAuthException.InvalidCallback) {
+            // expected
+        }
+    }
+
+    @Test
     fun parse_wrongHttpsHost_rejected() {
         val uri = Uri.parse("https://evil.example/#/login?auth_token=token")
         try {

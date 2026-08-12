@@ -106,7 +106,7 @@ jobs:
             :app:processAlphaProdDebugMainManifest
           ./scripts/check-advanced-release-gate.sh --require-merged
 
-      - name: Build
+      - name: Lint app and build
         if: success()
         env:
           # Pull requests build the primary ABI only: every extra ABI is a full
@@ -117,7 +117,13 @@ jobs:
           ABI_ARGS: ${{ github.event_name == 'pull_request' && '-Pgetline.abis=arm64-v8a' || '' }}
         run: |
           df -h / | tail -1
-          ./gradlew --no-daemon $ABI_ARGS app:assembleAlphaProdRelease
+          # Product scope only: :app excludes inherited CMFA code/resources via
+          # app/lint.xml; :getlineui is fully owned here. Do not add the
+          # inherited CMFA library modules or checkDependencies.
+          ./gradlew --no-daemon $ABI_ARGS \
+            app:lintAlphaProdRelease \
+            getlineui:lintAlphaRelease \
+            app:assembleAlphaProdRelease
           df -h / | tail -1
           
       - name: Upload unsigned universal APK

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="ok">ОК</string>
+    <string name="cancel">Отмена</string>
     <string name="url">URL</string>
     <string name="profile_url">URL профиля</string>
     <string name="accept_http_content">Принимается только ссылка http(s)</string>
@@ -75,7 +77,11 @@
     <string name="get_line_home_expire_format">%1$s</string>
     <string name="get_line_home_expire_until_format">До %1$s</string>
     <string name="get_line_home_expire_unknown">Не указан в подписке</string>
-    <plurals name="get_line_home_days_left_unit">
+    <!-- Number and unit are separate baseline-aligned views; the container
+         exposes their combined phrase to accessibility. -->
+    <plurals
+        name="get_line_home_days_left_unit"
+        tools:ignore="ImpliedQuantity">
         <item quantity="one">день остался</item>
         <item quantity="few">дня осталось</item>
         <item quantity="many">дней осталось</item>

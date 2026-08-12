@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- CMFA code/resources are updated from upstream. Product lint owns
+         GetLine Kotlin, the app manifest, and the separate :getlineui module. -->
+    <issue id="all">
+        <ignore path="src/main/java/com/github/kr328/**" />
+        <ignore path="src/test/java/com/github/kr328/**" />
+        <ignore path="src/main/res/**" />
+    </issue>
+</lint>

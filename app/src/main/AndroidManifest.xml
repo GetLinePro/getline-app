@@ -17,6 +17,7 @@
          reasons are in docs/engineering-decisions.md. -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission"
         tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
@@ -105,7 +106,9 @@
             tools:ignore="LockedOrientationActivity" />
         <!-- Native PKCE deep-link receiver. Scheme is flavor applicationId
              (pro.getline.vpn / .alpha / .alpha.debug / .alpha.e2e.debug).
-             scheme "getline" stays reserved for ExternalImportActivity. -->
+             Hostless URIs need an SSP matcher: Android ignores path without a host.
+             AuthCallbackParser remains the exact path/authority fail-closed check.
+             Scheme "getline" stays reserved for ExternalImportActivity. -->
         <activity
             android:name="pro.getline.vpn.NativeAuthCallbackActivity"
             android:excludeFromRecents="true"
@@ -119,8 +122,8 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data
-                    android:path="/oauth2redirect"
-                    android:scheme="${applicationId}" />
+                    android:scheme="${applicationId}"
+                    android:sspPrefix="/oauth2redirect" />
             </intent-filter>
         </activity>
         <activity
