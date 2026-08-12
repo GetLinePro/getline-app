@@ -17,12 +17,9 @@ import pro.getline.vpn.product.GetLineActivity
 import pro.getline.vpn.getline.ConfigUpdateResult
 import pro.getline.vpn.getline.GetLineBackendResult
 import pro.getline.vpn.getline.GetLineSubscriptionId
-import pro.getline.vpn.getline.ManagedProfileCleanupResult
-import pro.getline.vpn.getline.GetLineImportCoordinator
-import pro.getline.vpn.getline.ProductNavigationPolicy
+import pro.getline.vpn.getline.LogoutFlow
 import pro.getline.vpn.getline.VpnRepairFlow
 import pro.getline.vpn.getline.VpnRepairFlow.RepairOutcome
-import pro.getline.vpn.getline.runPendingManagedProfileCleanup
 import pro.getline.vpn.getline.accountportal.AccountPortalLaunchResult
 import pro.getline.vpn.getline.accountportal.AccountPortalUriPolicy
 import pro.getline.vpn.getline.accountportal.AccountPortalVisitCoordinator
@@ -55,14 +52,12 @@ import pro.getline.vpn.util.hasValidatedInternetConnection
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import com.github.kr328.clash.design.R as DesignR
 import pro.getline.vpn.getlineui.R as GetLineUiR
 
@@ -1167,35 +1162,12 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         else -> GetLineHomeDesign.AccountAction.None
     }
 
-    /** VPN is already stopped; confirmed logout owns removal of every old binding. */
-    private suspend fun cleanupPendingProfilesForLogout(managedUuid: String?): Boolean {
-        var completed = true
-        sessionRepository.pendingProfileCleanupUuids().forEach { pending ->
-            val result = runPendingManagedProfileCleanup(
-                pendingUuid = pending,
-                managedUuid = managedUuid,
-                canDelete = true,
-                stopBeforeDelete = false,
-                stopVpn = backend.vpn::stop,
-                deleteManaged = backend.subscriptions::deleteManaged,
-                clearPending = sessionRepository::clearPendingProfileCleanup,
-            )
-            if (result == ManagedProfileCleanupResult.Unavailable) {
-                completed = false
-            }
-        }
-        return completed
-    }
-
     /**
      * Product sign-out / remove-subscription (after confirm):
      * 1) stop VPN including an in-progress start (not only [GetLineVpnController.running])
-     * 2) delete every pending old managed profile before clearing its tombstone
-     * 3) clear tokens and delete the current managed profile according to the action;
-     *    any unavailable delete keeps the binding so Home can retry instead of
-     *    orphaning a profile into Advanced
-     * 4) leave app settings and any non-managed profiles alone
-     * 5) open onboarding
+     * 2) fence process-scoped import before reading the managed binding
+     * 3) let [LogoutFlow] apply the action-specific session/delete order
+     * 4) apply its result to Home or open onboarding
      */
     private suspend fun GetLineHomeDesign.performLogout() {
         if (loggingOut) return
@@ -1209,120 +1181,51 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         loggingOut = true
         try {
             connectionTimeout?.cancel()
-            // Always request stop: running may still be false while a start is in flight
-            // (connecting=true, or service finishing after start() before CLASH_STARTED).
             connecting = false
-            backend.vpn.stop()
-            // Fence a late process-scoped import before taking the cleanup-set
-            // snapshot; otherwise its terminal callback could add a tombstone
-            // between drain and clearAccountState().
-            withContext(NonCancellable) {
-                GetLineImportCoordinator.reset()
+            val flowAction = when (action) {
+                GetLineHomeDesign.AccountAction.SignOut -> LogoutFlow.Action.SignOut
+                GetLineHomeDesign.AccountAction.RemoveSubscription ->
+                    LogoutFlow.Action.RemoveSubscription
+                GetLineHomeDesign.AccountAction.None -> return
             }
+            val outcome = LogoutFlow(
+                backend = backend,
+                sessionRepository = sessionRepository,
+                host = object : LogoutFlow.Host {
+                    override suspend fun onSessionCleared() {
+                        accountPortalVisit.clear()
+                        pendingForceSubscriptionRefresh.clear()
+                        cancelSubscriptionJob()
+                        subscriptionState.resetToLoading()
+                        hasKnownActiveProfile = false
+                        setHomeHasActiveProfile(false)
+                    }
+                },
+            ).perform(flowAction)
 
-            val managedUuid = sessionRepository.managedProfileUuid()
-
-            if (action == GetLineHomeDesign.AccountAction.RemoveSubscription) {
-                val oldProfilesDeleted = withContext(NonCancellable) {
-                    cleanupPendingProfilesForLogout(managedUuid)
-                }
-                if (!oldProfilesDeleted) {
+            when (outcome) {
+                LogoutFlow.Outcome.RemoveSubscriptionFailed -> {
+                    // Session + binding remain, so the same Remove action can retry.
                     paintSubscriptionState()
-                    showToast(
-                        GetLineUiR.string.get_line_remove_subscription_failed,
-                        ToastDuration.Long,
-                    )
-                    return
                 }
-                // Delete while binding is still known. If IPC fails, keep binding so
-                // "Remove subscription" stays available — do not create an Advanced-only orphan.
-                // NonCancellable: user already confirmed; rotation must not abort the delete.
-                if (managedUuid != null) {
-                    val deleted = withContext(NonCancellable) {
-                        backend.subscriptions.deleteManaged(GetLineSubscriptionId(managedUuid))
-                    }
-                    if (deleted is GetLineBackendResult.Unavailable) {
-                        // VPN already stopped — tell the user; keep binding + Remove button.
-                        // Toast (not refreshFailed copy): card error string is refresh-specific.
-                        paintSubscriptionState()
-                        showToast(
-                            GetLineUiR.string.get_line_remove_subscription_failed,
-                            ToastDuration.Long,
-                        )
-                        return
-                    }
-                }
-                withContext(NonCancellable) {
-                    sessionRepository.logout()
-                    accountPortalVisit.clear()
-                    pendingForceSubscriptionRefresh.clear()
-                    cancelSubscriptionJob()
-                    subscriptionState.resetToLoading()
-                    hasKnownActiveProfile = false
-                    setHomeHasActiveProfile(false)
-                }
-            } else {
-                // SignOut: tokens go first so a late import cannot re-write the binding.
-                // The binding itself outlives a failed delete — see
-                // ProductNavigationPolicy.clearBindingAfterSignOut.
-                withContext(NonCancellable) {
-                    sessionRepository.discardSessionKeepingSubscription()
-                    accountPortalVisit.clear()
-                    pendingForceSubscriptionRefresh.clear()
-                    cancelSubscriptionJob()
-                    subscriptionState.resetToLoading()
-                    hasKnownActiveProfile = false
-                    setHomeHasActiveProfile(false)
-                }
-                val oldProfilesDeleted = withContext(NonCancellable) {
-                    cleanupPendingProfilesForLogout(managedUuid)
-                }
-                if (!oldProfilesDeleted) {
-                    // Session is gone but the binding remains, exactly like a
-                    // failed delete of the current profile below. Home can retry.
+                LogoutFlow.Outcome.SignOutFailed -> {
+                    // Tokens are gone but the binding remains addressable as link-only.
                     scheduleApplySignedOutState()
                     fetch(showLoading = false)
-                    showToast(
-                        GetLineUiR.string.get_line_remove_subscription_failed,
-                        ToastDuration.Long,
-                    )
-                    return
                 }
-                val deleted = if (managedUuid == null) {
-                    null
-                } else {
-                    ProductNavigationPolicy.bestEffortAfterLogout {
-                        withContext(NonCancellable) {
-                            backend.subscriptions.deleteManaged(GetLineSubscriptionId(managedUuid))
-                        }
+                LogoutFlow.Outcome.Completed -> {
+                    backend.navigation.openOnboarding()
+                    // openOnboarding finishes the caller; keep finish() for safety if policy changes.
+                    if (!isFinishing) {
+                        finish()
                     }
-                }
-                val clearBinding = ProductNavigationPolicy.clearBindingAfterSignOut(
-                    hadManagedProfile = managedUuid != null,
-                    deleteSucceeded = deleted is GetLineBackendResult.Success,
-                )
-                if (!clearBinding) {
-                    // Profile survived and only the binding can still address it.
-                    // Session is already gone: stay on Home as link-only so
-                    // "Remove subscription" remains, instead of orphaning the profile.
-                    scheduleApplySignedOutState()
-                    fetch(showLoading = false)
-                    showToast(
-                        GetLineUiR.string.get_line_remove_subscription_failed,
-                        ToastDuration.Long,
-                    )
                     return
                 }
-                withContext(NonCancellable) {
-                    sessionRepository.logout()
-                }
             }
-
-            backend.navigation.openOnboarding()
-            // openOnboarding finishes the caller; keep finish() for safety if policy changes.
-            if (!isFinishing) {
-                finish()
-            }
+            showToast(
+                GetLineUiR.string.get_line_remove_subscription_failed,
+                ToastDuration.Long,
+            )
         } finally {
             loggingOut = false
         }
