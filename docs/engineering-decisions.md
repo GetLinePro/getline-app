@@ -89,3 +89,41 @@ failure at the current install base. Tracked in `docs/internal/security-register
 Measured against this repo's own review history and deliberately not integrated.
 Evidence: `docs/internal/detekt-experiment/` (report and the command used).
 Read it before reopening.
+
+---
+
+## An Activity connects, it does not decide
+
+**Status:** in effect from 2026-08-12. Direction for new code.
+
+`GetLineHomeActivity` and `GetLineOnboardingActivity` are the orchestrators and the
+only place wired to every dependency, so new work lands there by default. Measured
+line counts:
+
+| date | `GetLineHomeActivity` | `GetLineOnboardingActivity` | `GetLineHomeDesign` |
+|---|---:|---:|---:|
+| 2026-07-28 | 1358 | 809 | — |
+| 2026-08-04 | 1841 | 1515 | 1211 |
+| 2026-08-12 | 1899 | 1712 | 1303 |
+| 2026-08-13, after #132–#134 | 1621 | 1712 | 1303 |
+
+Both Activities sit near 0% unit coverage (`docs/coverage-audit-2026-08-12.md`).
+After #132–#134 the three extracted flows together have 85% line and 65% branch
+coverage; the report records the per-flow spread. Growth is the problem, not the
+current size: the first extraction removed ~250 lines while the same files gained
+~1500 in two weeks.
+
+So new behaviour goes into an existing flow/policy/coordinator, or a new class
+beside them. What legitimately stays in an Activity: lifecycle, permission and
+`ActivityResult` plumbing, and wiring a design to a flow.
+
+When a flow needs something only the Activity can do, express it as a narrow port
+(`BrowserAuthFlow.Host`) instead of moving the logic back. A port past ~15 members
+means the boundary was drawn wrong.
+
+Existing bulk is reduced by agreed slices, one at a time, each with tests — not
+opportunistically while doing something else.
+
+**Rejected:** a CI line-count ratchet on those files. It freezes size without
+improving structure, and the escape hatch (raising the baseline) is the same
+action as the failure it prevents.
