@@ -35,6 +35,7 @@ import com.github.kr328.clash.util.startClashService
 import com.github.kr328.clash.util.stopClashService
 import com.github.kr328.clash.util.withClash
 import com.github.kr328.clash.util.BinderDiedException
+import com.github.kr328.clash.service.util.importedDir
 import com.github.kr328.clash.util.withProfile
 import com.github.kr328.clash.util.withProfileOnce
 import kotlinx.coroutines.CancellationException
@@ -53,11 +54,15 @@ class CmfaGetLineBackend(
 ) : GetLineBackend {
     override val subscriptions: GetLineSubscriptionRepository =
         CmfaGetLineSubscriptionRepository(
-            importedRoot = activity.applicationContext.filesDir.resolve("imported"),
+            importedRoot = activity.applicationContext.importedDir,
         )
     override val vpn: GetLineVpnController = CmfaGetLineVpnController(activity)
     override val servers: VpnServerSelectionRepository =
-        CmfaVpnServerSelectionRepository(activity)
+        CmfaVpnServerSelectionRepository(
+            context = activity,
+            importedRoot = activity.applicationContext.importedDir,
+            vpnRunning = { vpn.running },
+        )
     override val navigation: GetLineNavigation = CmfaGetLineNavigation(activity)
 }
 

@@ -151,8 +151,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
 
         data object Empty : ServersScreen
 
-        data object VpnStopped : ServersScreen
-
         data object Failed : ServersScreen
     }
 
@@ -701,17 +699,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                     explanation = R.string.get_line_servers_empty_explanation,
                     loading = false,
                     action = GetLineRecoveryAction.Retry,
-                )
-            }
-            is ServersScreen.VpnStopped -> {
-                binding.serversAvailableLabel.visibility = View.GONE
-                binding.serversList.visibility = View.GONE
-                binding.serversList.removeAllViews()
-                binding.serversStateView.renderMessage(
-                    title = R.string.get_line_servers_vpn_stopped_title,
-                    explanation = R.string.get_line_servers_vpn_stopped_explanation,
-                    loading = false,
-                    action = GetLineRecoveryAction.None,
                 )
             }
             is ServersScreen.Failed -> {

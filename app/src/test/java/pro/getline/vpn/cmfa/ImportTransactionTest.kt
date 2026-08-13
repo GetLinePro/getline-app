@@ -2,6 +2,7 @@ package pro.getline.vpn.cmfa
 
 import com.github.kr328.clash.core.model.FetchStatus
 import com.github.kr328.clash.service.model.Profile
+import com.github.kr328.clash.service.model.ProfileSelectionSnapshot
 import com.github.kr328.clash.service.remote.IFetchObserver
 import com.github.kr328.clash.service.remote.IProfileManager
 import kotlinx.coroutines.CompletableDeferred
@@ -568,6 +569,10 @@ private class FakeProfileManager(
     override suspend fun updateSilently(uuid: UUID) {
         updated += uuid
     }
+
+    override suspend fun queryActiveSelectionSnapshot(): ProfileSelectionSnapshot? = null
+
+    override suspend fun setSelected(uuid: UUID, group: String, name: String): Boolean = false
 
     private fun profile(
         uuid: UUID,

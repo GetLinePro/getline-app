@@ -1,6 +1,7 @@
 package com.github.kr328.clash.service.remote
 
 import com.github.kr328.clash.service.model.Profile
+import com.github.kr328.clash.service.model.ProfileSelectionSnapshot
 import com.github.kr328.kaidl.BinderInterface
 import java.util.*
 
@@ -27,4 +28,10 @@ interface IProfileManager {
     suspend fun queryAll(): List<Profile>
     suspend fun queryActive(): Profile?
     suspend fun setActive(profile: Profile)
+    /**
+     * Active imported UUID plus every persisted selector for that UUID.
+     * Applied by ConfigurationModule after the next Clash.load.
+     */
+    suspend fun queryActiveSelectionSnapshot(): ProfileSelectionSnapshot?
+    suspend fun setSelected(uuid: UUID, group: String, name: String): Boolean
 }

@@ -8,11 +8,8 @@ import org.junit.Test
 
 class VpnServerStateHolderTest {
     @Test
-    fun needsInitialLoad_trueForLoadingAndVpnStopped() {
+    fun needsInitialLoad_trueForLoading() {
         val holder = VpnServerStateHolder()
-        assertTrue(holder.needsInitialLoad())
-
-        holder.applyVpnStopped()
         assertTrue(holder.needsInitialLoad())
     }
 
@@ -63,7 +60,7 @@ class VpnServerStateHolderTest {
         assertFalse(holder.isSelectionConfirmed("B"))
 
         assertNull(holder.beginSelection("missing"))
-        holder.applyVpnStopped()
+        holder.invalidate()
         assertNull(holder.beginSelection("A"))
     }
 
@@ -158,21 +155,13 @@ class VpnServerStateHolderTest {
     }
 
     @Test
-    fun vpnStopAndInvalidate_makePendingCompletionStale() {
+    fun invalidate_makesPendingCompletionStale() {
         val holder = readyHolder()
-        val stopped = holder.beginSelection("B")!!
-        holder.applyVpnStopped()
-        assertEquals(
-            VpnServerStateHolder.SelectionCompletion.Stale,
-            holder.completeSelection(stopped, success = true),
-        )
-
-        holder.applyLoadResult(sampleSuccess())
-        val invalidated = holder.beginSelection("B")!!
+        val pending = holder.beginSelection("B")!!
         holder.invalidate()
         assertEquals(
             VpnServerStateHolder.SelectionCompletion.Stale,
-            holder.completeSelection(invalidated, success = false),
+            holder.completeSelection(pending, success = true),
         )
     }
 
@@ -248,15 +237,34 @@ class VpnServerStateHolderTest {
     }
 
     @Test
-    fun healthCheck_forcedAfterVpnStopped() {
+    fun healthCheck_forcedAfterClearLiveDelays() {
         val holder = VpnServerStateHolder()
         holder.onHealthCheckStarted(nowMs = 1_000L)
         assertFalse(holder.shouldHealthCheck(nowMs = 2_000L))
 
-        // Delays measured through a dead tunnel must not be reused.
-        holder.applyVpnStopped()
+        holder.clearLiveDelays()
 
         assertTrue(holder.shouldHealthCheck(nowMs = 2_000L))
+    }
+
+    @Test
+    fun clearLiveDelays_stripsReadyMeasurements() {
+        val holder = VpnServerStateHolder()
+        assertTrue(holder.beginInitialLoad())
+        holder.applyLoadResult(
+            VpnServerLoadResult.Success(
+                groupName = "VPN",
+                servers = listOf(VpnServerItem("A", "A", delayMs = 42)),
+                selectedName = "A",
+                selectable = true,
+            ),
+        )
+
+        holder.clearLiveDelays()
+
+        val ready = holder.state as VpnServerUiState.Ready
+        assertNull(ready.servers.single().delayMs)
+        assertTrue(holder.shouldHealthCheck(nowMs = 1L))
     }
 
     @Test

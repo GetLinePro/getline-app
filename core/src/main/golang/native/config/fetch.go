@@ -299,11 +299,19 @@ func validateAndPrepare(path string, reportStatus func(string)) error {
 
 	reportStatus(string(bytes))
 
+	// Parse reorders rawCfg.ProxyGroup by DAG; keep file order for the catalog.
+	// Mode is YAML+persist only — session override dies with the tunnel.
+	groupOrder := proxyGroupNames(rawCfg)
+	mode := persistTunnelMode(path)
+
 	cfg, err := Parse(rawCfg)
 	if err != nil {
 		return err
 	}
 
+	// Catalog is a read-model. A write failure must not fail import/refresh:
+	// the tunnel still works, offline list degrades to empty.
+	writeServerCatalogBestEffort(path, mode, groupOrder, cfg)
 	destroyProviders(cfg)
 
 	return nil

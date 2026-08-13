@@ -70,13 +70,12 @@ class VpnServerStateHolder {
     /**
      * Whether an automatic load should run when the Servers tab is shown.
      * Ready keeps last list; Empty/Failed wait for explicit retry;
-     * VpnStopped reloads when VPN is up again; Loading with no in-flight should fetch.
+     * Loading with no in-flight should fetch.
      */
     fun needsInitialLoad(): Boolean {
         if (requestInFlight) return false
         return when (state) {
-            is VpnServerUiState.Loading,
-            is VpnServerUiState.VpnStopped -> true
+            is VpnServerUiState.Loading -> true
             is VpnServerUiState.Ready,
             is VpnServerUiState.Empty,
             is VpnServerUiState.Failed -> false
@@ -90,8 +89,7 @@ class VpnServerStateHolder {
     fun beginInitialLoad(): Boolean {
         if (requestInFlight) return false
         when (state) {
-            is VpnServerUiState.Loading,
-            is VpnServerUiState.VpnStopped -> Unit
+            is VpnServerUiState.Loading -> Unit
             else -> return false
         }
         requestInFlight = true
@@ -129,12 +127,12 @@ class VpnServerStateHolder {
         return true
     }
 
-    fun applyVpnStopped() {
-        requestInFlight = false
-        pendingSelection = null
-        state = VpnServerUiState.VpnStopped
-        // Delays measured through a dead tunnel are meaningless on restart.
+    /** Drop live latency after the tunnel stops; the inventory stays. */
+    fun clearLiveDelays() {
         lastHealthCheckAt = null
+        val ready = state as? VpnServerUiState.Ready ?: return
+        if (ready.servers.none { it.delayMs != null }) return
+        state = ready.copy(servers = ready.servers.map { it.copy(delayMs = null) })
     }
 
     fun applyLoadResult(result: VpnServerLoadResult) {

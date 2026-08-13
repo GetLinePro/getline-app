@@ -66,8 +66,6 @@
         <item quantity="many">%1$d вариантов</item>
         <item quantity="other">%1$d варианта</item>
     </plurals>
-    <string name="get_line_servers_vpn_stopped_title">VPN не подключён</string>
-    <string name="get_line_servers_vpn_stopped_explanation">Подключитесь на главном экране, чтобы загрузить список серверов.</string>
     <string name="get_line_servers_empty_title">Нет доступных серверов</string>
     <string name="get_line_servers_empty_explanation">В активном профиле нет серверов в основной группе.</string>
     <string name="get_line_servers_load_failed_title">Не удалось загрузить серверы</string>

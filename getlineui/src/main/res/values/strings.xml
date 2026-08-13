@@ -67,8 +67,6 @@
         <item quantity="one">%1$d option</item>
         <item quantity="other">%1$d options</item>
     </plurals>
-    <string name="get_line_servers_vpn_stopped_title">VPN is not connected</string>
-    <string name="get_line_servers_vpn_stopped_explanation">Connect on Home to load servers.</string>
     <string name="get_line_servers_empty_title">No servers available</string>
     <string name="get_line_servers_empty_explanation">The active profile has no selectable servers in the main group.</string>
     <string name="get_line_servers_load_failed_title">Couldn’t load servers</string>

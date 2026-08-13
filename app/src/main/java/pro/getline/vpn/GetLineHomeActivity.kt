@@ -230,10 +230,21 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                                 design.setVpnStatus(resolveStatus())
                                 design.refreshLocation()
                             }
-                            // List needs live core; show stopped without opening Proxy UI.
+                            // Inventory is persisted; keep a Ready list and reload
+                            // from the catalog only when we had nothing to show.
                             serverLoadJob?.cancel()
-                            serverState.applyVpnStopped()
-                            design.paintServersState()
+                            serverState.clearLiveDelays()
+                            if (serverState.state is VpnServerUiState.Ready) {
+                                serverState.onRequestCancelled()
+                                design.paintServersState()
+                            } else {
+                                serverState.onRequestCancelled()
+                                if (design.selectedTab == GetLineHomeDesign.Tab.Servers) {
+                                    design.refreshServersUi(force = true)
+                                } else {
+                                    serverState.invalidate()
+                                }
+                            }
                         }
                         else -> Unit
                     }
@@ -484,9 +495,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
 
     /**
      * Current selector group selection for Home/Servers location row.
-     * Best-effort; failures yield unknown without affecting VPN.
-     * Main group via [VpnServerSelectionRepository.queryMainSelection]
-     * ([MainProxyGroupPolicy] — not silent first-in-list).
+     * Live exit only — #45 is the Servers list, not a disconnected location.
      */
     private suspend fun GetLineHomeDesign.refreshLocation() {
         if (!backend.vpn.running) {
@@ -508,15 +517,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     /**
      * Ensure Servers UI is up to date without unnecessary Clash queries.
      * Used on tab select and initial open — not for forced retry after failure.
+     * Works with VPN off via the persisted catalog.
      */
     private fun GetLineHomeDesign.ensureServersLoaded() {
-        if (!backend.vpn.running) {
-            serverLoadJob?.cancel()
-            serverState.applyVpnStopped()
-            paintServersState()
-            return
-        }
-
         if (!serverState.needsInitialLoad()) {
             paintServersState()
             return
@@ -530,13 +533,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * Required because ProxyActivity patchSelector does not emit Profile/Clash events.
      */
     private fun GetLineHomeDesign.reconcileServersOnResume() {
-        if (!backend.vpn.running) {
-            serverLoadJob?.cancel()
-            serverState.applyVpnStopped()
-            paintServersState()
-            return
-        }
-
         if (!serverState.beginReconcile()) {
             // Load already in flight — its result will be current enough.
             return
@@ -555,13 +551,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * Does not run health checks, open ProxyActivity, or restart VPN.
      */
     private fun GetLineHomeDesign.refreshServersUi(force: Boolean) {
-        if (!backend.vpn.running) {
-            serverLoadJob?.cancel()
-            serverState.applyVpnStopped()
-            paintServersState()
-            return
-        }
-
         val started = if (force) {
             serverState.beginRefresh()
         } else {
@@ -602,6 +591,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * exactly as loaded, just without delays.
      */
     private suspend fun GetLineHomeDesign.measureServerDelays() {
+        if (!backend.vpn.running) return
         if (serverState.state !is VpnServerUiState.Ready) return
 
         val now = SystemClock.elapsedRealtime()
@@ -631,6 +621,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     }
 
     private suspend fun GetLineHomeDesign.applyServerLocationFromState() {
+        if (!backend.vpn.running) {
+            setLocation(null)
+            return
+        }
         val ready = serverState.state as? VpnServerUiState.Ready
         if (ready != null) {
             // Home showed the raw name ("🇵🇱 Польша | grpc") while Servers showed
@@ -666,7 +660,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         paintServersState()
         // Optimistic row uses the same formatting as the settled one, so a
         // confirmed pick does not visibly respell itself.
-        launch { setLocation(ServerLocationLabel.of(name, ready.resolvedNameOf(name))) }
+        if (backend.vpn.running) {
+            launch { setLocation(ServerLocationLabel.of(name, ready.resolvedNameOf(name))) }
+        }
 
         launch {
             // Any queued worker may service the latest intent. A later worker sees
@@ -747,8 +743,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             }
             is VpnServerUiState.Empty ->
                 GetLineHomeDesign.ServersScreen.Empty
-            is VpnServerUiState.VpnStopped ->
-                GetLineHomeDesign.ServersScreen.VpnStopped
             is VpnServerUiState.Failed ->
                 GetLineHomeDesign.ServersScreen.Failed
         }

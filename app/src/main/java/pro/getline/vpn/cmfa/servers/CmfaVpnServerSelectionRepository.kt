@@ -5,28 +5,41 @@ import com.github.kr328.clash.core.model.ProxyGroup
 import com.github.kr328.clash.core.model.ProxySort
 import com.github.kr328.clash.design.store.UiStore
 import pro.getline.vpn.getline.servers.MainProxyGroupPolicy
+import pro.getline.vpn.getline.servers.ServerCatalog
+import pro.getline.vpn.getline.servers.ServerCatalogProjection
 import pro.getline.vpn.getline.servers.VpnMainSelection
 import pro.getline.vpn.getline.servers.VpnServerItem
 import pro.getline.vpn.getline.servers.VpnServerLoadResult
 import pro.getline.vpn.getline.servers.VpnServerSelectionRepository
 import com.github.kr328.clash.service.remote.IClashManager
 import com.github.kr328.clash.util.withClash
+import com.github.kr328.clash.util.withProfile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.UUID
 
 /**
  * Thin adapter over the same Clash APIs used by [com.github.kr328.clash.ProxyActivity].
  * Does not start latency tests or open the legacy Proxy UI.
  *
+ * VPN on: live Mihomo. VPN off: [ServerCatalog] written at import/refresh.
  * Main-group selection is centralized in [MainProxyGroupPolicy] + [queryMainProxyGroup].
  * Reads [UiStore.proxySort] / [UiStore.proxyExcludeNotSelectable] so product call sites
  * never touch CMFA types.
  */
 class CmfaVpnServerSelectionRepository(
     context: Context,
+    private val importedRoot: File,
+    private val vpnRunning: () -> Boolean,
 ) : VpnServerSelectionRepository {
     private val uiStore = UiStore(context.applicationContext)
 
     override suspend fun loadMainGroup(): VpnServerLoadResult {
+        if (!vpnRunning()) {
+            return loadMainGroupOffline()
+        }
         val excludeNotSelectable = uiStore.proxyExcludeNotSelectable
         val sort = uiStore.proxySort
         return try {
@@ -73,6 +86,9 @@ class CmfaVpnServerSelectionRepository(
     }
 
     override suspend fun queryMainSelection(): VpnMainSelection? {
+        if (!vpnRunning()) {
+            return queryMainSelectionOffline()
+        }
         val excludeNotSelectable = uiStore.proxyExcludeNotSelectable
         val sort = uiStore.proxySort
         return try {
@@ -105,6 +121,7 @@ class CmfaVpnServerSelectionRepository(
     }
 
     override suspend fun healthCheckMainGroup(): Boolean {
+        if (!vpnRunning()) return false
         val excludeNotSelectable = uiStore.proxyExcludeNotSelectable
         val sort = uiStore.proxySort
         return try {
@@ -123,8 +140,20 @@ class CmfaVpnServerSelectionRepository(
 
     override suspend fun select(groupName: String, serverName: String): Boolean {
         return try {
-            withClash {
-                patchSelector(groupName, serverName)
+            if (vpnRunning()) {
+                withClash {
+                    patchSelector(groupName, serverName)
+                }
+            } else {
+                val loaded = loadOfflineState() ?: return false
+                if (!ServerCatalogProjection.contains(loaded.catalog, groupName, serverName)) {
+                    return false
+                }
+                // #136: withProfile retries on DeadObject. setSelected is an
+                // idempotent upsert, so a retry cannot create a second row.
+                withProfile {
+                    setSelected(loaded.uuid, groupName, serverName)
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -132,6 +161,50 @@ class CmfaVpnServerSelectionRepository(
             false
         }
     }
+
+    private suspend fun loadMainGroupOffline(): VpnServerLoadResult {
+        val loaded = loadOfflineState() ?: return VpnServerLoadResult.Empty
+        return ServerCatalogProjection.toLoadResult(
+            catalog = loaded.catalog,
+            excludeNotSelectable = uiStore.proxyExcludeNotSelectable,
+            selections = loaded.selections,
+            sortByTitle = uiStore.proxySort == ProxySort.Title,
+        )
+    }
+
+    private suspend fun queryMainSelectionOffline(): VpnMainSelection? {
+        val loaded = loadOfflineState() ?: return null
+        return ServerCatalogProjection.toMainSelection(
+            catalog = loaded.catalog,
+            excludeNotSelectable = uiStore.proxyExcludeNotSelectable,
+            selections = loaded.selections,
+            sortByTitle = uiStore.proxySort == ProxySort.Title,
+        )
+    }
+
+    private suspend fun loadOfflineState(): OfflineState? {
+        val snapshot = try {
+            withProfile { queryActiveSelectionSnapshot() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return null
+        } ?: return null
+        val catalog = withContext(Dispatchers.IO) {
+            ServerCatalog.read(importedRoot.resolve(snapshot.uuid.toString()))
+        } ?: return null
+        return OfflineState(
+            uuid = snapshot.uuid,
+            catalog = catalog,
+            selections = snapshot.asMap(),
+        )
+    }
+
+    private data class OfflineState(
+        val uuid: UUID,
+        val catalog: ServerCatalog,
+        val selections: Map<String, String>,
+    )
 
     companion object {
         private const val SELECTOR_TYPE = "Selector"

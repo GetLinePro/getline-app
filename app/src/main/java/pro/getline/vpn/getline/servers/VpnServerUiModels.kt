@@ -53,9 +53,6 @@ sealed interface VpnServerUiState {
 
     data object Empty : VpnServerUiState
 
-    /** Clash/core not running — list requires a live loaded profile (same gate as Proxy). */
-    data object VpnStopped : VpnServerUiState
-
     data object Failed : VpnServerUiState
 }
 

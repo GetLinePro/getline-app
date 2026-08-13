@@ -5,7 +5,11 @@ import com.github.kr328.clash.service.data.Database
 import com.github.kr328.clash.service.data.ImportedDao
 import com.github.kr328.clash.service.data.Pending
 import com.github.kr328.clash.service.data.PendingDao
+import com.github.kr328.clash.service.data.Selection
+import com.github.kr328.clash.service.data.SelectionDao
 import com.github.kr328.clash.service.model.Profile
+import com.github.kr328.clash.service.model.ProfileSelectionSnapshot
+import com.github.kr328.clash.service.model.ProfileSelectorChoice
 import com.github.kr328.clash.service.remote.IFetchObserver
 import com.github.kr328.clash.service.remote.IProfileManager
 import com.github.kr328.clash.service.store.ServiceStore
@@ -180,6 +184,24 @@ class ProfileManager(private val context: Context) : IProfileManager,
 
     override suspend fun setActive(profile: Profile) {
         ProfileProcessor.active(context, profile.uuid)
+    }
+
+    override suspend fun queryActiveSelectionSnapshot(): ProfileSelectionSnapshot? {
+        val uuid = store.activeProfile ?: return null
+        if (!ImportedDao().exists(uuid)) return null
+        val choices = SelectionDao().querySelections(uuid).mapNotNull { row ->
+            val group = row.proxy.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val selected = row.selected.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            ProfileSelectorChoice(group, selected)
+        }
+        return ProfileSelectionSnapshot(uuid, choices)
+    }
+
+    override suspend fun setSelected(uuid: UUID, group: String, name: String): Boolean {
+        if (group.isBlank() || name.isBlank()) return false
+        if (!ImportedDao().exists(uuid)) return false
+        SelectionDao().setSelected(Selection(uuid, group, name))
+        return true
     }
 
     private suspend fun resolveProfile(uuid: UUID): Profile? {

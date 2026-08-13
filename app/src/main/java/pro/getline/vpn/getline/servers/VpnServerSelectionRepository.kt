@@ -27,8 +27,9 @@ interface VpnServerSelectionRepository {
     suspend fun healthCheckMainGroup(): Boolean
 
     /**
-     * Same selection path as ProxyActivity: patchSelector + SelectionDao persistence
-     * (inside ClashManager). Does not stop or restart VPN.
+     * VPN on: patchSelector + SelectionDao (inside ClashManager).
+     * VPN off: SelectionDao only, applied on the next Clash.load.
+     * Does not start or stop VPN.
      */
     suspend fun select(groupName: String, serverName: String): Boolean
 }
