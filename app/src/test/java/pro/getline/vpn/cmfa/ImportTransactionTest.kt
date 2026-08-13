@@ -392,6 +392,45 @@ class ImportTransactionTest {
         assertEquals(listOf(pending), backend.patched)
     }
 
+    /**
+     * #87 mutation check: resume without the recorded UUID is a second create.
+     * The protection is [recordCreatedUuid] writing reuse before bind.
+     */
+    @Test
+    fun resumeWithoutRecordedUuid_createsSecondProfile() = runBlocking {
+        val backend = FakeProfileManager()
+        backend.importPending(draft, null, {}, activate = false, diagnosticOp = null)
+
+        backend.importPending(draft, null, {}, activate = false, diagnosticOp = null)
+
+        assertEquals(2, backend.created.size)
+    }
+
+    @Test
+    fun pendingReuseId_resumesImport_withoutSecondCreate() = runBlocking {
+        val backend = FakeProfileManager()
+        val imported = backend.importPending(
+            draft,
+            null,
+            {},
+            activate = false,
+            diagnosticOp = null,
+        )
+
+        val recovered = backend.importPending(
+            draft,
+            imported,
+            {},
+            activate = false,
+            diagnosticOp = null,
+        )
+
+        assertEquals(imported, recovered)
+        assertEquals(1, backend.created.size)
+        assertEquals(listOf(backend.created.single(), backend.created.single()), backend.committed)
+        assertTrue(backend.deleted.isEmpty())
+    }
+
     @Test
     fun oneShot_commitThenDeadObject_doesNotCreateAgain() = runBlocking {
         val backend = FakeProfileManager(onCommit = { uuid, _ ->

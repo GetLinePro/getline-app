@@ -293,6 +293,23 @@ class GetLineImportCoordinatorTest {
     }
 
     @Test
+    fun success_recordsImportedUuidBeforeTerminal() = runBlocking {
+        val order = mutableListOf<String>()
+        val terminal = GetLineImportCoordinator.run(
+            request = request("k-imported", "https://example.test/imported"),
+            import = { GetLineBackendResult.Success(GetLineSubscriptionId("uuid-created")) },
+            onImported = { order += "imported:${it.value}" },
+            onTerminal = { order += "terminal" },
+        )
+
+        assertEquals(
+            GetLineImportCoordinator.ImportTerminal.Success(GetLineSubscriptionId("uuid-created")),
+            terminal,
+        )
+        assertEquals(listOf("imported:uuid-created", "terminal"), order)
+    }
+
+    @Test
     fun binderDied_mapsToBinderDiedKind_andKeepsPending() = runBlocking {
         val seen = mutableListOf<GetLineImportCoordinator.ImportTerminal.Settled>()
         val terminal = GetLineImportCoordinator.run(

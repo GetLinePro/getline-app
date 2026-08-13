@@ -417,6 +417,8 @@ class GetLineSessionRepository(
         )
     }
 
+    fun commitCreatedImportUuid(uuid: String): Boolean = store.commitCreatedImportUuid(uuid)
+
     fun clearPendingImport() {
         store.clearPendingImport()
     }

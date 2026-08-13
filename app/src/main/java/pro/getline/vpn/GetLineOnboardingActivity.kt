@@ -21,6 +21,7 @@ import pro.getline.vpn.getline.GetLineImportCoordinator
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
+import pro.getline.vpn.getline.ImportTerminalBinding
 import pro.getline.vpn.getline.activateImportedProfileWhenForeground
 import pro.getline.vpn.getline.runPendingManagedProfileCleanup
 import pro.getline.vpn.getline.auth.AuthTabRedirectMode
@@ -1033,24 +1034,17 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 onProgress = { stage ->
                     runCatching { design.setImportStage(stage) }
                 },
+                onImported = { id ->
+                    ImportTerminalBinding.recordCreatedUuid(sessionRepository, id.value)
+                },
                 onTerminal = { result ->
+                    ImportTerminalBinding.commit(
+                        sessions = sessionRepository,
+                        result = result,
+                        source = request.source,
+                    )
                     when (result) {
                         is GetLineImportCoordinator.ImportTerminal.Success -> {
-                            val previousUuid = previousManagedUuidToDelete
-                            if (previousUuid != null && previousUuid != result.id.value) {
-                                // Move cleanup ownership out of pending import before
-                                // that transaction is cleared. A process death from
-                                // here onward leaves a repairable tombstone.
-                                sessionRepository.rememberPendingProfileCleanup(previousUuid)
-                            }
-                            sessionRepository.rememberManagedProfile(
-                                uuid = result.id.value,
-                                source = request.source,
-                            )
-                            if (subscriptionIdToRemember != null) {
-                                sessionRepository.rememberSubscription(subscriptionIdToRemember)
-                            }
-                            sessionRepository.clearPendingImport()
                             // Cleanup is not part of import success. Unavailable keeps
                             // the tombstone for Home repair; Deleted/NotFound consume it.
                             sessionRepository.pendingProfileCleanupUuids().forEach { pending ->
@@ -1060,7 +1054,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                                     canDelete = true,
                                     // The immediately replaced binding may still
                                     // own the running tunnel; older tombstones cannot.
-                                    stopBeforeDelete = pending == previousUuid,
+                                    stopBeforeDelete = pending == previousManagedUuidToDelete,
                                     stopVpn = backend.vpn::stop,
                                     deleteManaged = backend.subscriptions::deleteManaged,
                                     clearPending =
@@ -1074,9 +1068,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                             )
                         }
                         is GetLineImportCoordinator.ImportTerminal.Unavailable -> {
-                            if (result.clearsPendingImport()) {
-                                sessionRepository.clearPendingImport()
-                            }
                             // reason is a safe discriminator (kind=/code=), never raw t.message.
                             Log.w(
                                 "import_terminal unavailable " +

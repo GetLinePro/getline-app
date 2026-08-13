@@ -179,18 +179,41 @@ class GetLineSessionStore internal constructor(
      * HOME/relaunch can resume instead of dead-ending on a cancelled coroutine.
      */
     fun savePendingImport(pending: PendingImport) {
-        prefs.edit {
-            putString(KEY_PENDING_IMPORT_NAME, pending.name)
-            putString(KEY_PENDING_IMPORT_SOURCE, pending.source)
-            putString(KEY_PENDING_IMPORT_TYPE, pending.typeName)
-            putString(KEY_PENDING_IMPORT_REUSE_UUID, pending.reuseUuid)
-            putString(KEY_PENDING_IMPORT_SUBSCRIPTION_ID, pending.subscriptionIdToRemember)
-            putLong(KEY_PENDING_IMPORT_INTERVAL, pending.interval)
-            putString(
-                KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID,
-                pending.previousManagedUuidToDelete,
-            )
+        prefs.edit { putPendingImport(pending) }
+    }
+
+    /**
+     * Durable marker for a backend-created import UUID. [savePendingImport] uses
+     * apply(); that is not enough after Success and before bind — process death
+     * can land before the XML write. [commit] false is not a saved UUID.
+     */
+    fun commitCreatedImportUuid(uuid: String): Boolean {
+        val id = uuid.takeIf { it.isNotBlank() } ?: return false
+        val current = pendingImport() ?: return false
+        val updated = current.copy(reuseUuid = id)
+        val committed = try {
+            prefs.edit().putPendingImport(updated).commit()
+        } catch (_: Exception) {
+            false
         }
+        if (!committed) return false
+        return pendingImport()?.reuseUuid == id
+    }
+
+    private fun SharedPreferences.Editor.putPendingImport(
+        pending: PendingImport,
+    ): SharedPreferences.Editor {
+        putString(KEY_PENDING_IMPORT_NAME, pending.name)
+        putString(KEY_PENDING_IMPORT_SOURCE, pending.source)
+        putString(KEY_PENDING_IMPORT_TYPE, pending.typeName)
+        putString(KEY_PENDING_IMPORT_REUSE_UUID, pending.reuseUuid)
+        putString(KEY_PENDING_IMPORT_SUBSCRIPTION_ID, pending.subscriptionIdToRemember)
+        putLong(KEY_PENDING_IMPORT_INTERVAL, pending.interval)
+        putString(
+            KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID,
+            pending.previousManagedUuidToDelete,
+        )
+        return this
     }
 
     fun clearPendingImport() {

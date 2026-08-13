@@ -92,6 +92,7 @@ object GetLineImportCoordinator {
         request: ImportRequest,
         import: suspend (onProgress: suspend (GetLineImportStage) -> Unit) -> GetLineBackendResult<GetLineSubscriptionId>,
         onProgress: suspend (GetLineImportStage) -> Unit = {},
+        onImported: (GetLineSubscriptionId) -> Unit = {},
         onTerminal: suspend (ImportTerminal.Settled) -> Unit = {},
     ): ImportTerminal {
         // Fast path: join under mutex only (no need to wait on terminalCommit).
@@ -154,10 +155,14 @@ object GetLineImportCoordinator {
                             )
                         }
 
-                        // Gen check + full durable commit under terminalCommit.
+                        // Gen check + durable writes under terminalCommit.
+                        // onImported first: created UUID outlives death before bind.
                         terminalCommit.withLock {
                             if (gen == generation.get()) {
                                 try {
+                                    if (terminalResult is ImportTerminal.Success) {
+                                        onImported(terminalResult.id)
+                                    }
                                     onTerminal(terminalResult)
                                 } catch (cancelled: CancellationException) {
                                     throw cancelled
