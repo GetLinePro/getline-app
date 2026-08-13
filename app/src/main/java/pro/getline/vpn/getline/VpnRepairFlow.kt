@@ -32,7 +32,8 @@ internal class VpnRepairFlow(
     /**
      * Idempotent repair ladder (Retry = this method, not "download again"):
      * 1) inspect + local setActive(managed) when imported
-     * 2) remote re-provision only if managed profile proven absent and a path exists
+     * 2) remote re-provision only if managed profile proven absent or corrupt
+     *    and a path exists
      * 3) NeedsSetup when there is nothing to repair
      *
      * @param allowNetwork cold start / Retry may network; quiet resume stays local.
@@ -115,11 +116,14 @@ internal class VpnRepairFlow(
             return finish(RepairOutcome.Ready)
         }
 
-        val absent = local as LocalActiveRepair.ManagedAbsent
+        // Corrupt looks like "not imported" to the local-activate step: setActive
+        // cannot recreate a missing/partial directory. Remote re-provision can.
+        val managedIsImported = (local as? LocalActiveRepair.ManagedAbsent)
+            ?.managedIsImported == true
         val step = VpnConfigurationRepairPolicy.plan(
             activeImportedUuid = null,
             managedUuid = managedUuid,
-            managedIsImported = absent.managedIsImported,
+            managedIsImported = managedIsImported,
             hasSession = hasSession,
             hasSavedUrlSource = savedSource != null,
             allowNetwork = allowNetwork,
@@ -132,7 +136,7 @@ internal class VpnRepairFlow(
             VpnConfigurationRepairPolicy.Step.LocalActivate -> {
                 // Local activate should have succeeded inside repairLocalActive.
                 // One defensive retry if inventory said managed is imported.
-                if (absent.managedIsImported) {
+                if (managedIsImported) {
                     when (val again = backend.subscriptions.repairLocalActive(managedUuid)) {
                         GetLineBackendResult.Unavailable ->
                             return finish(RepairOutcome.BackendUnavailable, stepName)
@@ -156,7 +160,7 @@ internal class VpnRepairFlow(
     }
 
     /**
-     * Remote fallback only after local managed profile is proven absent.
+     * Remote fallback only after local managed profile is proven absent or corrupt.
      *
      * Provenance order (do not replace a custom/URL import with account preferred):
      * 1) managed source bound to this managed UUID

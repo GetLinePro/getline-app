@@ -208,6 +208,42 @@ class VpnRepairFlowTest {
         }
 
     @Test
+    fun corruptManaged_quietPass_returnsFailedPrepare_withoutRemote() = runBlocking {
+        sessions.rememberManagedProfile("managed", "https://custom.example/sub")
+        subscriptions.repairLocal = {
+            GetLineBackendResult.Success(
+                LocalActiveRepair.ManagedCorrupt("managed", "missing_dir"),
+            )
+        }
+
+        val outcome = flow().repairVpnConfiguration(allowNetwork = false)
+
+        assertEquals(RepairOutcome.FailedPrepare, outcome)
+        assertTrue(subscriptions.reimported.isEmpty())
+    }
+
+    @Test
+    fun corruptManaged_reimportsInsteadOfLocalActivate() = runBlocking {
+        val source = "https://custom.example/sub"
+        sessions.rememberManagedProfile("managed", source)
+        subscriptions.repairLocal = {
+            GetLineBackendResult.Success(
+                LocalActiveRepair.ManagedCorrupt("managed", "missing_dir"),
+            )
+        }
+        subscriptions.reimport = { _, reuse ->
+            GetLineBackendResult.Success(reuse ?: error("managed UUID must be reused"))
+        }
+
+        val outcome = flow().repairVpnConfiguration(allowNetwork = true)
+
+        assertEquals(RepairOutcome.Ready, outcome)
+        assertEquals(1, subscriptions.repairCalls)
+        assertEquals(source, subscriptions.reimported.single().first.source)
+        assertEquals("managed", subscriptions.reimported.single().second?.value)
+    }
+
+    @Test
     fun boundUrlSourceWinsOverAccountPreferredSubscription() = runBlocking {
         val customSource = "https://user.example/custom"
         sessions.rememberManagedProfile("managed", customSource)

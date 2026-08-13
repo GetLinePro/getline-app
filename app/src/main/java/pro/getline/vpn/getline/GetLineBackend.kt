@@ -134,6 +134,15 @@ sealed class LocalActiveRepair {
         val managedUuid: String?,
         val managedIsImported: Boolean,
     ) : LocalActiveRepair()
+
+    /**
+     * DAO row exists but the profile directory is missing or incomplete.
+     * Local setActive cannot heal this; re-import may.
+     */
+    data class ManagedCorrupt(
+        val managedUuid: String?,
+        val detail: String,
+    ) : LocalActiveRepair()
 }
 
 interface GetLineVpnController {

@@ -42,31 +42,36 @@ class DiagnosticReportBuilderTest {
             08-01 12:00:01.000  1000  1001 I GetLineVPN: session_established has_refresh=true binding=true
             08-01 12:00:02.000  1000  1001 I GetLineVPN: import_terminal success verdict=Consistent
             08-01 12:00:03.000  1000  1001 I GetLineVPN: startup_route dest=home reason=managed_profile store=ok session=1 managed=1 pending_import=0 imported=na backend=na
-            08-01 12:00:04.000  1000  1001 I GetLineVPN: repair_outcome outcome=Ready step=na online=1 allow_net=0 session=1 managed=1
+            08-01 12:00:04.000  1000  1001 I GetLineVPN: profile_integrity verdict=ok detail=na
+            08-01 12:00:04.100  1000  1001 I GetLineVPN: repair_outcome outcome=Ready step=na online=1 allow_net=0 session=1 managed=1
             08-01 12:00:05.000  1000  1001 I GetLineVPN: NetworkObserve onAvailable network=123
             08-01 12:00:06.000  1000  1001 I GetLineVPN: startup_route dest=onboarding reason=no_import store=ok session=0 managed=0 pending_import=0 imported=0 backend=ok
             08-01 12:00:07.000  1000  1001 I GetLineVPN: startup_route dest=home reason=backend_unavailable store=ok session=1 managed=0 pending_import=0 imported=na backend=unavailable
-            08-01 12:00:08.000  1000  1001 I GetLineVPN: repair_outcome outcome=FailedRestore step=OfflineForRemote online=0 allow_net=1 session=1 managed=0
+            08-01 12:00:08.000  1000  1001 I GetLineVPN: profile_integrity verdict=corrupt detail=missing_dir
+            08-01 12:00:08.100  1000  1001 I GetLineVPN: repair_outcome outcome=FailedRestore step=OfflineForRemote online=0 allow_net=1 session=1 managed=0
             08-01 12:00:09.000  1000  1001 I GetLineVPN: repair_outcome outcome=FailedRestore step=RemoteReprovision online=1 allow_net=1 session=1 managed=1
             08-01 12:00:10.000  1000  1001 I GetLineVPN: startup_route dest=onboarding reason=no_import store=err session=0 managed=0 pending_import=0 imported=0 backend=ok
             08-01 12:00:11.000  1000  1001 I GetLineVPN: repair something else noise
         """.trimIndent()
 
         val lines = DiagnosticReportBuilder.selectEventLines(raw)
-        assertEquals(9, lines.size)
+        assertEquals(11, lines.size)
         assertTrue(lines[0].contains("session_established"))
         assertTrue(lines[1].contains("import_terminal"))
         assertTrue(lines[2].contains("startup_route dest=home reason=managed_profile store=ok"))
         assertTrue(lines[2].contains("imported=na backend=na"))
-        assertTrue(lines[3].contains("repair_outcome outcome=Ready step=na"))
-        assertTrue(lines[3].contains("session=1 managed=1"))
-        assertTrue(lines[4].contains("startup_route dest=onboarding reason=no_import store=ok"))
-        assertTrue(lines[5].contains("startup_route dest=home reason=backend_unavailable"))
-        assertTrue(lines[6].contains("repair_outcome outcome=FailedRestore step=OfflineForRemote"))
-        assertTrue(lines[7].contains("repair_outcome outcome=FailedRestore step=RemoteReprovision"))
-        assertTrue(lines[8].contains("store=err session=0"))
+        assertTrue(lines[3].contains("profile_integrity verdict=ok detail=na"))
+        assertTrue(lines[4].contains("repair_outcome outcome=Ready step=na"))
+        assertTrue(lines[4].contains("session=1 managed=1"))
+        assertTrue(lines[5].contains("startup_route dest=onboarding reason=no_import store=ok"))
+        assertTrue(lines[6].contains("startup_route dest=home reason=backend_unavailable"))
+        assertTrue(lines[7].contains("profile_integrity verdict=corrupt detail=missing_dir"))
+        assertTrue(lines[8].contains("repair_outcome outcome=FailedRestore step=OfflineForRemote"))
+        assertTrue(lines[9].contains("repair_outcome outcome=FailedRestore step=RemoteReprovision"))
+        assertTrue(lines[10].contains("store=err session=0"))
         assertEquals(4, lines.count { it.contains("startup_route") })
         assertEquals(3, lines.count { it.contains("repair_outcome") })
+        assertEquals(2, lines.count { it.contains("profile_integrity") })
         assertFalse(lines.any { it.contains("NetworkObserve") })
         // Bare "repair …" must not match the compound event name.
         assertFalse(lines.any { it.contains("repair something else") })

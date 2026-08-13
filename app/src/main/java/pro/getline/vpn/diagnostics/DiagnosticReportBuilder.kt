@@ -35,6 +35,8 @@ object DiagnosticReportBuilder {
         // Slice 1: startup decision + repair ladder (daily double-login / Home state).
         "startup_route",
         "repair_outcome",
+        // Integrity oracle next to repair_outcome: ok / absent / corrupt.
+        "profile_integrity",
         // Durable replacement cleanup; fixed outcome/stop tokens, never UUIDs.
         "profile_cleanup",
         // Slice 2: VPN connect chain (permission / start / observed core state).

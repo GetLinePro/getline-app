@@ -14,9 +14,12 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -44,6 +47,8 @@ import java.util.UUID
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class ImportTransactionTest {
+    @get:Rule
+    val tmp = TemporaryFolder()
 
     private val draft = GetLineSubscriptionDraft(
         type = GetLineSubscriptionType.Url,
@@ -344,6 +349,49 @@ class ImportTransactionTest {
      * #85: commit side effect then DeadObjectException must not re-enter create.
      * Orphan delete on the failed call is existing importPending behaviour.
      */
+    @Test
+    fun importedReuseWithMissingDirectory_deletesAndCreatesFresh() = runBlocking {
+        val broken = UUID.randomUUID()
+        val backend = FakeProfileManager()
+        backend.seed(broken, imported = true)
+
+        val imported = backend.importPending(
+            draft,
+            GetLineSubscriptionId(broken.toString()),
+            {},
+            activate = false,
+            diagnosticOp = null,
+            importedRoot = tmp.root,
+        )
+
+        assertEquals(listOf(broken), backend.deleted)
+        assertEquals(1, backend.created.size)
+        assertEquals(imported.value, backend.created.single().toString())
+        assertNotEquals(broken.toString(), imported.value)
+        assertEquals(listOf(backend.created.single()), backend.patched)
+    }
+
+    @Test
+    fun pendingReuseWithMissingImportedDirectory_keepsExistingRow() = runBlocking {
+        val pending = UUID.randomUUID()
+        val backend = FakeProfileManager()
+        backend.seed(pending, imported = false)
+
+        val imported = backend.importPending(
+            draft,
+            GetLineSubscriptionId(pending.toString()),
+            {},
+            activate = false,
+            diagnosticOp = null,
+            importedRoot = tmp.root,
+        )
+
+        assertTrue(backend.deleted.isEmpty())
+        assertTrue(backend.created.isEmpty())
+        assertEquals(pending.toString(), imported.value)
+        assertEquals(listOf(pending), backend.patched)
+    }
+
     @Test
     fun oneShot_commitThenDeadObject_doesNotCreateAgain() = runBlocking {
         val backend = FakeProfileManager(onCommit = { uuid, _ ->
