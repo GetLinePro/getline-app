@@ -812,39 +812,6 @@
                 </LinearLayout>
 
                 <LinearLayout
-                    android:id="@+id/tab_servers"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:clickable="true"
-                    android:contentDescription="@string/get_line_shell_servers"
-                    android:focusable="true"
-                    android:gravity="center"
-                    android:orientation="vertical">
-
-                    <ImageView
-                        android:layout_width="@dimen/get_line_shell_tab_icon"
-                        android:layout_height="@dimen/get_line_shell_tab_icon"
-                        android:contentDescription="@null"
-                        android:duplicateParentState="true"
-                        android:importantForAccessibility="no"
-                        android:src="@drawable/ic_getline_shell_servers"
-                        app:tint="@color/getline_shell_nav_item" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:duplicateParentState="true"
-                        android:fontFamily="@font/mulish"
-                        android:text="@string/get_line_shell_servers"
-                        android:textAppearance="@style/TextAppearance.GetLine.Caption"
-                        android:textColor="@color/getline_shell_nav_item"
-                        tools:text="Servers" />
-                </LinearLayout>
-
-                <LinearLayout
                     android:id="@+id/tab_subscription"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"

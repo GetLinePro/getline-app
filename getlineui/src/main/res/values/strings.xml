@@ -38,7 +38,6 @@
     <string name="get_line_home_disconnect">Disconnect</string>
     <string name="get_line_home_change_server">Change server</string>
     <string name="get_line_shell_home">Home</string>
-    <string name="get_line_shell_servers">Servers</string>
     <string name="get_line_shell_subscription">Subscription</string>
     <string name="get_line_shell_location_label">Location</string>
     <string name="get_line_shell_location_unknown">Not selected</string>

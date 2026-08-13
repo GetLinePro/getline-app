@@ -36,7 +36,6 @@
     <string name="get_line_home_disconnect">Отключить</string>
     <string name="get_line_home_change_server">Смена сервера</string>
     <string name="get_line_shell_home">Главная</string>
-    <string name="get_line_shell_servers">Серверы</string>
     <string name="get_line_shell_subscription">Подписка</string>
     <string name="get_line_shell_location_label">Локация</string>
     <string name="get_line_shell_location_unknown">Не выбрана</string>

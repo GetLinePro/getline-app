@@ -102,8 +102,18 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private var loggingOut = false
     private var backendUnavailable = false
     private var hasKnownActiveProfile = false
-    /** Any imported CMFA profile (active or not) — for Subscription signed-out copy. */
+    /**
+     * Any imported CMFA profile (active or not) — Subscription signed-out copy and
+     * the Home location row, which is the entry into Servers.
+     *
+     * Only a successful snapshot writes here, so a transient Binder failure keeps the
+     * last known value instead of hiding the entry point.
+     */
     private var hasKnownImportedProfile = false
+        set(value) {
+            field = value
+            design?.setHomeHasImportedProfile(value)
+        }
     private var connectionTimeout: Job? = null
     private var subscriptionLoadJob: Job? = null
     private var serverLoadJob: Job? = null
@@ -142,12 +152,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         } else {
             design.fetch(showLoading = true)
         }
-        // If shell opens on Subscription/Servers, load once without waiting for a re-tap.
+        // If the shell opens on Subscription, load once without waiting for a re-tap.
+        // Servers is never restored: it is only reached from the Home card.
         if (design.selectedTab == GetLineHomeDesign.Tab.Subscription) {
             design.ensureSubscriptionLoaded()
-        }
-        if (design.selectedTab == GetLineHomeDesign.Tab.Servers) {
-            design.ensureServersLoaded()
         }
 
         val trafficTicker = ticker(TimeUnit.SECONDS.toMillis(1))
@@ -495,13 +503,12 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
 
     /**
      * Current selector group selection for Home/Servers location row.
-     * Live exit only — #45 is the Servers list, not a disconnected location.
+     *
+     * Not live-only: [VpnServerSelectionRepository.queryMainSelection] answers from
+     * the persisted catalog when the tunnel is down, and the row names what the
+     * next connect will use. A profile with no catalog still resolves to null.
      */
     private suspend fun GetLineHomeDesign.refreshLocation() {
-        if (!backend.vpn.running) {
-            setLocation(null)
-            return
-        }
         val selection = backend.servers.queryMainSelection()
         setLocation(ServerLocationLabel.of(selection?.selectedName, selection?.resolvedName))
     }
@@ -621,10 +628,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     }
 
     private suspend fun GetLineHomeDesign.applyServerLocationFromState() {
-        if (!backend.vpn.running) {
-            setLocation(null)
-            return
-        }
         val ready = serverState.state as? VpnServerUiState.Ready
         if (ready != null) {
             // Home showed the raw name ("🇵🇱 Польша | grpc") while Servers showed
@@ -1343,8 +1346,19 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         val hasActiveProfile = if (backendUnavailable && hasKnownActiveProfile) {
             true
         } else {
-            setProductState(GetLineProductState.PreparingVpn)
-            when (val repaired = vpnRepairFlow.repairVpnConfiguration(allowNetwork = true)) {
+            // The repair usually returns in milliseconds, and the screen used to
+            // blink through PreparingVpn on every connect. Announce it only once
+            // the wait is long enough to be worth explaining.
+            val preparing = launch {
+                delay(PREPARING_VPN_ANNOUNCE_DELAY_MS)
+                setProductState(GetLineProductState.PreparingVpn)
+            }
+            val repaired = try {
+                vpnRepairFlow.repairVpnConfiguration(allowNetwork = true)
+            } finally {
+                preparing.cancel()
+            }
+            when (repaired) {
                 RepairOutcome.BackendUnavailable -> {
                     backendUnavailable = true
                     setProductState(GetLineProductState.BackendUnavailable)
@@ -1529,9 +1543,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
     }
 
+    /** A value stored before Servers stopped being a tab falls through to Home. */
     private fun readPersistedTab(): GetLineHomeDesign.Tab {
         return when (uiStore.getLineShellTab) {
-            TAB_SERVERS -> GetLineHomeDesign.Tab.Servers
             TAB_SUBSCRIPTION -> GetLineHomeDesign.Tab.Subscription
             else -> GetLineHomeDesign.Tab.Home
         }
@@ -1539,8 +1553,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
 
     private fun persistTab(tab: GetLineHomeDesign.Tab) {
         uiStore.getLineShellTab = when (tab) {
-            GetLineHomeDesign.Tab.Home -> TAB_HOME
-            GetLineHomeDesign.Tab.Servers -> TAB_SERVERS
+            // Servers is opened from the Home card and is not a shell tab, so it
+            // is stored as its parent: a cold start lands on Home, not on a list.
+            GetLineHomeDesign.Tab.Home,
+            GetLineHomeDesign.Tab.Servers -> TAB_HOME
             GetLineHomeDesign.Tab.Subscription -> TAB_SUBSCRIPTION
         }
     }
@@ -1608,8 +1624,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
 
         private const val CONNECTION_START_TIMEOUT_MS = 20_000L
 
+        /** How long the pre-connect repair may run before the screen says so. */
+        private const val PREPARING_VPN_ANNOUNCE_DELAY_MS = 1_000L
+
         private const val TAB_HOME = "home"
-        private const val TAB_SERVERS = "servers"
         private const val TAB_SUBSCRIPTION = "subscription"
     }
 }

@@ -78,6 +78,10 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         Connected,
     }
 
+    /**
+     * Shell destinations. Home and Subscription are the shell-bar tabs
+     * ([SHELL_TABS]); Servers is a detail of Home with no tab of its own.
+     */
     enum class Tab {
         Home,
         Servers,
@@ -215,12 +219,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     private var lastServersSelectable: Boolean = false
 
     /**
-     * Servers was opened from the Home location card, not from the shell bar.
-     * Only then does a confirmed pick send the user back to Home.
-     */
-    private var serversOpenedFromHome = false
-
-    /**
      * Set by [swipeDetector] while [onHostTouchEvent] is running, read right
      * after. A fling is reported from inside `GestureDetector.onTouchEvent`, so
      * the flag is already correct when the host decides how to deliver the
@@ -307,7 +305,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             }
         }
         binding.tabHome.setOnClickListener { onTabClicked(Tab.Home) }
-        binding.tabServers.setOnClickListener { onTabClicked(Tab.Servers) }
         binding.tabSubscription.setOnClickListener { onTabClicked(Tab.Subscription) }
         applyStatus(VpnStatus.Disconnected)
         applyCard(content = null, isRefreshing = false, transientError = false)
@@ -333,10 +330,14 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     /**
      * Neighbour in shell-bar order. `null` at either end — the swipe stops
      * there instead of wrapping around, so the edges stay predictable.
+     *
+     * Servers is not in the bar: it is a detail of Home, reached from the
+     * location card. A swipe neither lands on it nor leads out of it.
      */
     private fun adjacentTab(current: Tab, forward: Boolean): Tab? {
-        val order = Tab.entries
-        return order.getOrNull(order.indexOf(current) + if (forward) 1 else -1)
+        val index = SHELL_TABS.indexOf(current)
+        if (index < 0) return null
+        return SHELL_TABS.getOrNull(index + if (forward) 1 else -1)
     }
 
     private fun onTabClicked(tab: Tab) {
@@ -378,22 +379,18 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     /** Home location card — switch to Servers without touching VPN. */
     fun openServers() {
         onTabClicked(Tab.Servers)
-        // applyTab() clears the origin, so record it after the switch happened.
-        serversOpenedFromHome = currentTab == Tab.Servers
     }
 
     /**
-     * A pick the core confirmed. Goes back to Home only for a user who arrived
-     * from the Home location card — picking a country was the whole errand, and
-     * before this they were left standing on the list (issue #44). Someone who
-     * opened Servers from the shell bar is browsing, and must not have the
-     * screen pulled out from under them.
+     * A pick the core confirmed sends the user back to Home: the list is only
+     * ever reached from the location card, so picking a country was the whole
+     * errand and before this they were left standing on the list (issue #44).
      *
      * Emits [Request.SelectHome] so the host persists the tab, exactly as if
      * Home had been tapped in the shell bar. Main thread only, like [setTab].
      */
     fun returnToHomeAfterServerSelection() {
-        if (!serversOpenedFromHome || currentTab != Tab.Servers) return
+        if (currentTab != Tab.Servers) return
         applyTab(Tab.Home)
         request(Request.SelectHome)
     }
@@ -565,13 +562,12 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
 
     private fun applyTab(tab: Tab) {
         currentTab = tab
-        // Any other way into Servers (shell bar, restored tab) is not the card.
-        serversOpenedFromHome = false
         binding.homeVisible = tab == Tab.Home
         binding.serversVisible = tab == Tab.Servers
         binding.subscriptionVisible = tab == Tab.Subscription
-        binding.tabHome.isSelected = tab == Tab.Home
-        binding.tabServers.isSelected = tab == Tab.Servers
+        // Servers is a child of Home, so the bar keeps Home lit while it is open
+        // and tapping Home there is a way back.
+        binding.tabHome.isSelected = tab == Tab.Home || tab == Tab.Servers
         binding.tabSubscription.isSelected = tab == Tab.Subscription
     }
 
@@ -1237,9 +1233,10 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         binding.vpnControlsVisible = controlsVisible
         binding.primaryActionEnabled =
             controlsVisible && primaryAllowed && vpnStatus != VpnStatus.Connecting
-        // Location row on Home when profile/controls are available.
-        // Opens Servers tab only — does not touch VPN or open legacy Proxy UI.
-        binding.locationVisible = controlsVisible
+        // Location row is navigation into Servers, not a VPN control: it does not
+        // follow controlsVisible. Opens the Servers tab only — does not touch VPN
+        // or open legacy Proxy UI.
+        binding.locationVisible = homeHasImportedProfile
     }
 
     /**
@@ -1248,8 +1245,23 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
      */
     private var homeHasActiveProfile: Boolean = false
 
+    /**
+     * Any imported profile exists — the only condition for showing the way into
+     * Servers. The list itself decides what it can show (live core or the offline
+     * catalog); Home does not predict that.
+     *
+     * Starts true on purpose: an entry point that vanishes leaves the user with no
+     * way back to it, while an entry point that opens an empty list is recoverable.
+     */
+    private var homeHasImportedProfile: Boolean = true
+
     fun setHomeHasActiveProfile(value: Boolean) {
         homeHasActiveProfile = value
+        applyControls()
+    }
+
+    fun setHomeHasImportedProfile(value: Boolean) {
+        homeHasImportedProfile = value
         applyControls()
     }
 
@@ -1258,6 +1270,9 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     private companion object {
         const val DETAIL_SEPARATOR = " · "
         const val REFRESH_FADE_MS = 150L
+
+        /** Shell-bar destinations, in bar order. Servers is not one of them. */
+        val SHELL_TABS = listOf(Tab.Home, Tab.Subscription)
     }
 
     private fun defaultAction(state: GetLineProductState): GetLineRecoveryAction {
