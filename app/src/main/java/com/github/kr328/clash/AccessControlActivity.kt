@@ -25,10 +25,16 @@ class AccessControlActivity : BaseActivity<AccessControlDesign>() {
         val selected = withContext(Dispatchers.IO) {
             service.accessControlPackages.toMutableSet()
         }
+        // The mode row writes through to the store as it is tapped, so the value
+        // read here is the only record of what the running tunnel was built with.
+        val initialMode = withContext(Dispatchers.IO) {
+            service.accessControlMode
+        }
 
         defer {
             withContext(Dispatchers.IO) {
-                val changed = selected != service.accessControlPackages
+                val changed = selected != service.accessControlPackages ||
+                    initialMode != service.accessControlMode
                 service.accessControlPackages = selected
                 if (clashRunning && changed) {
                     stopClashService()
@@ -40,7 +46,7 @@ class AccessControlActivity : BaseActivity<AccessControlDesign>() {
             }
         }
 
-        val design = AccessControlDesign(this, uiStore, selected)
+        val design = AccessControlDesign(this, uiStore, service, initialMode, selected)
 
         setContentDesign(design)
 

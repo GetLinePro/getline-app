@@ -12,7 +12,7 @@ import com.github.kr328.clash.common.constants.Components
 import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.service.clash.clashRuntime
 import com.github.kr328.clash.service.clash.module.*
-import com.github.kr328.clash.service.model.AccessControlMode
+import com.github.kr328.clash.service.model.AccessControlPlan
 import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.service.util.cancelAndJoinBlocking
 import com.github.kr328.clash.service.util.parseCIDR
@@ -163,25 +163,25 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
             // outside the tunnel, while an unapplied deny leaves it inside — the opposite
             // of what the user asked for, with no error anywhere. Log it rather than
             // swallowing it, and never catch anything wider than the lookup failure.
-            when (store.accessControlMode) {
-                AccessControlMode.AcceptAll -> Unit
-                AccessControlMode.AcceptSelected -> {
-                    (store.accessControlPackages + packageName).forEach {
-                        try {
-                            addAllowedApplication(it)
-                        } catch (e: PackageManager.NameNotFoundException) {
-                            Log.w("Access control: cannot allow $it, staying outside the tunnel", e)
-                        }
-                    }
+            val access = AccessControlPlan.of(
+                mode = store.accessControlMode,
+                packages = store.accessControlPackages,
+                ownPackage = packageName,
+            )
+
+            access.allowed.forEach {
+                try {
+                    addAllowedApplication(it)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.w("Access control: cannot allow $it, staying outside the tunnel", e)
                 }
-                AccessControlMode.DenySelected -> {
-                    (store.accessControlPackages - packageName).forEach {
-                        try {
-                            addDisallowedApplication(it)
-                        } catch (e: PackageManager.NameNotFoundException) {
-                            Log.w("Access control: cannot exclude $it, it stays in the tunnel", e)
-                        }
-                    }
+            }
+
+            access.disallowed.forEach {
+                try {
+                    addDisallowedApplication(it)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.w("Access control: cannot exclude $it, it stays in the tunnel", e)
                 }
             }
 

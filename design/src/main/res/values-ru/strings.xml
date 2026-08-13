@@ -131,9 +131,11 @@
     <string name="block_loopback_summary">Заблокировать loopback-соединения</string>
     <string name="system_proxy">Системный прокси</string>
     <string name="system_proxy_summary">Дополнительно запустить HTTP прокси, помимо VPN</string>
-    <string name="access_control_mode">Режим контроля доступа</string>
-    <string name="access_control_packages">Приложения с контролируемым доступом</string>
-    <string name="access_control_packages_summary">Настройте доступ для приложения</string>
+    <string name="access_control_mode">Режим маршрутизации</string>
+    <string name="access_control_packages">Маршрутизация приложений</string>
+    <string name="access_control_packages_summary">Выберите, какие приложения идут через VPN</string>
+    <string name="access_control_lockdown_tips">Приложения вне VPN используют обычную сеть. Если в Android включена блокировка подключений без VPN, приложения, исключённые из VPN, могут остаться без доступа к сети.</string>
+    <string name="access_control_all_apps_tips">Через VPN идут все приложения, выбирать нечего. Список применяется в режимах «Только выбранные через VPN» и «Все, кроме выбранных»; отмеченное в нём сохраняется при смене режима.</string>
 
     <string name="options_unavailable">Настройки недоступны, пока VPN не будет остановлен</string>
 
@@ -233,9 +235,9 @@
     <string name="show_traffic">Показывать трафик</string>
     <string name="show_traffic_summary">Автоматически обновлять счётчик трафика в уведомлении</string>
 
-    <string name="allow_all_apps">Разрешить все приложения</string>
-    <string name="allow_selected_apps">Разрешить выбранные приложения</string>
-    <string name="deny_selected_apps">Запретить выбранные приложения</string>
+    <string name="allow_all_apps">Все приложения через VPN</string>
+    <string name="allow_selected_apps">Только выбранные через VPN</string>
+    <string name="deny_selected_apps">Все, кроме выбранных</string>
 
     <string name="no_profile_selected">Профиль не выбран</string>
 

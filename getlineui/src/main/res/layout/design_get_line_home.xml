@@ -28,6 +28,9 @@
             name="locationVisible"
             type="boolean" />
         <variable
+            name="appRoutingSummary"
+            type="String" />
+        <variable
             name="homeVisible"
             type="boolean" />
         <variable
@@ -289,6 +292,62 @@
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
                     android:layout_weight="1" />
+
+                <!--
+                  Deliberately a plain row and not a card: it is a device setting,
+                  not part of connecting. Parked at the bottom of Home, below the
+                  spacer, so it never competes with the ring or the location card.
+                  Always shown — the setting applies to the device, not to the
+                  profile, and it is the only way into the app list.
+                -->
+                <LinearLayout
+                    android:id="@+id/home_app_routing"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="?attr/selectableItemBackground"
+                    android:baselineAligned="false"
+                    android:clickable="true"
+                    android:contentDescription="@{@string/get_line_home_app_routing_action(appRoutingSummary)}"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:importantForAccessibility="yes"
+                    android:minHeight="48dp"
+                    android:onClick="@{() -> self.request(Request.OpenAppRouting)}"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="4dp">
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Caption"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:importantForAccessibility="no"
+                        android:maxLines="1"
+                        android:text="@string/get_line_home_app_routing_title"
+                        android:textColor="@color/getline_text_secondary" />
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Caption"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:ellipsize="end"
+                        android:importantForAccessibility="no"
+                        android:maxLines="1"
+                        android:text="@{appRoutingSummary}"
+                        android:textColor="@color/getline_text_secondary"
+                        tools:text="Все приложения" />
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="@null"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_getline_chevron_right"
+                        app:tint="@color/getline_text_secondary" />
+                </LinearLayout>
             </LinearLayout>
         </ScrollView>
 

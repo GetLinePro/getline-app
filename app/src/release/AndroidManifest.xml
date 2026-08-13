@@ -45,9 +45,16 @@
         <activity
             android:name=".MetaFeatureSettingsActivity"
             tools:node="remove" />
-        <activity
-            android:name=".AccessControlActivity"
-            tools:node="remove" />
+        <!--
+          .AccessControlActivity is deliberately NOT stripped since issue #21:
+          split tunnelling is a product feature and Home links to it directly, the
+          same way HelpActivity is kept. Everything that used to reach it
+          (SettingsActivity → NetworkSettingsActivity) stays removed, so the
+          legacy tree is still debug-only.
+
+          Do not re-add it to this list to "finish GL-22" — that turns the Home
+          row into ActivityNotFoundException in release builds only.
+        -->
         <activity
             android:name=".FilesActivity"
             tools:node="remove" />

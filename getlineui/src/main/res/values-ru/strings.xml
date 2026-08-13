@@ -40,6 +40,21 @@
     <string name="get_line_shell_location_label">Локация</string>
     <string name="get_line_shell_location_unknown">Не выбрана</string>
     <string name="get_line_home_location_action">Локация: %1$s. Сменить сервер</string>
+    <string name="get_line_home_app_routing_title">Маршрутизация приложений</string>
+    <string name="get_line_home_app_routing_all">Все приложения</string>
+    <plurals name="get_line_home_app_routing_only_selected">
+        <item quantity="one">Только %1$d приложение</item>
+        <item quantity="few">Только %1$d приложения</item>
+        <item quantity="many">Только %1$d приложений</item>
+        <item quantity="other">Только %1$d приложения</item>
+    </plurals>
+    <plurals name="get_line_home_app_routing_except_selected">
+        <item quantity="one">Кроме %1$d приложения</item>
+        <item quantity="few">Кроме %1$d приложений</item>
+        <item quantity="many">Кроме %1$d приложений</item>
+        <item quantity="other">Кроме %1$d приложения</item>
+    </plurals>
+    <string name="get_line_home_app_routing_action">Маршрутизация приложений: %1$s. Выбрать, какие приложения идут через VPN</string>
     <string name="get_line_shell_servers_title">Серверы</string>
     <string name="get_line_shell_servers_explanation">Выберите локацию для VPN.</string>
     <string name="get_line_shell_select_server">Выбрать сервер</string>

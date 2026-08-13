@@ -82,6 +82,35 @@ failure at the current install base. Tracked in `docs/internal/security-register
 
 ---
 
+## Split tunnelling warns about lockdown, it does not detect it
+
+**Status:** in effect from 2026-08-13. Alpha scope, revisit if it bites.
+
+Excluding an app from the tunnel sends it to the ordinary system network. If the
+user has Android's "block connections without VPN" on, that app gets no network
+instead. Issue #21 asks the client to detect the conflict and preferably refuse
+the two selective modes while lockdown is active.
+
+Not built. `VpnService.isLockdownEnabled()` is API 29+ **and an instance method on
+the running service**, so the UI process cannot ask: it would take a new method
+across `IClashManager`/`IRemoteService` plus a state for "VPN is down, so the
+answer is unknown". And while the tunnel is down the answer genuinely does not
+exist, which is exactly when the mode is chosen — the preferred behaviour is not
+reachable, only a post-hoc one.
+
+What ships instead is the minimum the issue also allows: a warning under the mode
+row, shown in the two selective modes only, phrased as a condition ("if Android is
+set to block connections without VPN…"). The app claims no knowledge it does not
+have.
+
+### Do not
+
+- Word the warning as if the state had been detected.
+- Add the IPC for this alone. If a lockdown query lands for another reason, wiring
+  this to it is cheap; building it for a warning is not.
+
+---
+
 ## No detekt or equivalent Kotlin complexity gate
 
 **Status:** in effect.

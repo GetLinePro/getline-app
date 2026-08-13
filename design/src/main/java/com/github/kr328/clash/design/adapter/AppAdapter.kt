@@ -16,6 +16,17 @@ class AppAdapter(
 
     var apps: List<AppInfo> = emptyList()
 
+    /**
+     * Whether picking apps does anything. False in
+     * [com.github.kr328.clash.service.model.AccessControlMode.AcceptAll], where the
+     * stored list is not applied to the tunnel at all: a tap there would write a
+     * selection with no effect, which is what the control appears to promise.
+     *
+     * The stored selection itself is untouched — switching to a selective mode
+     * brings back exactly what was ticked before.
+     */
+    var selectable: Boolean = true
+
     fun rebindAll() {
         notifyItemRangeChanged(0, itemCount)
     }
@@ -32,7 +43,10 @@ class AppAdapter(
 
         holder.binding.app = current
         holder.binding.selected = current.packageName in selected
+        holder.binding.selectable = selectable
         holder.binding.root.setOnClickListener {
+            if (!selectable) return@setOnClickListener
+
             if (holder.binding.selected) {
                 selected.remove(current.packageName)
                 holder.binding.selected = false

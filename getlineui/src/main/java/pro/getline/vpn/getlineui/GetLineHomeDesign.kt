@@ -64,6 +64,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         Logout,
         /** Open existing HelpActivity (support links, about). */
         OpenHelp,
+        /** Home row → app list and routing mode (legacy AccessControlActivity). */
+        OpenAppRouting,
         /** GL-19: local safe diagnostic report → preview → share. */
         SendDiagnostics,
     }
@@ -76,6 +78,17 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         Disconnected,
         Connecting,
         Connected,
+    }
+
+    /**
+     * What the Home routing row shows. Mirrors the service-side access control
+     * mode without importing it: this module does not depend on :service, and the
+     * host maps between the two.
+     */
+    enum class AppRoutingMode {
+        All,
+        OnlySelected,
+        ExceptSelected,
     }
 
     /**
@@ -309,6 +322,9 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         applyStatus(VpnStatus.Disconnected)
         applyCard(content = null, isRefreshing = false, transientError = false)
         applyLocation(null)
+        // Placeholder until the host reads the store: the same default the service
+        // ships with, so the row never renders blank and never shows a wrong count.
+        binding.appRoutingSummary = context.getString(R.string.get_line_home_app_routing_all)
         applyProductState(GetLineProductState.Loading, GetLineRecoveryAction.None)
         applySubscriptionScreen(SubscriptionScreen.Loading)
         applyServersScreen(ServersScreen.Loading)
@@ -404,6 +420,35 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     suspend fun setLocation(name: String?) {
         withContext(Dispatchers.Main) {
             applyLocation(name)
+        }
+    }
+
+    /**
+     * Home routing row summary.
+     *
+     * [selectedCount] is the stored selection, which may include packages that are
+     * currently uninstalled or have no launcher icon — the same number the list
+     * screen keeps. It is not recounted against what is installed, because the
+     * selection itself is never trimmed.
+     */
+    suspend fun setAppRouting(mode: AppRoutingMode, selectedCount: Int) {
+        withContext(Dispatchers.Main) {
+            binding.appRoutingSummary = when (mode) {
+                AppRoutingMode.All ->
+                    context.getString(R.string.get_line_home_app_routing_all)
+                AppRoutingMode.OnlySelected ->
+                    context.resources.getQuantityString(
+                        R.plurals.get_line_home_app_routing_only_selected,
+                        selectedCount,
+                        selectedCount,
+                    )
+                AppRoutingMode.ExceptSelected ->
+                    context.resources.getQuantityString(
+                        R.plurals.get_line_home_app_routing_except_selected,
+                        selectedCount,
+                        selectedCount,
+                    )
+            }
         }
     }
 

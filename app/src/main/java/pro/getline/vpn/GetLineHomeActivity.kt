@@ -36,8 +36,11 @@ import pro.getline.vpn.getline.auth.SubscriptionPresentation
 import pro.getline.vpn.getline.auth.SubscriptionStateHolder
 import pro.getline.vpn.getline.auth.SubscriptionUiState
 import pro.getline.vpn.getline.GetLineSubscriptionSummary
+import com.github.kr328.clash.AccessControlActivity
 import com.github.kr328.clash.HelpActivity
 import com.github.kr328.clash.common.log.Log
+import com.github.kr328.clash.service.model.AccessControlMode
+import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.common.util.ticker
 import java.util.concurrent.atomic.AtomicBoolean
@@ -51,6 +54,7 @@ import pro.getline.vpn.getline.servers.VpnServerUiState
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -58,6 +62,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import com.github.kr328.clash.design.R as DesignR
 import pro.getline.vpn.getlineui.R as GetLineUiR
 
@@ -83,6 +88,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             },
         )
     }
+    /** Split tunnelling state for the Home routing row; owned by the service. */
+    private val serviceStore by lazy { ServiceStore(this) }
     /** Survives tab switches; cleared only when Activity is destroyed. */
     private val subscriptionState = SubscriptionStateHolder()
     private val serverState = VpnServerStateHolder()
@@ -146,6 +153,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
         design.setTab(readPersistedTab())
         design.setVpnStatus(resolveStatus())
+        design.refreshAppRouting()
         if (intent.getBooleanExtra(EXTRA_BACKEND_UNAVAILABLE, false)) {
             backendUnavailable = true
             design.setProductState(GetLineProductState.BackendUnavailable)
@@ -194,6 +202,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             // Selector may change in legacy ProxyActivity without lifecycle events.
                             // Always re-query Mihomo; do not trust Ready cache after resume.
                             design.reconcileServersOnResume()
+                            // Return from the app list: show what is now stored, not
+                            // what Home was opened with.
+                            design.refreshAppRouting()
                         }
                         Event.ActivityStop -> {
                             accountPortalVisit.onHostStopped()
@@ -335,6 +346,11 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             design.performLogout()
                         GetLineHomeDesign.Request.OpenHelp ->
                             startActivity(HelpActivity::class.intent)
+                        // The list screen restarts the tunnel itself when the mode
+                        // or the selection changed; Home only re-reads the summary
+                        // on the way back (Event.ActivityStart).
+                        GetLineHomeDesign.Request.OpenAppRouting ->
+                            startActivity(AccessControlActivity::class.intent)
                         GetLineHomeDesign.Request.SendDiagnostics ->
                             DiagnosticReportShare.present(
                                 activity = this@GetLineHomeActivity,
@@ -351,6 +367,27 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 }
             }
         }
+    }
+
+    /**
+     * Home routing row, read from the service store on IO.
+     *
+     * Read rather than cached: the mode and the selection are written by the list
+     * screen (and could be written by the legacy settings tree), so the value Home
+     * last showed is not authoritative after any trip off this screen.
+     */
+    private suspend fun GetLineHomeDesign.refreshAppRouting() {
+        val (mode, count) = withContext(Dispatchers.IO) {
+            serviceStore.accessControlMode to serviceStore.accessControlPackages.size
+        }
+        setAppRouting(
+            mode = when (mode) {
+                AccessControlMode.AcceptAll -> GetLineHomeDesign.AppRoutingMode.All
+                AccessControlMode.AcceptSelected -> GetLineHomeDesign.AppRoutingMode.OnlySelected
+                AccessControlMode.DenySelected -> GetLineHomeDesign.AppRoutingMode.ExceptSelected
+            },
+            selectedCount = count,
+        )
     }
 
     /**

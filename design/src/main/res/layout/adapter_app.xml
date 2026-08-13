@@ -7,14 +7,28 @@
         <variable
             name="selected"
             type="boolean" />
+        <!--
+          False in "all apps through VPN": nothing on this list is applied in that
+          mode, so the row must not look or behave like a control.
+        -->
+        <variable
+            name="selectable"
+            type="boolean" />
     </data>
 
+    <!--
+      The dim lives on the children, never on this root. RecyclerView's item
+      animator animates the itemView's own alpha on insert and on change, and
+      writes 1f back when the animation ends — a bound android:alpha here is
+      silently reset, and only comes back when the row is rebound off-animation
+      (i.e. after a scroll).
+    -->
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="?attr/selectableItemBackground"
-        android:clickable="true"
-        android:focusable="true"
+        android:clickable="@{selectable}"
+        android:focusable="@{selectable}"
         android:minHeight="@dimen/item_min_height"
         android:paddingEnd="@dimen/item_tailing_margin">
 
@@ -24,6 +38,7 @@
             android:layout_height="@dimen/item_header_component_size"
             android:layout_centerVertical="true"
             android:layout_marginHorizontal="@dimen/item_header_margin"
+            android:alpha="@{selectable ? 1.0f : 0.38f}"
             android:background="@{app.icon}"
             android:clickable="false"
             android:focusable="false" />
@@ -34,6 +49,7 @@
             android:layout_centerVertical="true"
             android:layout_toStartOf="@id/switch_view"
             android:layout_toEndOf="@id/icon_view"
+            android:alpha="@{selectable ? 1.0f : 0.38f}"
             android:orientation="vertical">
 
             <TextView
@@ -56,6 +72,7 @@
             android:layout_height="@dimen/item_tailing_component_size"
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
+            android:alpha="@{selectable ? 1.0f : 0.38f}"
             android:checked="@{selected}"
             android:clickable="false"
             android:focusable="false"

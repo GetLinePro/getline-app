@@ -136,9 +136,11 @@
     <string name="allow_ipv6_summary">Allows ipv6 traffic via VpnService</string>
     <string name="system_proxy">System Proxy</string>
     <string name="system_proxy_summary">Attach http proxy to VpnService</string>
-    <string name="access_control_mode">Access Control Mode</string>
-    <string name="access_control_packages">Access Control Packages</string>
-    <string name="access_control_packages_summary">Configure access permission for apps</string>
+    <string name="access_control_mode">Routing mode</string>
+    <string name="access_control_packages">App routing</string>
+    <string name="access_control_packages_summary">Choose which apps go through the VPN</string>
+    <string name="access_control_lockdown_tips">Apps kept out of the VPN use the ordinary network. If Android is set to block connections without VPN, those apps may end up with no network access at all.</string>
+    <string name="access_control_all_apps_tips">Every app goes through the VPN, so there is nothing to pick. The app list applies in “Only selected apps through VPN” and “All apps except selected”; what you tick there is kept when you switch modes.</string>
 
     <string name="options_unavailable">Options unavailable until VPN is stopped</string>
 
@@ -256,9 +258,9 @@
     <string name="tun_stack_gvisor">Gvisor Stack</string>
     <string name="tun_stack_mixed">Mixed Stack</string>
 
-    <string name="allow_all_apps">Allow all apps</string>
-    <string name="allow_selected_apps">Allow selected apps</string>
-    <string name="deny_selected_apps">Deny selected apps</string>
+    <string name="allow_all_apps">All apps through VPN</string>
+    <string name="allow_selected_apps">Only selected apps through VPN</string>
+    <string name="deny_selected_apps">All apps except selected</string>
 
     <string name="no_profile_selected">No profile selected</string>
 

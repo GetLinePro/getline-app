@@ -43,6 +43,23 @@
     <string name="get_line_shell_location_unknown">Not selected</string>
     <!-- Whole Home location card, spoken as one phrase: value then what it does. -->
     <string name="get_line_home_location_action">Location: %1$s. Change server</string>
+    <!--
+      Secondary Home row: a device-wide setting, deliberately quieter than the
+      connect ring and the location card. Moves to Settings unchanged when one
+      exists (issue #21).
+    -->
+    <string name="get_line_home_app_routing_title">App routing</string>
+    <string name="get_line_home_app_routing_all">All apps</string>
+    <plurals name="get_line_home_app_routing_only_selected">
+        <item quantity="one">%1$d app only</item>
+        <item quantity="other">%1$d apps only</item>
+    </plurals>
+    <plurals name="get_line_home_app_routing_except_selected">
+        <item quantity="one">All except %1$d app</item>
+        <item quantity="other">All except %1$d apps</item>
+    </plurals>
+    <!-- Whole row, spoken as one phrase: what it is, its value, what it does. -->
+    <string name="get_line_home_app_routing_action">App routing: %1$s. Choose which apps go through the VPN</string>
     <string name="get_line_shell_servers_title">Servers</string>
     <string name="get_line_shell_servers_explanation">Choose a location for your VPN connection.</string>
     <string name="get_line_shell_select_server">Select server</string>

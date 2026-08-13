@@ -18,7 +18,16 @@ class AccessControlMenu(
 ) : PopupMenu.OnMenuItemClickListener {
     private val menu = PopupMenu(context, menuView)
 
-    fun show() {
+    /**
+     * [selectable] is false in "all apps through VPN": the bulk actions write the
+     * same selection the dimmed list does, so leaving them live would put the
+     * inert control back through the overflow. Sorting and export stay — they
+     * read, they do not choose.
+     */
+    fun show(selectable: Boolean) {
+        listOf(R.id.select_all, R.id.select_none, R.id.select_invert, R.id.import_from_clipboard)
+            .forEach { menu.menu.findItem(it).isEnabled = selectable }
+
         menu.show()
     }
 

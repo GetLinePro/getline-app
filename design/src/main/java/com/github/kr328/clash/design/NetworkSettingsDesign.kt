@@ -11,7 +11,6 @@ import com.github.kr328.clash.design.util.applyFrom
 import com.github.kr328.clash.design.util.bindAppBarElevation
 import com.github.kr328.clash.design.util.layoutInflater
 import com.github.kr328.clash.design.util.root
-import com.github.kr328.clash.service.model.AccessControlMode
 import com.github.kr328.clash.service.store.ServiceStore
 import kotlinx.coroutines.launch
 
@@ -102,18 +101,9 @@ class NetworkSettingsDesign(
                 configure = vpnDependencies::add,
             )
 
-            selectableList(
-                value = srvStore::accessControlMode,
-                values = AccessControlMode.values(),
-                valuesText = arrayOf(
-                    R.string.allow_all_apps,
-                    R.string.allow_selected_apps,
-                    R.string.deny_selected_apps
-                ),
-                title = R.string.access_control_mode,
-                configure = vpnDependencies::add,
-            )
-
+            // Mode is not offered here: it lives on the app list it applies to
+            // (AccessControlDesign). Two writers with different wording, one of
+            // them disabled while the VPN runs, read as two settings.
             clickable(
                 title = R.string.access_control_packages,
                 summary = R.string.access_control_packages_summary,
