@@ -281,8 +281,9 @@ internal class PrimaryConfigDownloader(
     /**
      * Records which template answered. The panel selects it by User-Agent and marks
      * its own answer with these headers; once the body reaches the core, that choice
-     * is no longer observable from the app. Never fails the download: the headers are
-     * hand-edited in the panel, so a missing one is a config typo, not a bad config.
+     * is no longer observable from the app. Never fails the download: mismatch is a
+     * diagnostic signal, not a reject. See docs/subscription-profile-contract.md.
+     * Do not log other subscription headers — `profile-web-page-url` carries the token.
      */
     private fun logProfileMarkers(
         url: URL,

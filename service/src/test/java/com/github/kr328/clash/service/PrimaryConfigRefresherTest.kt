@@ -241,8 +241,10 @@ class PrimaryConfigRefresherTest {
             validate = { path, localFile, _, _, _ ->
                 // Real ValidateAndPrepareLocalConfig writes config.yaml before
                 // parse/providers (fetch.go). Body in processing may already
-                // differ; committed state is protected only because update()
-                // does not copy processing → imported on exception.
+                // differ. Last-known-good is imported/: update() copies
+                // processing → imported only after fetchProfile returns.
+                // That copy is reviewed, not Room-tested; see
+                // docs/subscription-profile-contract.md.
                 path.resolve("config.yaml").writeText(localFile.readText())
                 throw IOException("invalid yaml")
             },
@@ -263,6 +265,38 @@ class PrimaryConfigRefresherTest {
         }
 
         assertEquals("body-b", processing.resolve("config.yaml").readText())
+        assertEquals("etag-A", PrimaryConfigValidator.read(processing))
+    }
+
+    @Test
+    fun downloadThrows_leavesExistingConfigAndValidator() = runBlocking {
+        val processing = temporaryFolder.newFolder("proc-net")
+        val cache = temporaryFolder.newFolder("cache-net")
+        processing.resolve("config.yaml").writeText("body-a")
+        PrimaryConfigValidator.write(processing, "etag-A")
+        var validateCalls = 0
+
+        val refresher = PrimaryConfigRefresher(
+            download = { _, _, _ -> throw IOException("connection reset") },
+            validate = { _, _, _, _, _ -> validateCalls++ },
+        )
+
+        try {
+            refresher.refresh(
+                context = context,
+                source = "https://example.com/sub",
+                allowConditional = true,
+                reportStatus = {},
+                processingDir = processing,
+                cacheDir = cache,
+            )
+            fail("expected download failure")
+        } catch (e: IOException) {
+            assertEquals("connection reset", e.message)
+        }
+
+        assertEquals(0, validateCalls)
+        assertEquals("body-a", processing.resolve("config.yaml").readText())
         assertEquals("etag-A", PrimaryConfigValidator.read(processing))
     }
 

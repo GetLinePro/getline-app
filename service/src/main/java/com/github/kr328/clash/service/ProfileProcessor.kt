@@ -135,6 +135,9 @@ object ProfileProcessor {
 
                 Clash.setAgeSecretKey(snapshot.ageSecretKey?.takeIf { it.isNotBlank() })
 
+                // Last-known-good is the imported snapshot. fetchProfile may
+                // overwrite processing/config.yaml before it fails; this copy
+                // runs only after it returns. See docs/subscription-profile-contract.md.
                 val subscriptionInfo = fetchProfile(
                     context,
                     snapshot.type,

@@ -43,6 +43,7 @@ func openUrl(ctx context.Context, url string) (io.ReadCloser, fetchHeader, error
 	// matches ^GetLineVPN(?:/|$) and answers with the GetLine template; rule and
 	// proxy providers fetched through this same call ignore the token (measured
 	// 2026-08-07 against jsdelivr and raw.githubusercontent).
+	// Contract: docs/subscription-profile-contract.md.
 	//
 	// Same-host redirects only: an allowlisted e2e subscription_link must not
 	// follow Location to production (or any other host) during import fetch.

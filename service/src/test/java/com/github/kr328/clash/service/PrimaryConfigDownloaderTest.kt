@@ -6,14 +6,17 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowNetwork
 import java.io.ByteArrayInputStream
@@ -31,6 +34,18 @@ class PrimaryConfigDownloaderTest {
 
     private val context: Context
         get() = RuntimeEnvironment.getApplication()
+
+    private companion object {
+        const val CONTRACT_VERSION = "9.9.9.Contract"
+    }
+
+    @Before
+    fun installKnownPackageVersion() {
+        @Suppress("DEPRECATION")
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        info.versionName = CONTRACT_VERSION
+        Shadows.shadowOf(context.packageManager).installPackage(info)
+    }
 
     @Test
     fun selectedNetwork_preservesRequestAndResponseContract() = runBlocking {
@@ -62,9 +77,9 @@ class PrimaryConfigDownloaderTest {
         assertTrue(opener.connections.single().doInput)
         assertTrue(opener.connections.single().connectTimeout in 1..60_000)
         assertTrue(opener.connections.single().readTimeout in 1..60_000)
-        assertTrue(
-            opener.connections.single().requestHeader("User-Agent")
-                ?.startsWith("GetLineVPN/") == true,
+        assertEquals(
+            expectedUserAgent(),
+            opener.connections.single().requestHeader("User-Agent"),
         )
         assertNull(opener.connections.single().requestHeader("If-None-Match"))
         assertEquals("mixed-port: 7890\n", downloaded.file.readText())
@@ -76,6 +91,105 @@ class PrimaryConfigDownloaderTest {
         result.close()
         assertFalse(file.exists())
         assertEquals(1, opener.connections.single().disconnects)
+    }
+
+    @Test
+    fun missingGetLineMarkers_stillAcceptsBody() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                body = "proxies: []\n",
+                headers = mapOf("ETag" to "\"cmfa\""),
+            ),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+            temporaryDirectory = temporaryFolder.newFolder("missing-markers"),
+        ).use { result ->
+            val downloaded = result as PrimaryConfigFetchResult.Downloaded
+            assertEquals("proxies: []\n", downloaded.file.readText())
+            assertEquals("\"cmfa\"", downloaded.metadata.etag)
+        }
+    }
+
+    @Test
+    fun unexpectedGetLineMarkers_stillAcceptsBody() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                body = "proxies: []\n",
+                headers = mapOf(
+                    "x-getline-profile" to "clash",
+                    "x-getline-schema" to "99",
+                    "ETag" to "\"other\"",
+                ),
+            ),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+            temporaryDirectory = temporaryFolder.newFolder("unexpected-markers"),
+        ).use { result ->
+            val downloaded = result as PrimaryConfigFetchResult.Downloaded
+            assertEquals("proxies: []\n", downloaded.file.readText())
+            assertEquals("\"other\"", downloaded.metadata.etag)
+        }
+    }
+
+    @Test
+    fun notModified_sendsGetLineUserAgent() = runBlocking {
+        val opener = RecordingOpener(
+            Response(code = 304, message = "Not Modified"),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+            ifNoneMatch = "\"same\"",
+            temporaryDirectory = temporaryFolder.newFolder("304-ua"),
+        ).use { result ->
+            assertTrue(result is PrimaryConfigFetchResult.NotModified)
+        }
+
+        assertEquals(
+            expectedUserAgent(),
+            opener.connections.single().requestHeader("User-Agent"),
+        )
+        assertEquals("\"same\"", opener.connections.single().requestHeader("If-None-Match"))
+    }
+
+    @Test
+    fun profileWebPageUrl_isNotStoredInMetadata() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                body = "rules: []\n",
+                headers = mapOf(
+                    "ETag" to "\"v1\"",
+                    "subscription-userinfo" to "upload=1; download=2; total=3",
+                    "profile-update-interval" to "24",
+                    "profile-web-page-url" to "https://example.com/sub/secret-token",
+                    "x-getline-profile" to "subscription",
+                    "x-getline-schema" to "1",
+                ),
+            ),
+        )
+
+        downloader(opener).download(
+            context,
+            "https://example.com/subscription",
+            temporaryDirectory = temporaryFolder.newFolder("webpage-url"),
+        ).use { result ->
+            val downloaded = result as PrimaryConfigFetchResult.Downloaded
+            assertEquals("\"v1\"", downloaded.metadata.etag)
+            assertEquals("upload=1; download=2; total=3", downloaded.metadata.subscriptionUserInfo)
+            assertEquals("24", downloaded.metadata.profileUpdateInterval)
+            assertFalse(
+                opener.connections.single().requestedResponseHeaders.any {
+                    it.equals("profile-web-page-url", ignoreCase = true)
+                },
+            )
+        }
     }
 
     @Test
@@ -550,6 +664,15 @@ class PrimaryConfigDownloaderTest {
         }
     }
 
+    private fun expectedUserAgent(): String {
+        @Suppress("DEPRECATION")
+        val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        assertNotNull(version)
+        assertTrue(version!!.isNotBlank())
+        assertTrue(version != "unknown")
+        return "GetLineVPN/$version"
+    }
+
     private fun downloader(
         opener: RecordingOpener,
         network: Network? = null,
@@ -601,6 +724,7 @@ class PrimaryConfigDownloaderTest {
         private val response: Response,
     ) : HttpURLConnection(url) {
         private val requestHeaders = mutableMapOf<String, String>()
+        val requestedResponseHeaders = mutableListOf<String>()
         var disconnects: Int = 0
             private set
 
@@ -629,6 +753,7 @@ class PrimaryConfigDownloaderTest {
 
         override fun getHeaderField(name: String?): String? {
             if (name == null) return null
+            requestedResponseHeaders += name
             return response.headers.entries.firstOrNull {
                 it.key.equals(name, ignoreCase = true)
             }?.value

@@ -127,3 +127,25 @@ opportunistically while doing something else.
 **Rejected:** a CI line-count ratchet on those files. It freezes size without
 improving structure, and the escape hatch (raising the baseline) is the same
 action as the failure it prevents.
+
+---
+
+## Profile contract is versioned by GetLine User-Agent
+
+**Decided:** 2026-08-11, restated 2026-08-13. **Status:** in effect.
+
+First import and refresh send `User-Agent: GetLineVPN/<versionName>`. The panel
+uses that token to pick a compatible Mihomo template. The token is format
+selection, not authentication.
+
+Missing or unexpected `x-getline-profile` / `x-getline-schema` is a log line, not
+a reason to reject the update. Only unparseable YAML, a transport failure, or a
+core apply failure keep the last committed profile.
+
+New capabilities roll out backend first: a new install has nothing to fall back
+to. Contract: `docs/subscription-profile-contract.md`.
+
+### Do not
+
+- Fail closed on a missing GetLine marker.
+- Bump the schema and serve it to clients that cannot apply the new proxy type.
