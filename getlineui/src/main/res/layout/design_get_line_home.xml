@@ -265,13 +265,21 @@
                                 android:text="@string/get_line_shell_location_label"
                                 android:textColor="@color/getline_text_secondary" />
 
+                            <!--
+                              Two lines, not one: the name comes from the
+                              subscription (group · variant, often with flags), so
+                              its length is the provider's to decide, not ours. On
+                              one line a normal country name already cut off at a
+                              larger system font size. The card grows instead.
+                            -->
                             <TextView
                                 style="@style/Widget.GetLine.Text.Location"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
+                                android:breakStrategy="balanced"
                                 android:ellipsize="end"
-                                android:maxLines="1"
+                                android:maxLines="2"
                                 android:text="@{locationText}"
                                 android:textColor="@color/getline_text_primary"
                                 tools:text="Amsterdam" />
@@ -316,28 +324,39 @@
                     android:orientation="horizontal"
                     android:paddingHorizontal="4dp">
 
-                    <TextView
-                        style="@style/Widget.GetLine.Text.Caption"
+                    <!--
+                      Label above value, not beside it: side by side the two
+                      competed for one line's width, and the label lost first —
+                      "Маршрутизация приложений" plus "Кроме 12 приложений" only
+                      fits at font scale 1.0 on a 360dp screen. Stacked, neither
+                      depends on the width left over by the other.
+                    -->
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:ellipsize="end"
-                        android:importantForAccessibility="no"
-                        android:maxLines="1"
-                        android:text="@string/get_line_home_app_routing_title"
-                        android:textColor="@color/getline_text_secondary" />
+                        android:orientation="vertical">
 
-                    <TextView
-                        style="@style/Widget.GetLine.Text.Caption"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:ellipsize="end"
-                        android:importantForAccessibility="no"
-                        android:maxLines="1"
-                        android:text="@{appRoutingSummary}"
-                        android:textColor="@color/getline_text_secondary"
-                        tools:text="Все приложения" />
+                        <TextView
+                            style="@style/Widget.GetLine.Text.Caption"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:importantForAccessibility="no"
+                            android:text="@string/get_line_home_app_routing_title"
+                            android:textColor="@color/getline_text_secondary" />
+
+                        <TextView
+                            style="@style/Widget.GetLine.Text.Primary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:ellipsize="end"
+                            android:importantForAccessibility="no"
+                            android:maxLines="2"
+                            android:text="@{appRoutingSummary}"
+                            android:textColor="@color/getline_text_primary"
+                            tools:text="Все приложения" />
+                    </LinearLayout>
 
                     <ImageView
                         android:layout_width="18dp"
