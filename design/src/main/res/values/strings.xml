@@ -226,15 +226,24 @@
     <string name="sources">Open source</string>
     <string name="donate">Donate</string>
     <string name="support">Support</string>
+    <string name="contact_support">Contact support</string>
     <string name="send_diagnostics">Send diagnostics</string>
+    <string name="help_support_summary">Get help with your account or subscription</string>
+    <string name="help_diagnostics_summary">Create a safe report to share with support</string>
     <string name="diagnostics_report_title">Diagnostic report</string>
     <string name="diagnostics_share">Share</string>
     <string name="privacy_policy">Privacy policy</string>
+    <string name="help_privacy_summary">How GetLine Pro handles your data</string>
     <string name="getline_account">GetLine account</string>
+    <string name="help_account_summary">Manage your subscription, devices, and profile</string>
     <string name="clash_wiki">Clash Wiki</string>
     <string name="github_issues">Github Issues</string>
     <string name="google_play">Google Play</string>
     <string name="clash_meta_core">Mihomo core (upstream)</string>
+    <string name="help_getline_sources_summary">GetLine Pro source code</string>
+    <string name="help_cmfa_sources_summary">The Android client GetLine Pro is based on</string>
+    <string name="help_mihomo_sources_summary">The networking core used by the app</string>
+    <string name="help_about_summary">Version, license, and app components</string>
     <string name="clash_wiki_url" translatable="false">https://github.com/Dreamacro/clash/wiki</string>
     <string name="meta_github_url" translatable="false">https://github.com/MetaCubeX/ClashMetaForAndroid</string>
     <string name="clash_meta_core_url" translatable="false">https://github.com/MetaCubeX/mihomo</string>
@@ -243,7 +252,6 @@
     <string name="getline_account_url" translatable="false">https://app.getline.pro/</string>
 
     <string name="tips_properties"><![CDATA[Accept Only <strong>Clash Config</strong>(including <strong>Proxy</strong>/<strong>Rules</strong>)]]></string>
-    <string name="tips_help"><![CDATA[GetLine Pro help and documentation. For subscription and account issues use Support or open your GetLine account.]]></string>
 
     <string name="google_play_url" translatable="false">https://play.google.com/store/apps/details?id=pro.getline.vpn</string>
 

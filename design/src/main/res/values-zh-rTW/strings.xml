@@ -92,7 +92,6 @@
     <string name="github_issues">Github Issues</string>
     <string name="tips_properties"><![CDATA[僅接受 <strong>Clash 設定檔</strong> (包含<strong>Proxy</strong> /<strong>規則</strong>)]]></string>
     <string name="loading">載入中</string>
-    <string name="tips_help"><![CDATA[GetLine Pro 說明與文件。訂閱與帳戶問題請使用支援管道或開啟 GetLine 帳戶。]]></string>
     <string name="donate">捐助</string>
     <string name="allow_all_apps">允許所有應用</string>
     <string name="allow_selected_apps">僅允許已選擇的應用</string>

@@ -218,7 +218,6 @@
     <string name="system_proxy">Proxy hệ thống</string>
     <string name="system_proxy_summary">Đính kèm proxy,http vào hệ thống Vpn</string>
     <string name="tap_to_start">Chạm để kết nối</string>
-    <string name="tips_help">Trợ giúp và tài liệu GetLine Pro. Với vấn đề đăng ký và tài khoản, hãy dùng Hỗ trợ hoặc mở tài khoản GetLine.</string>
     <string name="tips_properties">Chỉ chấp nhận cấu hình Clash bao gồm Proxy và Quy tắc</string>
     <string name="tproxy_port">Cổng TProxy</string>
     <string name="unable_to_start_vpn">Không thể khởi động thành phần VPN</string>

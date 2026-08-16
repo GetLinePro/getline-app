@@ -211,21 +211,29 @@
     <string name="sources">Открытый исходный код</string>
     <string name="donate">Сделать пожертвование</string>
     <string name="support">Поддержка</string>
+    <string name="contact_support">Написать в поддержку</string>
     <string name="send_diagnostics">Отправить диагностику</string>
+    <string name="help_support_summary">Помощь с аккаунтом или подпиской</string>
+    <string name="help_diagnostics_summary">Безопасный отчёт для обращения в поддержку</string>
     <string name="diagnostics_report_title">Диагностический отчёт</string>
     <string name="diagnostics_share">Поделиться</string>
     <string name="privacy_policy">Политика конфиденциальности</string>
+    <string name="help_privacy_summary">Как GetLine Pro работает с вашими данными</string>
     <string name="getline_account">Кабинет GetLine</string>
+    <string name="help_account_summary">Подписка, устройства и профиль</string>
     <string name="clash_wiki">Clash Wiki</string>
     <string name="github_issues">Сообщения об ошибках на GitHub</string>
     <string name="google_play">Google Play</string>
     <string name="clash_meta_core">Ядро Mihomo (upstream)</string>
+    <string name="help_getline_sources_summary">Исходный код GetLine Pro</string>
+    <string name="help_cmfa_sources_summary">Android-клиент, на котором основано приложение</string>
+    <string name="help_mihomo_sources_summary">Сетевое ядро приложения</string>
+    <string name="help_about_summary">Версия, лицензия и компоненты приложения</string>
     <string name="clash_wiki_url" translatable="false">https://github.com/Dreamacro/clash/wiki</string>
     <string name="meta_github_url" translatable="false">https://github.com/MetaCubeX/ClashMetaForAndroid</string>
     <string name="clash_meta_core_url" translatable="false">https://github.com/MetaCubeX/mihomo</string>
 
     <string name="tips_properties"><![CDATA[Принимается только <strong>конфиг Clash</strong> (включая <strong>Прокси</strong>/<strong>Правила</strong>)]]></string>
-    <string name="tips_help"><![CDATA[Справка и документация GetLine Pro. По вопросам подписки и аккаунта откройте Поддержку или кабинет GetLine.]]></string>
 
     <string name="google_play_url" translatable="false">https://play.google.com/store/apps/details?id=pro.getline.vpn</string>
 

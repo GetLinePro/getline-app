@@ -7,7 +7,6 @@ import com.github.kr328.clash.design.databinding.DesignSettingsCommonBinding
 import com.github.kr328.clash.design.preference.category
 import com.github.kr328.clash.design.preference.clickable
 import com.github.kr328.clash.design.preference.preferenceScreen
-import com.github.kr328.clash.design.preference.tips
 import com.github.kr328.clash.design.util.applyFrom
 import com.github.kr328.clash.design.util.bindAppBarElevation
 import com.github.kr328.clash.design.util.layoutInflater
@@ -18,9 +17,9 @@ class HelpDesign(
     openLink: (Uri) -> Unit,
     openAbout: () -> Unit,
     /**
-     * Account portal origin for this app environment (prod/e2e). Prefer an
-     * app-level override of [R.string.getline_account_url]; this parameter is
-     * the explicit entry point from HelpActivity when the string is injected.
+     * Link target for the account row, resolved per environment (prod/e2e) by
+     * HelpActivity. Not shown on screen — the row carries a static summary, and
+     * the running environment is reported by the diagnostic report instead.
      */
     accountPortalUrl: String = context.getString(R.string.getline_account_url),
     /** GL-19: always-available path to build/share a safe diagnostic report. */
@@ -44,13 +43,12 @@ class HelpDesign(
         }
 
         val screen = preferenceScreen(context) {
-            tips(R.string.tips_help)
-
             category(R.string.support)
 
             clickable(
-                title = R.string.support,
-                summary = R.string.getline_support_url
+                title = R.string.contact_support,
+                icon = R.drawable.ic_baseline_help_center,
+                summary = R.string.help_support_summary,
             ) {
                 clicked {
                     openLink(Uri.parse(context.getString(R.string.getline_support_url)))
@@ -61,6 +59,8 @@ class HelpDesign(
             if (sendDiagnostics != null) {
                 clickable(
                     title = R.string.send_diagnostics,
+                    icon = R.drawable.ic_baseline_assignment,
+                    summary = R.string.help_diagnostics_summary,
                 ) {
                     clicked {
                         sendDiagnostics()
@@ -70,7 +70,8 @@ class HelpDesign(
 
             clickable(
                 title = R.string.privacy_policy,
-                summary = R.string.getline_privacy_url
+                icon = R.drawable.ic_outline_article,
+                summary = R.string.help_privacy_summary,
             ) {
                 clicked {
                     openLink(Uri.parse(context.getString(R.string.getline_privacy_url)))
@@ -79,10 +80,23 @@ class HelpDesign(
 
             clickable(
                 title = R.string.getline_account,
+                icon = R.drawable.ic_baseline_domain,
+                summary = R.string.help_account_summary,
             ) {
-                summary = accountUrl
                 clicked {
                     openLink(Uri.parse(accountUrl))
+                }
+            }
+
+            category(R.string.app)
+
+            clickable(
+                title = R.string.about,
+                icon = R.drawable.ic_baseline_info,
+                summary = R.string.help_about_summary,
+            ) {
+                clicked {
+                    openAbout()
                 }
             }
 
@@ -90,7 +104,8 @@ class HelpDesign(
 
             clickable(
                 title = R.string.getline_sources_title,
-                summary = R.string.getline_sources_url
+                icon = R.drawable.ic_baseline_stack,
+                summary = R.string.help_getline_sources_summary,
             ) {
                 clicked {
                     openLink(Uri.parse(context.getString(R.string.getline_sources_url)))
@@ -99,7 +114,8 @@ class HelpDesign(
 
             clickable(
                 title = R.string.clash_meta_for_android,
-                summary = R.string.meta_github_url
+                icon = R.drawable.ic_baseline_meta,
+                summary = R.string.help_cmfa_sources_summary,
             ) {
                 clicked {
                     openLink(Uri.parse(context.getString(R.string.meta_github_url)))
@@ -108,20 +124,11 @@ class HelpDesign(
 
             clickable(
                 title = R.string.clash_meta_core,
-                summary = R.string.clash_meta_core_url
+                icon = R.drawable.ic_baseline_dns,
+                summary = R.string.help_mihomo_sources_summary,
             ) {
                 clicked {
                     openLink(Uri.parse(context.getString(R.string.clash_meta_core_url)))
-                }
-            }
-
-            category(R.string.about)
-
-            clickable(
-                title = R.string.about,
-            ) {
-                clicked {
-                    openAbout()
                 }
             }
         }
