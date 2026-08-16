@@ -221,10 +221,14 @@ Verify residuals map to invalid OTP.
 
 All auth hosts are served from one shared document root at the edge.
 
-### 1. Digital Asset Links
+### 1. Digital Asset Links (legacy rollback)
 
-Auth Tab HTTPS completion verifies domain ownership. Without this file the client
-receives `RESULT_VERIFICATION_FAILED`.
+Only HTTPS completion reads this file, and the shipped client does not take that
+path: `AuthTabRedirectMode.HttpsCallback` is selected nowhere, and the app
+declares no `autoVerify` filter — the sole callback filter is the private-use
+`${applicationId}` scheme. On the rollback path, Auth Tab verifies domain
+ownership and its absence yields `RESULT_VERIFICATION_FAILED`; on the native
+scheme there is no domain to verify and the file is never fetched.
 
 ```text
 EDGE_WEBROOT/.well-known/assetlinks.json
@@ -232,13 +236,19 @@ EDGE_WEBROOT/.well-known/assetlinks.json
 
 Served on `auth.getline.pro`, `auth.stage.getline.pro` and (still) on
 `app.getline.pro`. It is **one file for every host** — per-host contents would
-need separate roots, which is not worth it while there are three alpha packages
-and a single debug key. Editing it "for prod" therefore also edits stage; that
-mistake once removed `…alpha.e2e.debug` and broke e2e verification.
+need separate roots, which is not worth it for a file this small. Editing it
+"for prod" therefore also edits stage; that mistake once removed
+`…alpha.e2e.debug` and broke e2e verification.
 
 Current entries (`assetlinks.json.example`): `pro.getline.vpn.alpha` on the
-release key, `…alpha.debug` and `…alpha.e2e.debug` on the machine debug key.
-`pro.getline.vpn` (channel `meta`) is absent — add it before publishing.
+release key, and nothing else. `…alpha.debug` and `…alpha.e2e.debug` were
+removed from the edge on 2026-08-16: nothing on the client's path reads this
+file, while their presence let anyone holding the **machine-wide** debug
+keystore build an app that verifies for these hosts. `pro.getline.vpn` (channel
+`meta`) has never been listed.
+
+Restoring the trampoline path needs a new client build either way, so re-adding
+whichever entries it needs belongs in that same change — not kept warm here.
 
 **A new release keystore means a new fingerprint here.** The release key was
 replaced on 2026-07-30 (old one lost); the alpha release build failed sign-in
@@ -251,10 +261,6 @@ apksigner verify --print-certs <apk> | grep -i 'SHA-256'
 ```
 
 The output is lowercase and unseparated; this file needs uppercase, colon-separated.
-
-The debug entries mean anyone holding that debug keystore can build an app that
-verifies for these hosts. Acceptable while alpha; drop `…alpha.debug` from the
-file once prod is no longer tested from debug builds.
 
 ### 2. Provider trampolines (legacy rollback)
 
