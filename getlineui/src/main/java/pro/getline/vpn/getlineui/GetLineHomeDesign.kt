@@ -661,8 +661,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 ?: context.getString(R.string.get_line_home_status_connected)
         }
         binding.connectRingTraffic.text = context.getString(
-            R.string.get_line_home_forwarded_format,
-            sessionTraffic.formatTotal(),
+            R.string.get_line_home_session_traffic_format,
+            sessionTraffic.formatTotal(context),
         )
         binding.connectRingTraffic.visibility =
             if (vpnStatus == VpnStatus.Connected) View.VISIBLE else View.GONE

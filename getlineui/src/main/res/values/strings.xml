@@ -73,7 +73,11 @@
     <string name="get_line_server_delay_format">%1$d ms</string>
     <string name="get_line_server_delay_unknown">—</string>
     <string name="get_line_home_connect_hint">Tap to connect</string>
-    <string name="get_line_home_forwarded_format">%1$s forwarded</string>
+    <!--
+      Session total, up and down together. "forwarded" named an act the figure
+      does not describe, and the ring already says what is connected.
+    -->
+    <string name="get_line_home_session_traffic_format">Traffic: %1$s</string>
     <string name="get_line_home_ring_action_connect">Connect VPN</string>
     <string name="get_line_home_ring_action_disconnect">Disconnect VPN</string>
     <string name="get_line_server_active_via_group">in use by automatic selection</string>

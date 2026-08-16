@@ -63,7 +63,7 @@
     <string name="get_line_server_delay_format">%1$d мс</string>
     <string name="get_line_server_delay_unknown">—</string>
     <string name="get_line_home_connect_hint">Нажмите для подключения</string>
-    <string name="get_line_home_forwarded_format">%1$s передано</string>
+    <string name="get_line_home_session_traffic_format">Трафик: %1$s</string>
     <string name="get_line_home_ring_action_connect">Подключить VPN</string>
     <string name="get_line_home_ring_action_disconnect">Отключить VPN</string>
     <string name="get_line_server_active_via_group">используется автоматическим выбором</string>

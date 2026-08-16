@@ -10,7 +10,6 @@ import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.core.model.FetchStatus
 import pro.getline.vpn.getlineui.model.GetLineImportStage
-import pro.getline.vpn.getlineui.model.GetLineTraffic
 import pro.getline.vpn.getline.ConfigUpdateResult
 import pro.getline.vpn.getline.GetLineBackend
 import pro.getline.vpn.getline.GetLineBackendResult
@@ -651,31 +650,6 @@ private class CmfaGetLineVpnController(
                 )
             }
         }.getOrNull()
-    }
-}
-
-/**
- * Unpack CMFA packed Traffic (Long) into product byte counts.
- * scaleTraffic copied from core/util/Traffic.kt — decode only; format stays in design.
- */
-private fun unpackTraffic(packed: Long): GetLineTraffic {
-    return GetLineTraffic(
-        uploadedBytes = scaleTraffic(packed ushr 32),
-        downloadedBytes = scaleTraffic(packed and 0xFFFFFFFF),
-    )
-}
-
-// Source: core/util/Traffic.kt private scaleTraffic — do not diverge.
-private fun scaleTraffic(value: Long): Long {
-    val type = (value ushr 30) and 0x3
-    val data = value and 0x3FFFFFFF
-
-    return when (type) {
-        0L -> data
-        1L -> data * 1024
-        2L -> data * 1024 * 1024
-        3L -> data * 1024 * 1024 * 1024
-        else -> throw IllegalArgumentException("invalid value type")
     }
 }
 
