@@ -3,7 +3,7 @@
 #
 # Proves:
 #   A build (debug variants + metaProd package via BuildConfig)
-#   B package IDs / debug SHA-256 / public assetlinks
+#   B package IDs / public assetlinks is served
 #   F host isolation unit tests
 #   G public stage HTTPS health (curl only — no SSH / no host shell)
 #   API contract smoke against stage (separate from Android UI)
@@ -26,7 +26,6 @@
 #   SKIP_API=1      skip smoke-api.sh
 #   SKIP_ASSETLINKS=1
 #   SKIP_STAGE=1    skip public __health curls
-#   EXPECT_DEBUG_SHA256  override expected debug cert fingerprint
 
 set -euo pipefail
 
@@ -35,7 +34,6 @@ cd "$ROOT"
 
 BASE_API="${BASE_API:-https://app.stage.getline.pro}"
 BASE_AUTH="${BASE_AUTH:-https://auth.stage.getline.pro}"
-EXPECT_DEBUG_SHA256="${EXPECT_DEBUG_SHA256:-BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB:BB}"
 E2E_PKG="pro.getline.vpn.alpha.e2e.debug"
 META_PKG="pro.getline.vpn"
 ALPHA_PROD_PKG="pro.getline.vpn.alpha.debug"
@@ -133,7 +131,7 @@ section_build() {
   fi
 }
 
-# --- B. Package / signing / assetlinks ---------------------------------------
+# --- B. Package IDs / assetlinks is served ------------------------------------
 
 find_buildconfig() {
   local flavor="$1"
@@ -157,7 +155,7 @@ check_buildconfig_field() {
 }
 
 section_package() {
-  bold "[B] Package IDs + debug SHA-256 + assetlinks"
+  bold "[B] Package IDs + assetlinks is served"
 
   local e2e_bc prod_bc meta_bc
   e2e_bc=$(find_buildconfig alphaE2e debug)
@@ -203,26 +201,11 @@ section_package() {
     yellow "NOTE aapt/APK skip (aapt=${aapt:-missing} apk=${e2e_apk:-missing})"
   fi
 
-  # signingReport SHA-256 for alphaE2eDebug — empty/unparsed SHA is FAIL (DAL proof).
-  local signing_rc=0
-  ./gradlew :app:signingReport --console=plain >/tmp/e2e-signingReport.txt 2>&1 || signing_rc=$?
-  if [[ "$signing_rc" -ne 0 ]]; then
-    fail "signingReport failed (exit $signing_rc) — cannot prove debug cert matches DAL"
-  else
-    local sha
-    sha=$(awk '
-      /Variant: alphaE2eDebug$/ {grab=1; next}
-      /Variant:/ {grab=0}
-      grab && /SHA-256:/ {print $2; exit}
-    ' /tmp/e2e-signingReport.txt)
-    if [[ -z "$sha" ]]; then
-      fail "could not parse alphaE2eDebug SHA-256 from signingReport (empty)"
-    elif [[ "$sha" == "$EXPECT_DEBUG_SHA256" ]]; then
-      ok "alphaE2eDebug SHA-256 matches DAL expectation"
-    else
-      fail "alphaE2eDebug SHA-256=$sha want $EXPECT_DEBUG_SHA256"
-    fi
-  fi
+  # The debug signing certificate is deliberately not checked here any more.
+  # It was checked as proof that the build matches its Digital Asset Links
+  # entry, and there is no such entry: the shipped client completes over the
+  # private-use scheme, so nothing on its path reads assetlinks.json, and both
+  # debug packages were removed from the edge on 2026-08-16.
 
   if [[ "${SKIP_ASSETLINKS:-0}" == "1" ]]; then
     yellow "SKIP_ASSETLINKS=1"
@@ -245,11 +228,8 @@ section_package() {
   else
     fail "assetlinks content-type=$ctype"
   fi
-  if rg -q "\"package_name\": \"$E2E_PKG\"" "$body" && rg -q "$EXPECT_DEBUG_SHA256" "$body"; then
-    ok "assetlinks lists $E2E_PKG + expected SHA-256"
-  else
-    fail "assetlinks missing $E2E_PKG or SHA-256"
-  fi
+  # Contents are not asserted: the file is served for the rollback path only,
+  # and which packages it lists is decided when that path is restored.
   # no redirect: curl without -L should still be 200 on final URL
   local url_eff
   url_eff=$(curl -sS -o /dev/null -w '%{url_effective}' "${BASE_AUTH}/.well-known/assetlinks.json")

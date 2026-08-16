@@ -415,9 +415,8 @@ Does **not** auto-tap Auth Tab.
 | Symptom | Likely cause / check |
 | --- | --- |
 | Auth Tab not supported / no browser | Chrome too old or no Auth Tab category; see browser section. Custom Tabs fallback **not** implemented. |
-| `RESULT_VERIFICATION_FAILED` | DAL mismatch: host, package, or cert. Auth Tab completion host must match `GETLINE_CALLBACK_HOST` (`auth.stage.getline.pro` for e2e). |
-| Wrong package in DAL | E2E package is `pro.getline.vpn.alpha.e2e.debug`, not `pro.getline.vpn` / `.alpha.debug`. Update `assetlinks.json`. |
-| Wrong debug certificate SHA | Fingerprint in DAL must match the keystore that signed the APK. Template: `docs/spikes/android-auth/assetlinks.json.example`. |
+| `RESULT_VERIFICATION_FAILED` | **Rollback path only** — the shipped client completes over the private-use scheme and never fetches DAL. If you are on the HTTPS trampoline: DAL mismatch in host, package or cert; completion host must match `GETLINE_CALLBACK_HOST` (`auth.stage.getline.pro` for e2e). |
+| DAL entry missing for a debug build | Expected: both debug packages were removed from the edge on 2026-08-16, and `assetlinks.json` now lists `pro.getline.vpn.alpha` only. Restoring the trampoline path means re-adding what it needs — package `pro.getline.vpn.alpha.e2e.debug` for e2e, fingerprint of the keystore that actually signed the APK. Template: `docs/spikes/android-auth/assetlinks.json.example`. |
 | **`Couldn’t sign in` after successful callback** | **Does not prove Auth Tab failure.** Callback already returned. Failure is on **session establishment** (`generate` / `exchange`) or **subscriptions API** — not YAML import (that path shows **ImportFailed**). Check mock logs for the last successful marker. |
 | exchange **405** | Wrong HTTP method or path not registered on mock/Caddy. Expect **POST** `/api/auth/device-key/exchange` on **API** host, not GET. |
 | Wrong native token on subscriptions (`native_token_matches=false`) | App not sending exchange (or refreshed) access token. Mock accepts fixed `s1-native-access-token` and `s1-native-access-token-refreshed` only — **not** tied to in-memory `device_key`. A mock restart does **not** invalidate those native tokens. |
