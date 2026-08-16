@@ -296,10 +296,16 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
+                <!--
+                  Half the free space this spacer used to take now sits below the
+                  routing row instead. The weight above the ring is untouched, so
+                  the ring keeps its position; only the gap the card and the row
+                  used to be pulled apart by is split with the bottom.
+                -->
                 <Space
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
-                    android:layout_weight="1" />
+                    android:layout_weight="0.5" />
 
                 <!--
                   Deliberately a plain row and not a card: it is a device setting,
@@ -322,12 +328,13 @@
                     android:minHeight="48dp"
                     android:onClick="@{() -> self.request(Request.OpenAppRouting)}"
                     android:orientation="horizontal"
-                    android:paddingHorizontal="4dp">
+                    android:paddingStart="16dp"
+                    android:paddingEnd="8dp">
 
                     <!--
                       Label above value, not beside it: side by side the two
                       competed for one line's width, and the label lost first —
-                      "Маршрутизация приложений" plus "Кроме 12 приложений" only
+                      "Маршрутизация приложений" plus "12 приложений без VPN" only
                       fits at font scale 1.0 on a 360dp screen. Stacked, neither
                       depends on the width left over by the other.
                     -->
@@ -359,14 +366,23 @@
                     </LinearLayout>
 
                     <ImageView
-                        android:layout_width="18dp"
-                        android:layout_height="18dp"
-                        android:layout_marginStart="4dp"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:layout_marginStart="8dp"
                         android:contentDescription="@null"
                         android:importantForAccessibility="no"
                         android:src="@drawable/ic_getline_chevron_right"
                         app:tint="@color/getline_text_secondary" />
                 </LinearLayout>
+
+                <!--
+                  The other half of the gap above. The row stays at the bottom of
+                  Home, but off the shell bar rather than against it.
+                -->
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="0.5" />
             </LinearLayout>
         </ScrollView>
 

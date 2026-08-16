@@ -50,13 +50,18 @@
     -->
     <string name="get_line_home_app_routing_title">App routing</string>
     <string name="get_line_home_app_routing_all">All apps</string>
+    <!--
+      Both modes state which apps the VPN carries, in the same shape, so the
+      value reads as a state and not as a subtraction: "All except 188 apps"
+      led with a negation and a number, which reads as damage.
+    -->
     <plurals name="get_line_home_app_routing_only_selected">
-        <item quantity="one">%1$d app only</item>
-        <item quantity="other">%1$d apps only</item>
+        <item quantity="one">%1$d app through the VPN</item>
+        <item quantity="other">%1$d apps through the VPN</item>
     </plurals>
     <plurals name="get_line_home_app_routing_except_selected">
-        <item quantity="one">All except %1$d app</item>
-        <item quantity="other">All except %1$d apps</item>
+        <item quantity="one">%1$d app outside the VPN</item>
+        <item quantity="other">%1$d apps outside the VPN</item>
     </plurals>
     <!-- Whole row, spoken as one phrase: what it is, its value, what it does. -->
     <string name="get_line_home_app_routing_action">App routing: %1$s. Choose which apps go through the VPN</string>

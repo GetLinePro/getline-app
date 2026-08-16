@@ -43,16 +43,16 @@
     <string name="get_line_home_app_routing_title">Маршрутизация приложений</string>
     <string name="get_line_home_app_routing_all">Все приложения</string>
     <plurals name="get_line_home_app_routing_only_selected">
-        <item quantity="one">Только %1$d приложение</item>
-        <item quantity="few">Только %1$d приложения</item>
-        <item quantity="many">Только %1$d приложений</item>
-        <item quantity="other">Только %1$d приложения</item>
+        <item quantity="one">%1$d приложение через VPN</item>
+        <item quantity="few">%1$d приложения через VPN</item>
+        <item quantity="many">%1$d приложений через VPN</item>
+        <item quantity="other">%1$d приложения через VPN</item>
     </plurals>
     <plurals name="get_line_home_app_routing_except_selected">
-        <item quantity="one">Кроме %1$d приложения</item>
-        <item quantity="few">Кроме %1$d приложений</item>
-        <item quantity="many">Кроме %1$d приложений</item>
-        <item quantity="other">Кроме %1$d приложения</item>
+        <item quantity="one">%1$d приложение без VPN</item>
+        <item quantity="few">%1$d приложения без VPN</item>
+        <item quantity="many">%1$d приложений без VPN</item>
+        <item quantity="other">%1$d приложения без VPN</item>
     </plurals>
     <string name="get_line_home_app_routing_action">Маршрутизация приложений: %1$s. Выбрать, какие приложения идут через VPN</string>
     <string name="get_line_shell_servers_title">Серверы</string>
