@@ -250,6 +250,46 @@ class SubscriptionPresentationTest {
     }
 
     @Test
+    fun fromLocalSummary_expireBoundaries() {
+        assertNull(
+            SubscriptionPresentation.fromLocalSummary(summary(expire = 0L), { "unused" })
+                .expireAtEpochMillis,
+        )
+        val past = 1_000_000_000_000L
+        assertEquals(
+            past,
+            SubscriptionPresentation.fromLocalSummary(summary(expire = past), { "unused" })
+                .expireAtEpochMillis,
+        )
+    }
+
+    @Test
+    fun fromLocalSummary_trafficHeuristics() {
+        val counted = SubscriptionPresentation.fromLocalSummary(
+            summary(upload = 100L, download = 50L, total = 0L),
+            { "unused" },
+        )
+        assertEquals(150L, counted.trafficUsedBytes)
+        assertNull(counted.trafficLimitBytes)
+        assertTrue(counted.trafficUnlimited)
+
+        // No counters at all: "unlimited" and "no Subscription-Userinfo" look alike.
+        val silent = SubscriptionPresentation.fromLocalSummary(summary(), { "unused" })
+        assertNull(silent.trafficUsedBytes)
+        assertNull(silent.trafficLimitBytes)
+        assertFalse(silent.trafficUnlimited)
+        assertNull(silent.deviceLimit)
+
+        val allowance = SubscriptionPresentation.fromLocalSummary(
+            summary(total = 1_000L),
+            { "unused" },
+        )
+        assertEquals(0L, allowance.trafficUsedBytes)
+        assertEquals(1_000L, allowance.trafficLimitBytes)
+        assertFalse(allowance.trafficUnlimited)
+    }
+
+    @Test
     fun selectPreferred_fallbackWhenPrimaryHasNoLink() {
         val primaryNoLink = sample(id = "1", primary = true, link = null)
         val secondary = sample(id = "2", primary = false, link = "https://b")
@@ -261,6 +301,26 @@ class SubscriptionPresentationTest {
         )
         assertEquals("2", presentation.id)
     }
+
+    private fun summary(
+        expire: Long = 1_700_000_000_000L,
+        upload: Long = 0L,
+        download: Long = 0L,
+        total: Long = 0L,
+        tag: String? = null,
+        status: String? = null,
+        deviceLimit: Int? = null,
+    ) = pro.getline.vpn.getline.GetLineSubscriptionSummary(
+        uuid = "managed-uuid",
+        name = "link",
+        expire = expire,
+        upload = upload,
+        download = download,
+        total = total,
+        tag = tag,
+        status = status,
+        deviceLimit = deviceLimit,
+    )
 
     private fun sample(
         id: String = "1",

@@ -30,7 +30,6 @@ import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.GetLineSessionStorageException
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
-import pro.getline.vpn.getline.auth.LinkOnlyPresentation
 import pro.getline.vpn.getline.auth.SubscriptionHeaderDisplay
 import pro.getline.vpn.getline.auth.SubscriptionLoadResult
 import pro.getline.vpn.getline.auth.SubscriptionPresentation
@@ -910,32 +909,40 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         if (managed == null) {
             subscriptionState.applySignedOut(
                 hasImportedProfile = hasKnownImportedProfile,
-                linkOnly = null,
+                card = null,
             )
             return
         }
         when (val snap = managedLocalSummaryResult()) {
             is GetLineBackendResult.Success -> {
-                val linkOnly = snap.value?.let(LinkOnlyPresentation::fromSummary)
                 subscriptionState.applySignedOut(
                     hasImportedProfile = hasKnownImportedProfile,
-                    linkOnly = linkOnly,
+                    card = snap.value?.let(::localSubscriptionCard),
                 )
             }
             GetLineBackendResult.Unavailable -> {
-                val previousLinkOnly =
-                    (subscriptionState.state as? SubscriptionUiState.SignedOut)?.linkOnly
+                val previousCard =
+                    (subscriptionState.state as? SubscriptionUiState.SignedOut)?.card
                 subscriptionState.applySignedOut(
                     hasImportedProfile = hasKnownImportedProfile,
-                    linkOnly = previousLinkOnly,
+                    card = previousCard,
                 )
             }
             null -> subscriptionState.applySignedOut(
                 hasImportedProfile = hasKnownImportedProfile,
-                linkOnly = null,
+                card = null,
             )
         }
     }
+
+    /** One card source for an imported profile — with or without a session. */
+    private fun localSubscriptionCard(
+        summary: GetLineSubscriptionSummary,
+    ): SubscriptionPresentation =
+        SubscriptionPresentation.fromLocalSummary(
+            summary = summary,
+            string = { getString(it) },
+        )
 
     /** Resolve the stable managed binding, independent of the active VPN profile. */
     private suspend fun managedLocalSummaryResult():
@@ -1041,12 +1048,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         val fallbackTitle = getString(GetLineUiR.string.get_line_home_plan_unknown)
                         val local = managedLocalSummaryResult()
                         val presentation = when (local) {
-                            is GetLineBackendResult.Success -> local.value?.let { summary ->
-                                SubscriptionPresentation.fromLocalSummary(
-                                    summary = summary,
-                                    string = { getString(it) },
-                                )
-                            }
+                            is GetLineBackendResult.Success ->
+                                local.value?.let(::localSubscriptionCard)
                             // No managed binding: retain the account-only card path.
                             null -> preferred?.let {
                                 SubscriptionPresentation.fromPreferred(
@@ -1154,12 +1157,12 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 val updated = backend.subscriptions
                     .requestConfigUpdate(GetLineSubscriptionId(managed))
                 if (!isActive) return@launch
-                val previousLinkOnly =
-                    (subscriptionState.state as? SubscriptionUiState.SignedOut)?.linkOnly
+                val previousCard =
+                    (subscriptionState.state as? SubscriptionUiState.SignedOut)?.card
                 when (val snap = managedLocalSummaryResult()) {
                     is GetLineBackendResult.Success -> {
                         subscriptionState.applyLinkOnlyRefreshResult(
-                            linkOnly = snap.value?.let(LinkOnlyPresentation::fromSummary),
+                            card = snap.value?.let(::localSubscriptionCard),
                             // Clear card only when inventory confirms managed is gone;
                             // update failure alone keeps whatever snapshot returned.
                             // Unlike account-backed active state, link-only does not
@@ -1171,13 +1174,13 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     GetLineBackendResult.Unavailable -> {
                         // Lookup failed: keep last known card; treat as refresh failure.
                         subscriptionState.applyLinkOnlyRefreshResult(
-                            linkOnly = previousLinkOnly,
+                            card = previousCard,
                             failed = true,
                             generation = generation,
                         )
                     }
                     null -> subscriptionState.applyLinkOnlyRefreshResult(
-                        linkOnly = null,
+                        card = null,
                         failed = false,
                         generation = generation,
                     )
@@ -1354,64 +1357,13 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             is SubscriptionUiState.SignedOut ->
                 GetLineHomeDesign.SubscriptionScreen.SignedOut(
                     hasImportedProfile = hasImportedProfile,
-                    card = linkOnly?.toCard(design),
+                    card = card?.toCard(design),
                     isRefreshing = isRefreshing,
                     refreshFailed = refreshFailed,
                 )
             is SubscriptionUiState.Failed ->
                 GetLineHomeDesign.SubscriptionScreen.Failed
         }
-    }
-
-    private fun LinkOnlyPresentation.toCard(
-        design: GetLineHomeDesign,
-    ): GetLineHomeDesign.CardContent {
-        val expireText = expireAtEpochMillis
-            ?.let { design.formatExpireUntil(it) }
-            ?: getString(GetLineUiR.string.get_line_home_expire_unknown)
-
-        val trafficText = when {
-            trafficUnlimited -> design.formatApiTraffic(0L, 0L, isUnlimited = true)
-            trafficUsedBytes != null || trafficLimitBytes != null ->
-                design.formatApiTraffic(
-                    usedBytes = trafficUsedBytes ?: 0L,
-                    limitBytes = trafficLimitBytes ?: 0L,
-                    isUnlimited = false,
-                )
-            else -> getString(GetLineUiR.string.get_line_home_traffic_unknown)
-        }
-
-        val limitBytes = trafficLimitBytes?.takeIf { it > 0L }
-        val trafficUsedFraction = if (trafficUnlimited || limitBytes == null) {
-            null
-        } else {
-            ((trafficUsedBytes ?: 0L).toDouble() / limitBytes.toDouble())
-                .coerceIn(0.0, 1.0)
-                .toFloat()
-        }
-
-        val visibleTag = SubscriptionHeaderDisplay.normalize(tag)
-        val visibleStatus = SubscriptionHeaderDisplay.normalize(status)
-        val title = visibleTag?.let {
-            SubscriptionHeaderDisplay.tariffTitle(it) { getString(it) }
-        }
-        val devicesText = deviceLimit?.let { design.formatDeviceLimit(it) }
-
-        return GetLineHomeDesign.CardContent(
-            title = title,
-            isActive = SubscriptionHeaderDisplay.isActiveStatus(visibleStatus),
-            statusText = visibleStatus?.let {
-                SubscriptionHeaderDisplay.statusText(it) { getString(it) }
-            },
-            expireText = expireText,
-            daysLeft = SubscriptionHeaderDisplay.daysLeft(
-                expireAtEpochMillis,
-                System.currentTimeMillis(),
-            ),
-            trafficText = trafficText,
-            trafficUsedFraction = trafficUsedFraction,
-            devicesText = devicesText,
-        )
     }
 
     private fun SubscriptionPresentation.toCard(
