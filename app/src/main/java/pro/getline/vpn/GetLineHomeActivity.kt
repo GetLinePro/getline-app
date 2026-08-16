@@ -36,6 +36,8 @@ import pro.getline.vpn.getline.auth.SubscriptionLoadResult
 import pro.getline.vpn.getline.auth.SubscriptionPresentation
 import pro.getline.vpn.getline.auth.SubscriptionStateHolder
 import pro.getline.vpn.getline.auth.SubscriptionUiState
+import pro.getline.vpn.getline.auth.shouldRefreshManagedProfileConfig
+import pro.getline.vpn.getline.auth.shouldTreatManagedSnapshotAsTransient
 import pro.getline.vpn.getline.GetLineSubscriptionSummary
 import com.github.kr328.clash.AccessControlActivity
 import com.github.kr328.clash.HelpActivity
@@ -897,12 +899,11 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     }
 
     /**
-     * Build SignedOut (with optional link-only card) from local profile snapshot.
-     * Card only when active imported uuid matches managed binding.
+     * Build SignedOut (with optional link-only card) from the stable managed binding.
      *
      * Transient profile-backend failure ([GetLineBackendResult.Unavailable]) must
-     * not erase an existing link-only card — only a successful snapshot can prove
-     * the managed profile is missing or not active.
+     * not erase an existing link-only card — only a successful lookup can prove
+     * the managed profile is missing.
      */
     private suspend fun applySignedOutState() {
         val managed = sessionRepository.managedProfileUuid()
@@ -913,11 +914,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             )
             return
         }
-        when (val snap = snapshotActiveSummary()) {
+        when (val snap = managedLocalSummaryResult()) {
             is GetLineBackendResult.Success -> {
-                val linkOnly = snap.value
-                    ?.takeIf { it.uuid == managed }
-                    ?.let { LinkOnlyPresentation.fromSummary(it) }
+                val linkOnly = snap.value?.let(LinkOnlyPresentation::fromSummary)
                 subscriptionState.applySignedOut(
                     hasImportedProfile = hasKnownImportedProfile,
                     linkOnly = linkOnly,
@@ -931,6 +930,38 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     linkOnly = previousLinkOnly,
                 )
             }
+            null -> subscriptionState.applySignedOut(
+                hasImportedProfile = hasKnownImportedProfile,
+                linkOnly = null,
+            )
+        }
+    }
+
+    /** Resolve the stable managed binding, independent of the active VPN profile. */
+    private suspend fun managedLocalSummaryResult():
+        GetLineBackendResult<GetLineSubscriptionSummary?>? {
+        val managed = sessionRepository.managedProfileUuid() ?: return null
+        val result = backend.subscriptions.findImported(GetLineSubscriptionId(managed))
+        if (result is GetLineBackendResult.Success) {
+            if (result.value != null) {
+                hasKnownImportedProfile = true
+            } else {
+                when (val imported = backend.subscriptions.hasImported()) {
+                    is GetLineBackendResult.Success -> {
+                        hasKnownImportedProfile = imported.value
+                    }
+                    GetLineBackendResult.Unavailable -> Unit
+                }
+            }
+        }
+        return result
+    }
+
+    private suspend fun managedLocalSummary(): GetLineSubscriptionSummary? {
+        return when (val result = managedLocalSummaryResult()) {
+            is GetLineBackendResult.Success -> result.value
+            null,
+            GetLineBackendResult.Unavailable -> null
         }
     }
 
@@ -942,14 +973,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * and there is no active imported profile. [GetLineBackendResult.Unavailable]
      * is a transient IPC/timeout failure — not proof of absence.
      */
-    private suspend fun managedLocalSummary(): GetLineSubscriptionSummary? {
-        val managed = sessionRepository.managedProfileUuid() ?: return null
-        return when (val snap = snapshotActiveSummary()) {
-            is GetLineBackendResult.Success -> snap.value?.takeIf { it.uuid == managed }
-            GetLineBackendResult.Unavailable -> null
-        }
-    }
-
     private suspend fun snapshotActiveSummary(): GetLineBackendResult<GetLineSubscriptionSummary?> {
         return when (val loaded = backend.subscriptions.snapshot()) {
             is GetLineBackendResult.Success -> {
@@ -1016,30 +1039,50 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     is SubscriptionLoadResult.Success -> {
                         val preferred = result.preferred
                         val fallbackTitle = getString(GetLineUiR.string.get_line_home_plan_unknown)
-                        val local = managedLocalSummary()
-                        val presentation = when {
-                            local != null -> SubscriptionPresentation.fromLocalSummary(
-                                summary = local,
-                                fallbackTitle = fallbackTitle,
-                                string = { getString(it) },
-                            )
-                            preferred != null -> SubscriptionPresentation.fromPreferred(
-                                item = preferred,
-                                fallbackTitle = fallbackTitle,
-                            )
-                            else -> null
+                        val local = managedLocalSummaryResult()
+                        val presentation = when (local) {
+                            is GetLineBackendResult.Success -> local.value?.let { summary ->
+                                SubscriptionPresentation.fromLocalSummary(
+                                    summary = summary,
+                                    string = { getString(it) },
+                                )
+                            }
+                            // No managed binding: retain the account-only card path.
+                            null -> preferred?.let {
+                                SubscriptionPresentation.fromPreferred(
+                                    item = it,
+                                    fallbackTitle = fallbackTitle,
+                                )
+                            }
+                            // A transient local snapshot failure is not permission to
+                            // switch a managed card back to account API data.
+                            GetLineBackendResult.Unavailable -> null
+                        }
+                        val localSnapshotMissing =
+                            local is GetLineBackendResult.Success && local.value == null
+                        val shouldRefreshManaged = shouldRefreshManagedProfileConfig(preferred)
+                        val localFailureIsTransient = shouldTreatManagedSnapshotAsTransient(
+                            localUnavailable = local == GetLineBackendResult.Unavailable,
+                            localMissing = localSnapshotMissing,
+                            repairWillRun = shouldRefreshManaged,
+                        )
+                        val appliedResult = if (localFailureIsTransient) {
+                            SubscriptionLoadResult.TransientFailure
+                        } else {
+                            result
                         }
                         subscriptionState.applyLoadResult(
-                            result = result,
+                            result = appliedResult,
                             presentation = presentation,
                             generation = generation,
                         )
                         Log.i(
-                            "subscription_ui load ok preferred=${preferred != null} " +
-                                "active=${presentation?.isActive}",
+                            "subscription_ui load ok preferred=${preferred != null}",
                         )
-                        // API card can show renewed while Clash still has expire placeholders.
-                        if (presentation?.isActive == true) {
+                        // STATUS is display-only. Keep config refresh driven by the
+                        // account API's active flag so migrated rows with no saved
+                        // status can fetch and backfill the new headers.
+                        if (shouldRefreshManaged) {
                             refreshManagedProfileConfigAfterActiveSubscription()
                         }
                     }
@@ -1113,11 +1156,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 if (!isActive) return@launch
                 val previousLinkOnly =
                     (subscriptionState.state as? SubscriptionUiState.SignedOut)?.linkOnly
-                when (val snap = snapshotActiveSummary()) {
+                when (val snap = managedLocalSummaryResult()) {
                     is GetLineBackendResult.Success -> {
-                        val summary = snap.value?.takeIf { it.uuid == managed }
                         subscriptionState.applyLinkOnlyRefreshResult(
-                            linkOnly = summary?.let(LinkOnlyPresentation::fromSummary),
+                            linkOnly = snap.value?.let(LinkOnlyPresentation::fromSummary),
                             // Clear card only when inventory confirms managed is gone;
                             // update failure alone keeps whatever snapshot returned.
                             // Unlike account-backed active state, link-only does not
@@ -1127,13 +1169,18 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         )
                     }
                     GetLineBackendResult.Unavailable -> {
-                        // Snapshot failed: keep last known card; treat as refresh failure.
+                        // Lookup failed: keep last known card; treat as refresh failure.
                         subscriptionState.applyLinkOnlyRefreshResult(
                             linkOnly = previousLinkOnly,
                             failed = true,
                             generation = generation,
                         )
                     }
+                    null -> subscriptionState.applyLinkOnlyRefreshResult(
+                        linkOnly = null,
+                        failed = false,
+                        generation = generation,
+                    )
                 }
                 paintSubscriptionState()
             } finally {
@@ -1160,21 +1207,18 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 ConfigUpdateResult.NotFound -> {
                     fetch(showLoading = false, allowNetwork = true)
                 }
-                ConfigUpdateResult.Updated -> {
-                    val summary = managedLocalSummary() ?: return@launch
-                    if (subscriptionState.state !is SubscriptionUiState.Ready) return@launch
-                    subscriptionState.updateReadyCard(
-                        SubscriptionPresentation.fromLocalSummary(
-                            summary = summary,
-                            fallbackTitle = getString(GetLineUiR.string.get_line_home_plan_unknown),
-                            string = { getString(it) },
-                        ),
-                    )
-                    paintSubscriptionState()
-                }
+                ConfigUpdateResult.Updated -> Unit
                 ConfigUpdateResult.NotRefreshable,
-                ConfigUpdateResult.Unavailable -> Unit
+                ConfigUpdateResult.Unavailable -> return@launch
             }
+            val summary = managedLocalSummary() ?: return@launch
+            subscriptionState.updateReadyCard(
+                SubscriptionPresentation.fromLocalSummary(
+                    summary = summary,
+                    string = { getString(it) },
+                ),
+            )
+            paintSubscriptionState()
         }
     }
 
@@ -1327,6 +1371,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             ?: getString(GetLineUiR.string.get_line_home_expire_unknown)
 
         val trafficText = when {
+            trafficUnlimited -> design.formatApiTraffic(0L, 0L, isUnlimited = true)
             trafficUsedBytes != null || trafficLimitBytes != null ->
                 design.formatApiTraffic(
                     usedBytes = trafficUsedBytes ?: 0L,
@@ -1337,7 +1382,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
 
         val limitBytes = trafficLimitBytes?.takeIf { it > 0L }
-        val trafficUsedFraction = if (limitBytes == null) {
+        val trafficUsedFraction = if (trafficUnlimited || limitBytes == null) {
             null
         } else {
             ((trafficUsedBytes ?: 0L).toDouble() / limitBytes.toDouble())
@@ -1347,8 +1392,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
 
         val visibleTag = SubscriptionHeaderDisplay.normalize(tag)
         val visibleStatus = SubscriptionHeaderDisplay.normalize(status)
-        val title = visibleTag?.let { SubscriptionHeaderDisplay.tariffTitle(it) { getString(it) } }
-            ?: getString(GetLineUiR.string.get_line_subscription_link_only_title)
+        val title = visibleTag?.let {
+            SubscriptionHeaderDisplay.tariffTitle(it) { getString(it) }
+        }
+        val devicesText = deviceLimit?.let { design.formatDeviceLimit(it) }
 
         return GetLineHomeDesign.CardContent(
             title = title,
@@ -1363,7 +1410,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             ),
             trafficText = trafficText,
             trafficUsedFraction = trafficUsedFraction,
-            devicesText = null,
+            devicesText = devicesText,
         )
     }
 

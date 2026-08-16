@@ -101,6 +101,38 @@ class SubscriptionPresentationTest {
     }
 
     @Test
+    fun managedConfigRefresh_usesAccountActivityOnly() {
+        assertTrue(shouldRefreshManagedProfileConfig(sample(isActive = true)))
+        assertFalse(shouldRefreshManagedProfileConfig(sample(isActive = false)))
+        assertFalse(shouldRefreshManagedProfileConfig(null))
+    }
+
+    @Test
+    fun missingManagedSnapshot_isTransientOnlyWhenRepairWillRun() {
+        assertTrue(
+            shouldTreatManagedSnapshotAsTransient(
+                localUnavailable = false,
+                localMissing = true,
+                repairWillRun = true,
+            ),
+        )
+        assertFalse(
+            shouldTreatManagedSnapshotAsTransient(
+                localUnavailable = false,
+                localMissing = true,
+                repairWillRun = false,
+            ),
+        )
+        assertTrue(
+            shouldTreatManagedSnapshotAsTransient(
+                localUnavailable = true,
+                localMissing = false,
+                repairWillRun = false,
+            ),
+        )
+    }
+
+    @Test
     fun selectPreferred_primaryWithLinkWins() {
         val primary = sample(id = "1", primary = true, link = "https://a")
         val other = sample(id = "2", primary = false, link = "https://b")
@@ -109,7 +141,7 @@ class SubscriptionPresentationTest {
     }
 
     @Test
-    fun fromLocalSummary_mapsTagStatusAndHidesDevices() {
+    fun fromLocalSummary_mapsTagStatusAndDeviceLimit() {
         val summary = pro.getline.vpn.getline.GetLineSubscriptionSummary(
             uuid = "managed",
             name = "link",
@@ -119,10 +151,10 @@ class SubscriptionPresentationTest {
             total = 10L,
             tag = "paid",
             status = "Active",
+            deviceLimit = 10,
         )
         val p = SubscriptionPresentation.fromLocalSummary(
             summary = summary,
-            fallbackTitle = "Subscription",
             string = { id ->
                 if (id == pro.getline.vpn.getlineui.R.string.get_line_tariff_paid) {
                     "Standard"
@@ -137,10 +169,46 @@ class SubscriptionPresentationTest {
         assertTrue(p.isActive)
         assertEquals("Active", p.statusText)
         assertTrue(p.showStatus)
-        assertNull(p.deviceLimit)
+        assertEquals(10, p.deviceLimit)
         assertEquals(3L, p.trafficUsedBytes)
         assertEquals(10L, p.trafficLimitBytes)
+        assertFalse(p.trafficUnlimited)
         assertEquals(2, p.daysLeft)
+    }
+
+    @Test
+    fun fromLocalSummary_countedTrafficWithNoAllowance_isUnlimited() {
+        val unlimited = SubscriptionPresentation.fromLocalSummary(
+            summary = pro.getline.vpn.getline.GetLineSubscriptionSummary(
+                uuid = "u",
+                name = "n",
+                expire = 0L,
+                upload = 100L,
+                download = 50L,
+                total = 0L,
+                tag = "UNLIM",
+                status = "ACTIVE",
+            ),
+            string = { "unused" },
+        )
+        assertTrue(unlimited.trafficUnlimited)
+        assertNull(unlimited.trafficLimitBytes)
+
+        // Same row before the first byte is counted: still "unknown", not unlimited.
+        val untouched = SubscriptionPresentation.fromLocalSummary(
+            summary = pro.getline.vpn.getline.GetLineSubscriptionSummary(
+                uuid = "u",
+                name = "n",
+                expire = 0L,
+                upload = 0L,
+                download = 0L,
+                total = 0L,
+                tag = "UNLIM",
+                status = "ACTIVE",
+            ),
+            string = { "unused" },
+        )
+        assertFalse(untouched.trafficUnlimited)
     }
 
     @Test
@@ -156,7 +224,6 @@ class SubscriptionPresentationTest {
                 tag = "NEWPLAN",
                 status = "LIMIT",
             ),
-            fallbackTitle = "Subscription",
             string = { "unused" },
         )
         assertEquals("NEWPLAN", unknown.title)
@@ -175,10 +242,9 @@ class SubscriptionPresentationTest {
                 tag = "nope!",
                 status = null,
             ),
-            fallbackTitle = "Subscription",
             string = { "unused" },
         )
-        assertEquals("Subscription", invalid.title)
+        assertNull(invalid.title)
         assertFalse(invalid.showStatus)
         assertNull(invalid.statusText)
     }

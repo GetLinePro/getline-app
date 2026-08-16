@@ -88,6 +88,7 @@ class PrimaryConfigDownloaderTest {
         assertEquals("\"abc123\"", downloaded.metadata.etag)
         assertNull(downloaded.metadata.tag)
         assertNull(downloaded.metadata.status)
+        assertNull(downloaded.metadata.deviceLimit)
 
         val file = downloaded.file
         result.close()
@@ -162,7 +163,7 @@ class PrimaryConfigDownloaderTest {
     }
 
     @Test
-    fun getlineTagAndStatus_areStoredOn200And304() = runBlocking {
+    fun getlineDisplayHeaders_areStoredOn200And304() = runBlocking {
         val opener200 = RecordingOpener(
             Response(
                 body = "proxies: []\n",
@@ -170,6 +171,7 @@ class PrimaryConfigDownloaderTest {
                     "ETag" to "\"v1\"",
                     "X-GetLine-Tag" to "  paid ",
                     "X-GetLine-Status" to "Active",
+                    "X-GetLine-Device-Limit" to "10",
                 ),
             ),
         )
@@ -181,6 +183,7 @@ class PrimaryConfigDownloaderTest {
             val downloaded = result as PrimaryConfigFetchResult.Downloaded
             assertEquals("paid", downloaded.metadata.tag)
             assertEquals("Active", downloaded.metadata.status)
+            assertEquals(10, downloaded.metadata.deviceLimit)
         }
 
         val opener304 = RecordingOpener(
@@ -190,6 +193,7 @@ class PrimaryConfigDownloaderTest {
                 headers = mapOf(
                     "X-GetLine-Tag" to "LTEPLUS",
                     "X-GetLine-Status" to "  ",
+                    "X-GetLine-Device-Limit" to "invalid",
                 ),
             ),
         )
@@ -202,6 +206,7 @@ class PrimaryConfigDownloaderTest {
             val notModified = result as PrimaryConfigFetchResult.NotModified
             assertEquals("LTEPLUS", notModified.metadata.tag)
             assertNull(notModified.metadata.status)
+            assertNull(notModified.metadata.deviceLimit)
         }
     }
 

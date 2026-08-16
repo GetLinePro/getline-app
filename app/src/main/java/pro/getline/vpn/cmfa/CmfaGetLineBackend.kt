@@ -81,6 +81,18 @@ private class CmfaGetLineSubscriptionRepository(
         }
     }
 
+    override suspend fun findImported(
+        id: GetLineSubscriptionId,
+    ): GetLineBackendResult<GetLineSubscriptionSummary?> {
+        return callProfileBackend(op = "find_imported") {
+            withProfile {
+                queryByUUID(id.toUuid())
+                    ?.takeIf { it.imported }
+                    ?.toGetLineSummary()
+            }
+        }
+    }
+
     override suspend fun hasImported(): GetLineBackendResult<Boolean> {
         return callProfileBackend(op = "has_imported") {
             withProfile {
@@ -300,6 +312,7 @@ private class CmfaGetLineSubscriptionRepository(
             total = total,
             tag = tag,
             status = status,
+            deviceLimit = deviceLimit,
         )
     }
 }

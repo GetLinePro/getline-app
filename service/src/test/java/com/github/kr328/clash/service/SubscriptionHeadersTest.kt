@@ -18,8 +18,23 @@ class SubscriptionHeadersTest {
     }
 
     @Test
+    fun usableDeviceLimit_acceptsOnlyPositiveInteger() {
+        assertEquals(10, usableSubscriptionDeviceLimit(" 10 "))
+        assertNull(usableSubscriptionDeviceLimit(null))
+        assertNull(usableSubscriptionDeviceLimit("0"))
+        assertNull(usableSubscriptionDeviceLimit("-1"))
+        assertNull(usableSubscriptionDeviceLimit("many"))
+    }
+
+    @Test
     fun trafficAndMarkers_areIndependent() {
-        val current = sampleImported(tag = "OLD", status = "OLD", upload = 1, download = 2)
+        val current = sampleImported(
+            tag = "OLD",
+            status = "OLD",
+            deviceLimit = 3,
+            upload = 1,
+            download = 2,
+        )
         val info = FetchStatus(
             action = FetchStatus.Action.SubscriptionInfo,
             args = emptyList(),
@@ -36,6 +51,7 @@ class SubscriptionHeadersTest {
             profileUpdateInterval = null,
             tag = "PAID",
             status = "Active",
+            deviceLimit = 10,
         )
 
         val both = applyImportedSubscriptionFields(current, info, metadata)
@@ -45,6 +61,7 @@ class SubscriptionHeadersTest {
         assertEquals(40L, both.expire)
         assertEquals("PAID", both.tag)
         assertEquals("Active", both.status)
+        assertEquals(10, both.deviceLimit)
 
         val markersOnly = applyImportedSubscriptionFields(current, subscriptionInfo = null, metadata)
         assertEquals(1L, markersOnly.upload)
@@ -53,20 +70,50 @@ class SubscriptionHeadersTest {
         val trafficOnly = applyImportedSubscriptionFields(current, info, metadata = null)
         assertEquals(10L, trafficOnly.upload)
         assertEquals("OLD", trafficOnly.tag)
+        assertEquals(3, trafficOnly.deviceLimit)
 
         val cleared = applyImportedSubscriptionFields(
             current,
             subscriptionInfo = null,
-            metadata = metadata.copy(tag = "  ", status = null),
+            metadata = metadata.copy(tag = "  ", status = null, deviceLimit = null),
         )
         assertNull(cleared.tag)
         assertNull(cleared.status)
+        assertNull(cleared.deviceLimit)
         assertEquals(1L, cleared.upload)
+    }
+
+    @Test
+    fun storedHeaders_nativePreserves_httpsMissingClears() {
+        val native = resolveStoredSubscriptionHeaders(
+            currentTag = "PAID",
+            currentStatus = "Active",
+            currentDeviceLimit = 10,
+            metadata = null,
+        )
+        assertEquals("PAID", native.tag)
+        assertEquals("Active", native.status)
+        assertEquals(10, native.deviceLimit)
+
+        val httpsMissing = resolveStoredSubscriptionHeaders(
+            currentTag = "PAID",
+            currentStatus = "Active",
+            currentDeviceLimit = 10,
+            metadata = PrimaryConfigResponseMetadata(
+                etag = null,
+                subscriptionUserInfo = null,
+                profileUpdateInterval = null,
+            ),
+        )
+        assertNull(httpsMissing.tag)
+        assertNull(httpsMissing.status)
+        assertNull(httpsMissing.deviceLimit)
     }
 
     private fun sampleImported(
         tag: String?,
         status: String?,
+        deviceLimit: Int?,
         upload: Long,
         download: Long,
     ) = Imported(
@@ -82,5 +129,6 @@ class SubscriptionHeadersTest {
         createdAt = 1L,
         tag = tag,
         status = status,
+        deviceLimit = deviceLimit,
     )
 }

@@ -43,6 +43,9 @@
             name="cardTitle"
             type="String" />
         <variable
+            name="cardTitleVisible"
+            type="boolean" />
+        <variable
             name="subscriptionStatusText"
             type="String" />
         <variable
@@ -519,7 +522,8 @@
                                 android:baselineAligned="false"
                                 android:gravity="center_vertical"
                                 android:orientation="horizontal"
-                                android:paddingEnd="48dp">
+                                android:paddingEnd="48dp"
+                                android:visibility="@{(cardTitleVisible || subscriptionStatusVisible) ? View.VISIBLE : View.GONE}">
 
                                 <TextView
                                     style="@style/Widget.GetLine.Text.Subtitle"
@@ -531,6 +535,7 @@
                                     android:maxLines="2"
                                     android:text="@{cardTitle}"
                                     android:textColor="@color/getline_text_primary"
+                                    android:visibility="@{cardTitleVisible ? View.VISIBLE : View.GONE}"
                                     tools:text="Trial" />
 
                                 <TextView

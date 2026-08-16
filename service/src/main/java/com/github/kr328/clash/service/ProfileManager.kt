@@ -235,6 +235,7 @@ class ProfileManager(private val context: Context) : IProfileManager,
             ageSecretKey = if (pending != null) pending.ageSecretKey else imported?.ageSecretKey,
             tag = imported?.tag,
             status = imported?.status,
+            deviceLimit = imported?.deviceLimit,
         )
     }
 

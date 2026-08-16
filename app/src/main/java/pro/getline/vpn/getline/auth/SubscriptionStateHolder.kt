@@ -130,8 +130,15 @@ class SubscriptionStateHolder {
     }
 
     fun updateReadyCard(presentation: SubscriptionPresentation) {
-        val current = state as? SubscriptionUiState.Ready ?: return
-        state = current.copy(subscription = presentation)
+        state = when (val current = state) {
+            is SubscriptionUiState.Ready -> current.copy(subscription = presentation)
+            // A successful config update may recover an initial local snapshot
+            // failure or fill a just-repaired managed profile.
+            SubscriptionUiState.Empty,
+            SubscriptionUiState.Failed -> SubscriptionUiState.Ready(presentation)
+            is SubscriptionUiState.Loading,
+            is SubscriptionUiState.SignedOut -> current
+        }
     }
 
     fun applyLoadResult(

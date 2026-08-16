@@ -28,6 +28,7 @@ data class Profile(
     val ageSecretKey: String? = null,
     val tag: String? = null,
     val status: String? = null,
+    val deviceLimit: Int? = null,
 ) : Parcelable {
     enum class Type {
         File, Url, External

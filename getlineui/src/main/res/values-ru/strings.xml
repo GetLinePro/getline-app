@@ -124,7 +124,6 @@
     <string name="get_line_subscription_empty_explanation">Обновите данные или обратитесь в поддержку.</string>
     <string name="get_line_subscription_signed_out_title">Управление подпиской недоступно</string>
     <string name="get_line_subscription_signed_out_explanation">Войдите в GetLine Pro, чтобы просматривать данные подписки и управлять ей.</string>
-    <string name="get_line_subscription_link_only_title">Подписка добавлена по ссылке</string>
     <string name="get_line_subscription_link_only_explanation">Для управления оплатой и устройствами войдите в аккаунт владельца подписки.</string>
     <string name="get_line_subscription_link_only_sign_in">Войти для управления</string>
     <string name="get_line_subscription_link_only_refresh_failed">Не удалось обновить подписку. Используются последние сохранённые настройки.</string>

@@ -103,10 +103,11 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
 
     /**
      * Subscription card content (Subscription destination only).
-     * Built from /api/subscriptions preferred item presentation.
+     * Managed profiles are rendered from their saved local snapshot.
      */
     data class CardContent(
-        val title: String,
+        /** Tariff label. Null hides the tariff row text. */
+        val title: String?,
         val isActive: Boolean,
         val statusText: String? = null,
         val expireText: String,
@@ -1121,6 +1122,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         if (content == null) {
             binding.profileCardVisible = false
             binding.cardTitle = context.getString(R.string.get_line_home_no_profile)
+            binding.cardTitleVisible = false
             binding.subscriptionStatusText = ""
             binding.subscriptionStatusVisible = false
             binding.expireText = context.getString(R.string.get_line_home_expire_unknown)
@@ -1137,7 +1139,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             binding.refreshSubscriptionProgress.visibility = View.GONE
         } else {
             binding.profileCardVisible = true
-            binding.cardTitle = content.title
+            binding.cardTitle = content.title.orEmpty()
+            binding.cardTitleVisible = content.title != null
             binding.subscriptionStatusText = content.statusText.orEmpty()
             binding.subscriptionStatusVisible = content.statusText != null
             binding.expireText = content.expireText

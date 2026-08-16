@@ -1,7 +1,9 @@
 package pro.getline.vpn.getline.auth
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import pro.getline.vpn.getline.GetLineSubscriptionSummary
 
@@ -26,6 +28,7 @@ class LinkOnlyPresentationTest {
         )
         assertNull(p.trafficLimitBytes)
         assertEquals(150L, p.trafficUsedBytes)
+        assertTrue(p.trafficUnlimited)
     }
 
     @Test
@@ -35,6 +38,8 @@ class LinkOnlyPresentationTest {
         )
         assertNull(p.trafficUsedBytes)
         assertNull(p.trafficLimitBytes)
+        // No counters: "unlimited" and "no Subscription-Userinfo" look alike.
+        assertFalse(p.trafficUnlimited)
     }
 
     @Test
@@ -44,15 +49,17 @@ class LinkOnlyPresentationTest {
         )
         assertEquals(0L, p.trafficUsedBytes)
         assertEquals(1_000L, p.trafficLimitBytes)
+        assertFalse(p.trafficUnlimited)
     }
 
     @Test
     fun tagAndStatus_passThrough() {
         val p = LinkOnlyPresentation.fromSummary(
-            sample(tag = "PAID", status = "Active"),
+            sample(tag = "PAID", status = "Active", deviceLimit = 10),
         )
         assertEquals("PAID", p.tag)
         assertEquals("Active", p.status)
+        assertEquals(10, p.deviceLimit)
     }
 
     @Test
@@ -60,6 +67,7 @@ class LinkOnlyPresentationTest {
         val p = LinkOnlyPresentation.fromSummary(sample())
         assertNull(p.tag)
         assertNull(p.status)
+        assertNull(p.deviceLimit)
     }
 
     private fun sample(
@@ -69,6 +77,7 @@ class LinkOnlyPresentationTest {
         total: Long = 0L,
         tag: String? = null,
         status: String? = null,
+        deviceLimit: Int? = null,
     ): GetLineSubscriptionSummary {
         return GetLineSubscriptionSummary(
             uuid = "managed-uuid",
@@ -79,6 +88,7 @@ class LinkOnlyPresentationTest {
             total = total,
             tag = tag,
             status = status,
+            deviceLimit = deviceLimit,
         )
     }
 }

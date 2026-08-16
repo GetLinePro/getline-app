@@ -341,6 +341,9 @@ private class LogoutFakeSubscriptionRepository(
 
     override suspend fun snapshot(): GetLineBackendResult<GetLineSubscriptionSnapshot> =
         error("not used")
+    override suspend fun findImported(
+        id: GetLineSubscriptionId,
+    ): GetLineBackendResult<GetLineSubscriptionSummary?> = error("not used")
     override suspend fun hasImported(): GetLineBackendResult<Boolean> = error("not used")
     override suspend fun hasActiveImported(): GetLineBackendResult<Boolean> = error("not used")
     override suspend fun createPending(

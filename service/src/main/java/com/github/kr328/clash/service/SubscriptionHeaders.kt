@@ -12,9 +12,36 @@ internal fun usableSubscriptionHeader(raw: String?): String? {
     return trimmed.takeIf { it.isNotEmpty() }
 }
 
+/** Only a positive, in-range integer is a displayable device allowance. */
+internal fun usableSubscriptionDeviceLimit(raw: String?): Int? =
+    raw?.trim()?.toIntOrNull()?.takeIf { it > 0 }
+
+internal data class StoredSubscriptionHeaders(
+    val tag: String?,
+    val status: String?,
+    val deviceLimit: Int?,
+)
+
+/** Native fetches have no platform metadata and therefore preserve all fields. */
+internal fun resolveStoredSubscriptionHeaders(
+    currentTag: String?,
+    currentStatus: String?,
+    currentDeviceLimit: Int?,
+    metadata: PrimaryConfigResponseMetadata?,
+): StoredSubscriptionHeaders {
+    if (metadata == null) {
+        return StoredSubscriptionHeaders(currentTag, currentStatus, currentDeviceLimit)
+    }
+    return StoredSubscriptionHeaders(
+        tag = usableSubscriptionHeader(metadata.tag),
+        status = usableSubscriptionHeader(metadata.status),
+        deviceLimit = metadata.deviceLimit,
+    )
+}
+
 /**
  * Traffic counters stay gated on [FetchStatus.subUpload] so a response without
- * Subscription-Userinfo does not wipe them. Tag/status follow [metadata]:
+ * Subscription-Userinfo does not wipe them. Display headers follow [metadata]:
  * present header → write; successful https response without the header → clear;
  * no platform metadata (native http:// path) → leave stored values alone.
  */
@@ -33,11 +60,16 @@ internal fun applyImportedSubscriptionFields(
             expire = subscriptionInfo.subExpire ?: 0,
         )
     }
-    if (metadata != null) {
-        next = next.copy(
-            tag = usableSubscriptionHeader(metadata.tag),
-            status = usableSubscriptionHeader(metadata.status),
-        )
-    }
+    val headers = resolveStoredSubscriptionHeaders(
+        next.tag,
+        next.status,
+        next.deviceLimit,
+        metadata,
+    )
+    next = next.copy(
+        tag = headers.tag,
+        status = headers.status,
+        deviceLimit = headers.deviceLimit,
+    )
     return next
 }

@@ -88,6 +88,12 @@ object ProfileProcessor {
                         val updateInterval = subscriptionInfo?.subUpdateInterval
                             ?.takeIf { old == null && snapshot.interval == 0L }
                             ?: snapshot.interval
+                        val headers = resolveStoredSubscriptionHeaders(
+                            currentTag = old?.tag,
+                            currentStatus = old?.status,
+                            currentDeviceLimit = old?.deviceLimit,
+                            metadata = fetched.metadata,
+                        )
                         val new = Imported(
                             snapshot.uuid,
                             snapshot.name,
@@ -100,8 +106,9 @@ object ProfileProcessor {
                             subscriptionInfo?.subExpire ?: 0,
                             old?.createdAt ?: System.currentTimeMillis(),
                             ageSecretKey = snapshot.ageSecretKey,
-                            tag = usableSubscriptionHeader(fetched.metadata?.tag),
-                            status = usableSubscriptionHeader(fetched.metadata?.status),
+                            tag = headers.tag,
+                            status = headers.status,
+                            deviceLimit = headers.deviceLimit,
                         )
                         if (old != null) {
                             ImportedDao().update(new)

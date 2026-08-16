@@ -14,6 +14,7 @@ private val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE imported ADD COLUMN tag TEXT")
         database.execSQL("ALTER TABLE imported ADD COLUMN status TEXT")
+        database.execSQL("ALTER TABLE imported ADD COLUMN deviceLimit INTEGER")
     }
 }
 

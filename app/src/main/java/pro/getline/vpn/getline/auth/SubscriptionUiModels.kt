@@ -36,31 +36,41 @@ data class LinkOnlyPresentation(
     val expireAtEpochMillis: Long?,
     val trafficUsedBytes: Long?,
     val trafficLimitBytes: Long?,
+    val trafficUnlimited: Boolean = false,
     val tag: String? = null,
     val status: String? = null,
+    val deviceLimit: Int? = null,
 ) {
     companion object {
         fun fromSummary(summary: GetLineSubscriptionSummary): LinkOnlyPresentation {
             val used = summary.upload + summary.download
+            // Counted traffic proves Subscription-Userinfo was parsed, so a
+            // non-positive total there is a real "no allowance", not a missing
+            // header. Without counters the two are indistinguishable and the
+            // card says "unknown" until the first byte is reported.
+            val counted = summary.upload > 0L || summary.download > 0L
             return LinkOnlyPresentation(
                 expireAtEpochMillis = summary.expire.takeIf { it > 0L },
                 // Zero used with no limit cannot be distinguished from "header missing".
                 trafficUsedBytes = if (used == 0L && summary.total <= 0L) null else used,
                 trafficLimitBytes = summary.total.takeIf { it > 0L },
+                trafficUnlimited = counted && summary.total <= 0L,
                 tag = summary.tag,
                 status = summary.status,
+                deviceLimit = summary.deviceLimit?.takeIf { it > 0 },
             )
         }
     }
 }
 
 /**
- * Presentation model for the subscription card.
- * Built from [SubscriptionItem] via [selectPreferred] — never raw network DTOs in View.
+ * Presentation model for the subscription card. Managed profiles use the saved
+ * local summary; the account item remains only for the no-binding fallback.
  */
 data class SubscriptionPresentation(
     val id: String?,
-    val title: String,
+    /** Tariff label. Null when the profile supplied no valid tag. */
+    val title: String?,
     val isActive: Boolean,
     val expireAtEpochMillis: Long?,
     val daysLeft: Int?,
@@ -100,7 +110,6 @@ data class SubscriptionPresentation(
 
         fun fromLocalSummary(
             summary: GetLineSubscriptionSummary,
-            fallbackTitle: String,
             string: (Int) -> String,
             nowMillis: Long = System.currentTimeMillis(),
         ): SubscriptionPresentation {
@@ -109,15 +118,14 @@ data class SubscriptionPresentation(
             val status = SubscriptionHeaderDisplay.normalize(link.status)
             return SubscriptionPresentation(
                 id = summary.uuid,
-                title = tag?.let { SubscriptionHeaderDisplay.tariffTitle(it, string) }
-                    ?: fallbackTitle,
+                title = tag?.let { SubscriptionHeaderDisplay.tariffTitle(it, string) },
                 isActive = SubscriptionHeaderDisplay.isActiveStatus(status),
                 expireAtEpochMillis = link.expireAtEpochMillis,
                 daysLeft = SubscriptionHeaderDisplay.daysLeft(link.expireAtEpochMillis, nowMillis),
-                deviceLimit = null,
+                deviceLimit = link.deviceLimit,
                 trafficUsedBytes = link.trafficUsedBytes,
                 trafficLimitBytes = link.trafficLimitBytes,
-                trafficUnlimited = false,
+                trafficUnlimited = link.trafficUnlimited,
                 statusText = status?.let { SubscriptionHeaderDisplay.statusText(it, string) },
                 showStatus = status != null,
             )
@@ -131,3 +139,15 @@ sealed interface SubscriptionLoadResult {
     data object SignedOut : SubscriptionLoadResult
     data object TransientFailure : SubscriptionLoadResult
 }
+
+/** Header status is display-only; config synchronization follows the account API. */
+internal fun shouldRefreshManagedProfileConfig(preferred: SubscriptionItem?): Boolean =
+    preferred?.isActive == true
+
+/** Missing local data is transient only when an active subscription will repair it. */
+internal fun shouldTreatManagedSnapshotAsTransient(
+    localUnavailable: Boolean,
+    localMissing: Boolean,
+    repairWillRun: Boolean,
+): Boolean =
+    localUnavailable || (localMissing && repairWillRun)

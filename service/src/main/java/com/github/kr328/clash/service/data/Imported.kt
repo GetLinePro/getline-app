@@ -22,4 +22,5 @@ data class Imported(
     @ColumnInfo(name = "ageSecretKey") val ageSecretKey: String? = null,
     @ColumnInfo(name = "tag") val tag: String? = null,
     @ColumnInfo(name = "status") val status: String? = null,
+    @ColumnInfo(name = "deviceLimit") val deviceLimit: Int? = null,
 )

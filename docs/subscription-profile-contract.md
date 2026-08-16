@@ -36,6 +36,7 @@ X-GetLine-Profile: subscription
 X-GetLine-Schema: 1
 X-GetLine-Tag: …
 X-GetLine-Status: …
+X-GetLine-Device-Limit: 10
 ETag: W/"…"
 Vary: Origin, Accept-Encoding, User-Agent
 ```
@@ -43,11 +44,13 @@ Vary: Origin, Accept-Encoding, User-Agent
 `x-getline-schema: 1` is the current schema. A later number means a capability
 this client may not apply. The client does not parse or enforce the number.
 
-`X-GetLine-Tag` and `X-GetLine-Status` are optional user attributes. After a
+`X-GetLine-Tag`, `X-GetLine-Status`, and `X-GetLine-Device-Limit` are optional
+user attributes. The device limit is displayed only when it is a positive
+integer; the current device count is not read or displayed. After a
 successful primary-config fetch (`200` or `304`) the client stores them on the
 imported profile and builds the Subscription card from that snapshot. A
 successful response that omits a header clears the saved value. A failed fetch
-leaves the last snapshot. Do not log either value.
+leaves the last snapshot. Do not log these values.
 
 The YAML body may also carry an `x-getline-profile` mapping. The client does not
 read it. Judge the answering template by the headers.

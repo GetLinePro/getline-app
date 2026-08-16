@@ -107,6 +107,29 @@ class SubscriptionStateHolderTest {
     }
 
     @Test
+    fun updateReadyCard_recoversFailedLocalSnapshot() {
+        val holder = SubscriptionStateHolder()
+        assertTrue(holder.beginInitialLoad())
+        holder.applyLoadResult(SubscriptionLoadResult.TransientFailure, presentation = null)
+
+        holder.updateReadyCard(samplePresentation(title = "Recovered"))
+
+        val ready = holder.state as SubscriptionUiState.Ready
+        assertEquals("Recovered", ready.subscription.title)
+        assertFalse(ready.transientError)
+    }
+
+    @Test
+    fun updateReadyCard_doesNotResurrectSignedOutState() {
+        val holder = SubscriptionStateHolder()
+        holder.applySignedOut(hasImportedProfile = true)
+
+        holder.updateReadyCard(samplePresentation(title = "Stale"))
+
+        assertTrue(holder.state is SubscriptionUiState.SignedOut)
+    }
+
+    @Test
     fun signedOut_withAndWithoutProfile() {
         val holder = SubscriptionStateHolder()
         holder.applySignedOut(hasImportedProfile = true)
