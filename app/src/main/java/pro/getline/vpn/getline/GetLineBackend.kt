@@ -22,6 +22,12 @@ object GetLineBackendProvider {
 
 interface GetLineSubscriptionRepository {
     suspend fun snapshot(): GetLineBackendResult<GetLineSubscriptionSnapshot>
+
+    /** Imported profile by stable binding, regardless of which profile is active. */
+    suspend fun findImported(
+        id: GetLineSubscriptionId,
+    ): GetLineBackendResult<GetLineSubscriptionSummary?>
+
     suspend fun hasImported(): GetLineBackendResult<Boolean>
     suspend fun hasActiveImported(): GetLineBackendResult<Boolean>
     suspend fun createPending(
@@ -200,6 +206,9 @@ data class GetLineSubscriptionSummary(
     val upload: Long,
     val download: Long,
     val total: Long,
+    val tag: String? = null,
+    val status: String? = null,
+    val deviceLimit: Int? = null,
 )
 
 data class GetLineSubscriptionSnapshot(

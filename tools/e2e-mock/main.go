@@ -476,6 +476,9 @@ func handleSubscriptionYAML(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	// Common subscription metadata headers (optional; CMFA tolerates absence).
 	w.Header().Set("Subscription-Userinfo", "upload=0; download=0; total=16106127360; expire=0")
+	w.Header().Set("X-GetLine-Tag", "PAID")
+	w.Header().Set("X-GetLine-Status", "Active")
+	w.Header().Set("X-GetLine-Device-Limit", "10")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(e2eClashYAML))
 }

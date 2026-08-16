@@ -79,12 +79,12 @@ class SubscriptionStateHolder {
 
     fun applySignedOut(
         hasImportedProfile: Boolean,
-        linkOnly: LinkOnlyPresentation? = null,
+        card: SubscriptionPresentation? = null,
     ) {
         endFlight()
         state = SubscriptionUiState.SignedOut(
             hasImportedProfile = hasImportedProfile,
-            linkOnly = linkOnly,
+            card = card,
         )
     }
 
@@ -107,7 +107,7 @@ class SubscriptionStateHolder {
     /**
      * Apply result of a link-only config refresh.
      *
-     * [linkOnly] null means the managed profile is **confirmed** missing/inactive
+     * [card] null means the managed profile is **confirmed** missing/inactive
      * after a successful inventory read — the card is removed. Callers must not
      * pass null for transient profile-backend failures; pass the previous card.
      *
@@ -115,7 +115,7 @@ class SubscriptionStateHolder {
      * completions from superseded jobs are ignored.
      */
     fun applyLinkOnlyRefreshResult(
-        linkOnly: LinkOnlyPresentation?,
+        card: SubscriptionPresentation?,
         failed: Boolean,
         generation: Int = flightGeneration,
     ) {
@@ -123,10 +123,22 @@ class SubscriptionStateHolder {
         requestInFlight = false
         val current = state as? SubscriptionUiState.SignedOut ?: return
         state = current.copy(
-            linkOnly = linkOnly,
+            card = card,
             isRefreshing = false,
             refreshFailed = failed,
         )
+    }
+
+    fun updateReadyCard(presentation: SubscriptionPresentation) {
+        state = when (val current = state) {
+            is SubscriptionUiState.Ready -> current.copy(subscription = presentation)
+            // A successful config update may recover an initial local snapshot
+            // failure or fill a just-repaired managed profile.
+            SubscriptionUiState.Empty,
+            SubscriptionUiState.Failed -> SubscriptionUiState.Ready(presentation)
+            is SubscriptionUiState.Loading,
+            is SubscriptionUiState.SignedOut -> current
+        }
     }
 
     fun applyLoadResult(
@@ -140,7 +152,7 @@ class SubscriptionStateHolder {
         requestInFlight = false
         state = when (result) {
             is SubscriptionLoadResult.Success -> {
-                if (result.preferred == null || presentation == null) {
+                if (presentation == null) {
                     SubscriptionUiState.Empty
                 } else {
                     SubscriptionUiState.Ready(

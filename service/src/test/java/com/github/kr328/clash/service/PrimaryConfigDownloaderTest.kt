@@ -86,6 +86,9 @@ class PrimaryConfigDownloaderTest {
         assertEquals("upload=1; download=2; total=3", downloaded.metadata.subscriptionUserInfo)
         assertEquals("24", downloaded.metadata.profileUpdateInterval)
         assertEquals("\"abc123\"", downloaded.metadata.etag)
+        assertNull(downloaded.metadata.tag)
+        assertNull(downloaded.metadata.status)
+        assertNull(downloaded.metadata.deviceLimit)
 
         val file = downloaded.file
         result.close()
@@ -157,6 +160,54 @@ class PrimaryConfigDownloaderTest {
             opener.connections.single().requestHeader("User-Agent"),
         )
         assertEquals("\"same\"", opener.connections.single().requestHeader("If-None-Match"))
+    }
+
+    @Test
+    fun getlineDisplayHeaders_areStoredOn200And304() = runBlocking {
+        val opener200 = RecordingOpener(
+            Response(
+                body = "proxies: []\n",
+                headers = mapOf(
+                    "ETag" to "\"v1\"",
+                    "X-GetLine-Tag" to "  paid ",
+                    "X-GetLine-Status" to "Active",
+                    "X-GetLine-Device-Limit" to "10",
+                ),
+            ),
+        )
+        downloader(opener200).download(
+            context,
+            "https://example.com/subscription",
+            temporaryDirectory = temporaryFolder.newFolder("tag-200"),
+        ).use { result ->
+            val downloaded = result as PrimaryConfigFetchResult.Downloaded
+            assertEquals("paid", downloaded.metadata.tag)
+            assertEquals("Active", downloaded.metadata.status)
+            assertEquals(10, downloaded.metadata.deviceLimit)
+        }
+
+        val opener304 = RecordingOpener(
+            Response(
+                code = 304,
+                message = "Not Modified",
+                headers = mapOf(
+                    "X-GetLine-Tag" to "LTEPLUS",
+                    "X-GetLine-Status" to "  ",
+                    "X-GetLine-Device-Limit" to "invalid",
+                ),
+            ),
+        )
+        downloader(opener304).download(
+            context,
+            "https://example.com/subscription",
+            ifNoneMatch = "\"same\"",
+            temporaryDirectory = temporaryFolder.newFolder("tag-304"),
+        ).use { result ->
+            val notModified = result as PrimaryConfigFetchResult.NotModified
+            assertEquals("LTEPLUS", notModified.metadata.tag)
+            assertNull(notModified.metadata.status)
+            assertNull(notModified.metadata.deviceLimit)
+        }
     }
 
     @Test

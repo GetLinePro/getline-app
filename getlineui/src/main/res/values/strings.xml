@@ -115,6 +115,13 @@
     <string name="get_line_home_devices_label">Devices</string>
     <string name="get_line_home_devices_limit_format">Up to %1$d devices</string>
     <string name="get_line_home_plan_unknown">Subscription</string>
+    <string name="get_line_tariff_paid">Standard</string>
+    <string name="get_line_tariff_lteplus">Standard LTE+</string>
+    <string name="get_line_tariff_paidplus">Unlimited</string>
+    <string name="get_line_tariff_unlim">Unlimited LTE+</string>
+    <string name="get_line_tariff_student">Student</string>
+    <string name="get_line_tariff_lte">Mobile LTE+</string>
+    <string name="get_line_tariff_friends">friends</string>
     <string name="get_line_home_refresh_subscription">Refresh subscription</string>
     <string name="get_line_subscription_refreshing">Refreshing subscription</string>
     <string name="get_line_subscription_load_failed_title">Couldn’t load subscription</string>
@@ -123,7 +130,6 @@
     <string name="get_line_subscription_empty_explanation">Refresh the data or contact support.</string>
     <string name="get_line_subscription_signed_out_title">Subscription management unavailable</string>
     <string name="get_line_subscription_signed_out_explanation">Sign in to GetLine Pro to view and manage your subscription.</string>
-    <string name="get_line_subscription_link_only_title">Subscription added by link</string>
     <string name="get_line_subscription_link_only_explanation">To manage billing and devices, sign in with the subscription owner account.</string>
     <string name="get_line_subscription_link_only_sign_in">Sign in to manage</string>
     <string name="get_line_subscription_link_only_refresh_failed">Couldn’t refresh subscription. Using last saved settings.</string>

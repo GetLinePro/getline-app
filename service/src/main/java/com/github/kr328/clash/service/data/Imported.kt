@@ -20,4 +20,7 @@ data class Imported(
     @ColumnInfo(name = "expire") val expire: Long,
     @ColumnInfo(name = "createdAt") val createdAt: Long,
     @ColumnInfo(name = "ageSecretKey") val ageSecretKey: String? = null,
+    @ColumnInfo(name = "tag") val tag: String? = null,
+    @ColumnInfo(name = "status") val status: String? = null,
+    @ColumnInfo(name = "deviceLimit") val deviceLimit: Int? = null,
 )

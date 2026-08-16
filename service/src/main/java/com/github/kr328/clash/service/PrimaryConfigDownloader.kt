@@ -31,6 +31,9 @@ internal data class PrimaryConfigResponseMetadata(
     val etag: String?,
     val subscriptionUserInfo: String?,
     val profileUpdateInterval: String?,
+    val tag: String? = null,
+    val status: String? = null,
+    val deviceLimit: Int? = null,
 )
 
 /**
@@ -265,6 +268,11 @@ internal class PrimaryConfigDownloader(
             etag = usableEtag(connection.getHeaderField("ETag")),
             subscriptionUserInfo = connection.getHeaderField("subscription-userinfo"),
             profileUpdateInterval = connection.getHeaderField("profile-update-interval"),
+            tag = usableSubscriptionHeader(connection.getHeaderField("X-GetLine-Tag")),
+            status = usableSubscriptionHeader(connection.getHeaderField("X-GetLine-Status")),
+            deviceLimit = usableSubscriptionDeviceLimit(
+                connection.getHeaderField("X-GetLine-Device-Limit"),
+            ),
         )
     }
 
