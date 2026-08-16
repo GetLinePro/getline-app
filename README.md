@@ -7,7 +7,7 @@ GetLine VPN is a modified fork of [Clash Meta for Android (CMFA)](https://github
 - Account / cabinet: https://app.getline.pro/
 - Support: https://t.me/GetLinePro
 - Privacy (service): https://getline.pro/privacy.html
-- App sources (this fork): https://github.com/momai/getline-app
+- App sources (this fork): https://github.com/GetLinePro/getline-app
 - Upstream CMFA: https://github.com/MetaCubeX/ClashMetaForAndroid
 - Upstream core: https://github.com/MetaCubeX/mihomo
 

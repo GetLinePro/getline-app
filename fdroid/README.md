@@ -9,7 +9,7 @@ with these locked facts:
 
 - application ID: `pro.getline.vpn`
 - license: `GPL-3.0-only`
-- source: `https://github.com/momai/getline-app`
+- source: `https://github.com/GetLinePro/getline-app`
 - build flavor: `metaProdRelease`
 - build command: `./gradlew --offline --no-daemon :app:assembleMetaProdRelease`
 - submodules: required

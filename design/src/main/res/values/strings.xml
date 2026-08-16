@@ -386,6 +386,6 @@
     <string name="about_upstream_ack">Upstream: MetaCubeX Clash Meta for Android and Mihomo</string>
     <!-- Must be a public HTTPS location before release (GPL source disclosure). -->
     <string name="getline_sources_title" translatable="false">GetLine Pro</string>
-    <string name="getline_sources_url" translatable="false">https://github.com/momai/getline-app</string>
+    <string name="getline_sources_url" translatable="false">https://github.com/GetLinePro/getline-app</string>
     <string name="sources_open_failed">No browser found. Source URL copied to clipboard.</string>
 </resources>
