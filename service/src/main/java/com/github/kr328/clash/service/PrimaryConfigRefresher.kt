@@ -41,14 +41,14 @@ internal class PrimaryConfigRefresher(
         processingDir: File = context.processingDir,
         cacheDir: File = context.cacheDir,
         allowUnconditionalRetry: Boolean = true,
-    ) {
+    ): PrimaryConfigResponseMetadata {
         val ifNoneMatch = if (allowConditional) {
             PrimaryConfigValidator.read(processingDir)
         } else {
             null
         }
 
-        download(context, source, ifNoneMatch).use { result ->
+        return download(context, source, ifNoneMatch).use { result ->
             when (result) {
                 is PrimaryConfigFetchResult.Downloaded -> {
                     validate(
@@ -67,6 +67,7 @@ internal class PrimaryConfigRefresher(
                         responseEtag = result.metadata.etag,
                     )
                     Log.i("primary_config commit code=200 etag_commit=${disposition.logLabel()}")
+                    result.metadata
                 }
 
                 is PrimaryConfigFetchResult.NotModified -> {
@@ -77,7 +78,7 @@ internal class PrimaryConfigRefresher(
                                 "primary_config code=304 local unusable; " +
                                     "unconditional retry in same op",
                             )
-                            refresh(
+                            return refresh(
                                 context = context,
                                 source = source,
                                 allowConditional = false,
@@ -86,7 +87,6 @@ internal class PrimaryConfigRefresher(
                                 cacheDir = cacheDir,
                                 allowUnconditionalRetry = false,
                             )
-                            return
                         }
                         throw IOException(
                             "HTTP 304 but local primary config is missing or empty",
@@ -116,7 +116,7 @@ internal class PrimaryConfigRefresher(
                                     "primary_config code=304 validate failed; " +
                                         "unconditional retry in same op: $e",
                                 )
-                                refresh(
+                                return refresh(
                                     context = context,
                                     source = source,
                                     allowConditional = false,
@@ -125,7 +125,6 @@ internal class PrimaryConfigRefresher(
                                     cacheDir = cacheDir,
                                     allowUnconditionalRetry = false,
                                 )
-                                return
                             }
                             throw e
                         }
@@ -137,6 +136,7 @@ internal class PrimaryConfigRefresher(
                         Log.i(
                             "primary_config commit code=304 etag_commit=${disposition.logLabel()}",
                         )
+                        result.metadata
                     } finally {
                         if (!reuseCopy.delete()) {
                             Log.w("Unable to delete primary config reuse temp file")

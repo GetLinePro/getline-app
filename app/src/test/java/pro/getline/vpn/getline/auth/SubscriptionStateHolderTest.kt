@@ -80,6 +80,33 @@ class SubscriptionStateHolderTest {
     }
 
     @Test
+    fun localPresentation_withoutPreferred_isReady() {
+        val holder = SubscriptionStateHolder()
+        assertTrue(holder.beginInitialLoad())
+        holder.applyLoadResult(
+            SubscriptionLoadResult.Success(preferred = null),
+            presentation = samplePresentation(title = "Standard"),
+        )
+        val ready = holder.state as SubscriptionUiState.Ready
+        assertEquals("Standard", ready.subscription.title)
+    }
+
+    @Test
+    fun updateReadyCard_replacesSubscriptionOnly() {
+        val holder = SubscriptionStateHolder()
+        assertTrue(holder.beginInitialLoad())
+        holder.applyLoadResult(
+            SubscriptionLoadResult.Success(preferred = sampleItem()),
+            presentation = samplePresentation(title = "Old"),
+        )
+        holder.updateReadyCard(samplePresentation(title = "New"))
+        assertEquals(
+            "New",
+            (holder.state as SubscriptionUiState.Ready).subscription.title,
+        )
+    }
+
+    @Test
     fun signedOut_withAndWithoutProfile() {
         val holder = SubscriptionStateHolder()
         holder.applySignedOut(hasImportedProfile = true)

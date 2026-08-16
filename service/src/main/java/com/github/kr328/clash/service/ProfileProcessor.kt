@@ -69,7 +69,7 @@ object ProfileProcessor {
                 Clash.setAgeSecretKey(snapshot.ageSecretKey?.takeIf { it.isNotBlank() })
 
                 val force = snapshot.type != Profile.Type.File
-                val subscriptionInfo = fetchProfile(
+                val fetched = fetchProfile(
                     context,
                     snapshot.type,
                     snapshot.source,
@@ -77,6 +77,7 @@ object ProfileProcessor {
                     callback,
                     allowConditional = false,
                 )
+                val subscriptionInfo = fetched.subscriptionInfo
 
                 profileLock.withLock {
                     if (PendingDao().queryByUUID(snapshot.uuid) == snapshot) {
@@ -98,7 +99,9 @@ object ProfileProcessor {
                             subscriptionInfo?.subTotal ?: 0,
                             subscriptionInfo?.subExpire ?: 0,
                             old?.createdAt ?: System.currentTimeMillis(),
-                            ageSecretKey = snapshot.ageSecretKey
+                            ageSecretKey = snapshot.ageSecretKey,
+                            tag = usableSubscriptionHeader(fetched.metadata?.tag),
+                            status = usableSubscriptionHeader(fetched.metadata?.status),
                         )
                         if (old != null) {
                             ImportedDao().update(new)
@@ -138,7 +141,7 @@ object ProfileProcessor {
                 // Last-known-good is the imported snapshot. fetchProfile may
                 // overwrite processing/config.yaml before it fails; this copy
                 // runs only after it returns. See docs/subscription-profile-contract.md.
-                val subscriptionInfo = fetchProfile(
+                val fetched = fetchProfile(
                     context,
                     snapshot.type,
                     snapshot.source,
@@ -153,16 +156,13 @@ object ProfileProcessor {
                         context.importedDir.resolve(snapshot.uuid.toString()).deleteRecursively()
                         context.processingDir.copyRecursively(context.importedDir.resolve(snapshot.uuid.toString()))
 
-                        val upload = subscriptionInfo?.subUpload
-                        if (upload != null) {
-                            ImportedDao().update(
-                                imported.copy(
-                                    upload = upload,
-                                    download = subscriptionInfo.subDownload ?: 0,
-                                    total = subscriptionInfo.subTotal ?: 0,
-                                    expire = subscriptionInfo.subExpire ?: 0,
-                                )
-                            )
+                        val next = applyImportedSubscriptionFields(
+                            imported,
+                            fetched.subscriptionInfo,
+                            fetched.metadata,
+                        )
+                        if (next != imported) {
+                            ImportedDao().update(next)
                         }
 
                         context.sendProfileChanged(snapshot.uuid)
@@ -172,6 +172,11 @@ object ProfileProcessor {
         }
     }
 
+    private data class ProfileFetchOutcome(
+        val subscriptionInfo: FetchStatus?,
+        val metadata: PrimaryConfigResponseMetadata?,
+    )
+
     private suspend fun fetchProfile(
         context: Context,
         type: Profile.Type,
@@ -179,7 +184,7 @@ object ProfileProcessor {
         force: Boolean,
         callback: IFetchObserver?,
         allowConditional: Boolean,
-    ): FetchStatus? {
+    ): ProfileFetchOutcome {
         var subscriptionInfo: FetchStatus? = null
         var cb = callback
 
@@ -197,7 +202,7 @@ object ProfileProcessor {
             }
         }
 
-        if (shouldUsePlatformPrimaryConfigTransport(type, Uri.parse(source).scheme)) {
+        val metadata = if (shouldUsePlatformPrimaryConfigTransport(type, Uri.parse(source).scheme)) {
             val sourceUrl = URL(source)
             val reportHost = if (sourceUrl.port < 0) {
                 sourceUrl.host
@@ -223,9 +228,10 @@ object ProfileProcessor {
             // Keep advanced http:// profiles on their existing native path instead
             // of weakening the whole app's Network Security Configuration.
             Clash.fetchAndValid(context.processingDir, source, force, reportStatus).await()
+            null
         }
 
-        return subscriptionInfo
+        return ProfileFetchOutcome(subscriptionInfo, metadata)
     }
 
     suspend fun delete(context: Context, uuid: UUID) {

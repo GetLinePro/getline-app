@@ -46,11 +46,29 @@ class LinkOnlyPresentationTest {
         assertEquals(1_000L, p.trafficLimitBytes)
     }
 
+    @Test
+    fun tagAndStatus_passThrough() {
+        val p = LinkOnlyPresentation.fromSummary(
+            sample(tag = "PAID", status = "Active"),
+        )
+        assertEquals("PAID", p.tag)
+        assertEquals("Active", p.status)
+    }
+
+    @Test
+    fun missingTagAndStatus_stayNull() {
+        val p = LinkOnlyPresentation.fromSummary(sample())
+        assertNull(p.tag)
+        assertNull(p.status)
+    }
+
     private fun sample(
         expire: Long = 1_700_000_000_000L,
         upload: Long = 0L,
         download: Long = 0L,
         total: Long = 0L,
+        tag: String? = null,
+        status: String? = null,
     ): GetLineSubscriptionSummary {
         return GetLineSubscriptionSummary(
             uuid = "managed-uuid",
@@ -59,6 +77,8 @@ class LinkOnlyPresentationTest {
             upload = upload,
             download = download,
             total = total,
+            tag = tag,
+            status = status,
         )
     }
 }

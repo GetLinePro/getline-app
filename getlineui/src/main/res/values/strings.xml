@@ -115,6 +115,13 @@
     <string name="get_line_home_devices_label">Devices</string>
     <string name="get_line_home_devices_limit_format">Up to %1$d devices</string>
     <string name="get_line_home_plan_unknown">Subscription</string>
+    <string name="get_line_tariff_paid">Standard</string>
+    <string name="get_line_tariff_lteplus">Standard LTE+</string>
+    <string name="get_line_tariff_paidplus">Unlimited</string>
+    <string name="get_line_tariff_unlim">Unlimited LTE+</string>
+    <string name="get_line_tariff_student">Student</string>
+    <string name="get_line_tariff_lte">Mobile LTE+</string>
+    <string name="get_line_tariff_friends">friends</string>
     <string name="get_line_home_refresh_subscription">Refresh subscription</string>
     <string name="get_line_subscription_refreshing">Refreshing subscription</string>
     <string name="get_line_subscription_load_failed_title">Couldn’t load subscription</string>

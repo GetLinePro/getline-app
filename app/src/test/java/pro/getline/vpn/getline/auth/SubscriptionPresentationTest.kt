@@ -109,6 +109,81 @@ class SubscriptionPresentationTest {
     }
 
     @Test
+    fun fromLocalSummary_mapsTagStatusAndHidesDevices() {
+        val summary = pro.getline.vpn.getline.GetLineSubscriptionSummary(
+            uuid = "managed",
+            name = "link",
+            expire = 1_700_172_800_000L,
+            upload = 1L,
+            download = 2L,
+            total = 10L,
+            tag = "paid",
+            status = "Active",
+        )
+        val p = SubscriptionPresentation.fromLocalSummary(
+            summary = summary,
+            fallbackTitle = "Subscription",
+            string = { id ->
+                if (id == pro.getline.vpn.getlineui.R.string.get_line_tariff_paid) {
+                    "Standard"
+                } else {
+                    "Active"
+                }
+            },
+            nowMillis = 1_700_000_000_000L,
+        )
+        assertEquals("managed", p.id)
+        assertEquals("Standard", p.title)
+        assertTrue(p.isActive)
+        assertEquals("Active", p.statusText)
+        assertTrue(p.showStatus)
+        assertNull(p.deviceLimit)
+        assertEquals(3L, p.trafficUsedBytes)
+        assertEquals(10L, p.trafficLimitBytes)
+        assertEquals(2, p.daysLeft)
+    }
+
+    @Test
+    fun fromLocalSummary_unknownTagShownAsCode_invalidHidden() {
+        val unknown = SubscriptionPresentation.fromLocalSummary(
+            summary = pro.getline.vpn.getline.GetLineSubscriptionSummary(
+                uuid = "u",
+                name = "n",
+                expire = 0L,
+                upload = 0L,
+                download = 0L,
+                total = 0L,
+                tag = "NEWPLAN",
+                status = "LIMIT",
+            ),
+            fallbackTitle = "Subscription",
+            string = { "unused" },
+        )
+        assertEquals("NEWPLAN", unknown.title)
+        assertEquals("LIMIT", unknown.statusText)
+        assertTrue(unknown.showStatus)
+        assertFalse(unknown.isActive)
+
+        val invalid = SubscriptionPresentation.fromLocalSummary(
+            summary = pro.getline.vpn.getline.GetLineSubscriptionSummary(
+                uuid = "u",
+                name = "n",
+                expire = 0L,
+                upload = 0L,
+                download = 0L,
+                total = 0L,
+                tag = "nope!",
+                status = null,
+            ),
+            fallbackTitle = "Subscription",
+            string = { "unused" },
+        )
+        assertEquals("Subscription", invalid.title)
+        assertFalse(invalid.showStatus)
+        assertNull(invalid.statusText)
+    }
+
+    @Test
     fun selectPreferred_fallbackWhenPrimaryHasNoLink() {
         val primaryNoLink = sample(id = "1", primary = true, link = null)
         val secondary = sample(id = "2", primary = false, link = "https://b")

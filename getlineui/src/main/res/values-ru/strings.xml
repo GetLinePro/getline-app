@@ -109,6 +109,13 @@
     <string name="get_line_home_devices_label">Устройства</string>
     <string name="get_line_home_devices_limit_format">До %1$d устройств</string>
     <string name="get_line_home_plan_unknown">Подписка</string>
+    <string name="get_line_tariff_paid">Стандарт</string>
+    <string name="get_line_tariff_lteplus">Стандарт LTE+</string>
+    <string name="get_line_tariff_paidplus">Безлимит</string>
+    <string name="get_line_tariff_unlim">Безлимит LTE+</string>
+    <string name="get_line_tariff_student">Студенческий</string>
+    <string name="get_line_tariff_lte">Мобильный LTE+</string>
+    <string name="get_line_tariff_friends">friends</string>
     <string name="get_line_home_refresh_subscription">Обновить подписку</string>
     <string name="get_line_subscription_refreshing">Обновление подписки</string>
     <string name="get_line_subscription_load_failed_title">Не удалось загрузить подписку</string>

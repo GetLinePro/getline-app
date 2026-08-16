@@ -129,6 +129,11 @@ class SubscriptionStateHolder {
         )
     }
 
+    fun updateReadyCard(presentation: SubscriptionPresentation) {
+        val current = state as? SubscriptionUiState.Ready ?: return
+        state = current.copy(subscription = presentation)
+    }
+
     fun applyLoadResult(
         result: SubscriptionLoadResult,
         presentation: SubscriptionPresentation?,
@@ -140,7 +145,7 @@ class SubscriptionStateHolder {
         requestInFlight = false
         state = when (result) {
             is SubscriptionLoadResult.Success -> {
-                if (result.preferred == null || presentation == null) {
+                if (presentation == null) {
                     SubscriptionUiState.Empty
                 } else {
                     SubscriptionUiState.Ready(

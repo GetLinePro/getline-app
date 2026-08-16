@@ -200,6 +200,8 @@ data class GetLineSubscriptionSummary(
     val upload: Long,
     val download: Long,
     val total: Long,
+    val tag: String? = null,
+    val status: String? = null,
 )
 
 data class GetLineSubscriptionSnapshot(

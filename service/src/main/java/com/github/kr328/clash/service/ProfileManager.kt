@@ -233,6 +233,8 @@ class ProfileManager(private val context: Context) : IProfileManager,
             imported = imported != null,
             pending = pending != null,
             ageSecretKey = if (pending != null) pending.ageSecretKey else imported?.ageSecretKey,
+            tag = imported?.tag,
+            status = imported?.status,
         )
     }
 

@@ -36,6 +36,8 @@ data class LinkOnlyPresentation(
     val expireAtEpochMillis: Long?,
     val trafficUsedBytes: Long?,
     val trafficLimitBytes: Long?,
+    val tag: String? = null,
+    val status: String? = null,
 ) {
     companion object {
         fun fromSummary(summary: GetLineSubscriptionSummary): LinkOnlyPresentation {
@@ -45,6 +47,8 @@ data class LinkOnlyPresentation(
                 // Zero used with no limit cannot be distinguished from "header missing".
                 trafficUsedBytes = if (used == 0L && summary.total <= 0L) null else used,
                 trafficLimitBytes = summary.total.takeIf { it > 0L },
+                tag = summary.tag,
+                status = summary.status,
             )
         }
     }
@@ -65,6 +69,12 @@ data class SubscriptionPresentation(
     val trafficUsedBytes: Long?,
     val trafficLimitBytes: Long?,
     val trafficUnlimited: Boolean,
+    /**
+     * When set, the pill shows this text. Null keeps the API Active/Inactive
+     * strings. [showStatus] false hides the pill (no status header).
+     */
+    val statusText: String? = null,
+    val showStatus: Boolean = true,
 ) {
     companion object {
         /**
@@ -85,6 +95,31 @@ data class SubscriptionPresentation(
                 trafficUsedBytes = traffic?.usedBytes,
                 trafficLimitBytes = traffic?.limitBytes,
                 trafficUnlimited = traffic?.isUnlimited == true,
+            )
+        }
+
+        fun fromLocalSummary(
+            summary: GetLineSubscriptionSummary,
+            fallbackTitle: String,
+            string: (Int) -> String,
+            nowMillis: Long = System.currentTimeMillis(),
+        ): SubscriptionPresentation {
+            val link = LinkOnlyPresentation.fromSummary(summary)
+            val tag = SubscriptionHeaderDisplay.normalize(link.tag)
+            val status = SubscriptionHeaderDisplay.normalize(link.status)
+            return SubscriptionPresentation(
+                id = summary.uuid,
+                title = tag?.let { SubscriptionHeaderDisplay.tariffTitle(it, string) }
+                    ?: fallbackTitle,
+                isActive = SubscriptionHeaderDisplay.isActiveStatus(status),
+                expireAtEpochMillis = link.expireAtEpochMillis,
+                daysLeft = SubscriptionHeaderDisplay.daysLeft(link.expireAtEpochMillis, nowMillis),
+                deviceLimit = null,
+                trafficUsedBytes = link.trafficUsedBytes,
+                trafficLimitBytes = link.trafficLimitBytes,
+                trafficUnlimited = false,
+                statusText = status?.let { SubscriptionHeaderDisplay.statusText(it, string) },
+                showStatus = status != null,
             )
         }
     }

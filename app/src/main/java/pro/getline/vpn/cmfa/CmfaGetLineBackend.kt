@@ -298,6 +298,8 @@ private class CmfaGetLineSubscriptionRepository(
             upload = upload,
             download = download,
             total = total,
+            tag = tag,
+            status = status,
         )
     }
 }

@@ -31,6 +31,7 @@ import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.GetLineSessionStorageException
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
 import pro.getline.vpn.getline.auth.LinkOnlyPresentation
+import pro.getline.vpn.getline.auth.SubscriptionHeaderDisplay
 import pro.getline.vpn.getline.auth.SubscriptionLoadResult
 import pro.getline.vpn.getline.auth.SubscriptionPresentation
 import pro.getline.vpn.getline.auth.SubscriptionStateHolder
@@ -941,6 +942,14 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * and there is no active imported profile. [GetLineBackendResult.Unavailable]
      * is a transient IPC/timeout failure — not proof of absence.
      */
+    private suspend fun managedLocalSummary(): GetLineSubscriptionSummary? {
+        val managed = sessionRepository.managedProfileUuid() ?: return null
+        return when (val snap = snapshotActiveSummary()) {
+            is GetLineBackendResult.Success -> snap.value?.takeIf { it.uuid == managed }
+            GetLineBackendResult.Unavailable -> null
+        }
+    }
+
     private suspend fun snapshotActiveSummary(): GetLineBackendResult<GetLineSubscriptionSummary?> {
         return when (val loaded = backend.subscriptions.snapshot()) {
             is GetLineBackendResult.Success -> {
@@ -1006,11 +1015,19 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 when (result) {
                     is SubscriptionLoadResult.Success -> {
                         val preferred = result.preferred
-                        val presentation = preferred?.let {
-                            SubscriptionPresentation.fromPreferred(
-                                item = it,
-                                fallbackTitle = getString(GetLineUiR.string.get_line_home_plan_unknown),
+                        val fallbackTitle = getString(GetLineUiR.string.get_line_home_plan_unknown)
+                        val local = managedLocalSummary()
+                        val presentation = when {
+                            local != null -> SubscriptionPresentation.fromLocalSummary(
+                                summary = local,
+                                fallbackTitle = fallbackTitle,
+                                string = { getString(it) },
                             )
+                            preferred != null -> SubscriptionPresentation.fromPreferred(
+                                item = preferred,
+                                fallbackTitle = fallbackTitle,
+                            )
+                            else -> null
                         }
                         subscriptionState.applyLoadResult(
                             result = result,
@@ -1143,7 +1160,18 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 ConfigUpdateResult.NotFound -> {
                     fetch(showLoading = false, allowNetwork = true)
                 }
-                ConfigUpdateResult.Updated,
+                ConfigUpdateResult.Updated -> {
+                    val summary = managedLocalSummary() ?: return@launch
+                    if (subscriptionState.state !is SubscriptionUiState.Ready) return@launch
+                    subscriptionState.updateReadyCard(
+                        SubscriptionPresentation.fromLocalSummary(
+                            summary = summary,
+                            fallbackTitle = getString(GetLineUiR.string.get_line_home_plan_unknown),
+                            string = { getString(it) },
+                        ),
+                    )
+                    paintSubscriptionState()
+                }
                 ConfigUpdateResult.NotRefreshable,
                 ConfigUpdateResult.Unavailable -> Unit
             }
@@ -1317,12 +1345,22 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 .toFloat()
         }
 
+        val visibleTag = SubscriptionHeaderDisplay.normalize(tag)
+        val visibleStatus = SubscriptionHeaderDisplay.normalize(status)
+        val title = visibleTag?.let { SubscriptionHeaderDisplay.tariffTitle(it) { getString(it) } }
+            ?: getString(GetLineUiR.string.get_line_subscription_link_only_title)
+
         return GetLineHomeDesign.CardContent(
-            title = getString(GetLineUiR.string.get_line_subscription_link_only_title),
-            isActive = false,
-            statusText = null,
+            title = title,
+            isActive = SubscriptionHeaderDisplay.isActiveStatus(visibleStatus),
+            statusText = visibleStatus?.let {
+                SubscriptionHeaderDisplay.statusText(it) { getString(it) }
+            },
             expireText = expireText,
-            daysLeft = null,
+            daysLeft = SubscriptionHeaderDisplay.daysLeft(
+                expireAtEpochMillis,
+                System.currentTimeMillis(),
+            ),
             trafficText = trafficText,
             trafficUsedFraction = trafficUsedFraction,
             devicesText = null,
@@ -1361,16 +1399,22 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         val devicesText = deviceLimit
             ?.let { design.formatDeviceLimit(it) }
 
-        return GetLineHomeDesign.CardContent(
-            title = title,
-            isActive = isActive,
-            statusText = getString(
+        val pillText = when {
+            !showStatus -> null
+            statusText != null -> statusText
+            else -> getString(
                 if (isActive) {
                     GetLineUiR.string.get_line_home_status_active
                 } else {
                     GetLineUiR.string.get_line_home_status_inactive
-                }
-            ),
+                },
+            )
+        }
+
+        return GetLineHomeDesign.CardContent(
+            title = title,
+            isActive = isActive,
+            statusText = pillText,
             expireText = expireText,
             daysLeft = daysLeft,
             trafficText = trafficText,
