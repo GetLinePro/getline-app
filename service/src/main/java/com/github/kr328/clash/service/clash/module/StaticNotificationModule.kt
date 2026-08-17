@@ -22,7 +22,6 @@ class StaticNotificationModule(
 ) : Module<Unit>(service) {
     private val builder = NotificationCompat.Builder(service, CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_logo_service)
-        .setOngoing(true)
         .setColor(service.getColorCompat(R.color.color_clash))
         .setOnlyAlertOnce(true)
         .setShowWhen(false)
@@ -77,7 +76,6 @@ class StaticNotificationModule(
             val notification =
                 NotificationCompat.Builder(service, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_logo_service)
-                    .setOngoing(true)
                     .setColor(service.getColorCompat(R.color.color_clash))
                     .setOnlyAlertOnce(true)
                     .setShowWhen(false)

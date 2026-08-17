@@ -110,6 +110,47 @@ to false.
 
 ---
 
+## The service notification does not set `ONGOING` itself
+
+**Decided:** 2026-08-18. **Status:** in effect. Issue #154.
+
+The status notification is posted through `startForeground()`. The system owns
+its lifetime from there: it adds `FLAG_FOREGROUND_SERVICE` (`0x40`) and, on the
+devices measured, `FLAG_NO_CLEAR` (`0x20`), and it drops both when the service
+is gone. Our own `setOngoing(true)` adds nothing while the service lives, and
+outlives it when the process is killed from outside.
+
+Measured on HyperOS (Android 14, API 34), `alphaProdRelease`, dynamic
+notification, before and after removing `setOngoing(true)` from
+`StaticNotificationModule` (two call sites) and `DynamicNotificationModule`:
+
+| | live VPN | after HyperOS `OneKeyClean` |
+|---|---|---|
+| with `setOngoing(true)` | `flags=0x6a` / `originalFlags=0x4a` | record survives with `flags=0x0a`, shows a dead tunnel as protected |
+| without it | `flags=0x68` / `originalFlags=0x48` | record gone (verified twice) |
+
+So the system does **not** put `FLAG_ONGOING_EVENT` back on its own, and with no
+app-set flag left, nothing holds the record once the system flags are dropped.
+
+The notification was already swipe-dismissible while the VPN ran (API 34 allows
+that, and `NO_CLEAR` did not prevent it here); the dynamic module reposts it
+within a second. The one behaviour change while running is that "Clear all" now
+removes it too — measured, and the dynamic module brought it back within a
+second. `StaticNotificationModule` reposts only on
+`ACTION_PROFILE_LOADED`, so there a dismissal lasts until the tunnel restarts —
+accepted, because release strips `SettingsActivity` / `AppSettingsActivity`
+(GL-22 / #76), leaving the `dynamic_notification` switch unreachable and the
+default (`true`) in force.
+
+### Do not
+
+- Restore `setOngoing(true)` as "obviously correct" when merging from CMFA.
+- Add a start-time `NotificationManager.cancel(R.id.nf_clash_status)` sweep for
+  an orphaned record; measurement shows there is no orphan left to clean.
+- Try to survive `OneKeyClean` by keeping the process alive.
+
+---
+
 ## Split tunnelling warns about lockdown, it does not detect it
 
 **Status:** in effect from 2026-08-13. Alpha scope, revisit if it bites.
