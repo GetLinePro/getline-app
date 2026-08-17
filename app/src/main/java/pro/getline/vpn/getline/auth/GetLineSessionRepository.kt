@@ -108,7 +108,7 @@ class GetLineSessionRepository(
 
     /**
      * Outcome of explicit trial activation (user confirmed).
-     * [loadSubscriptionForUi] never enters this path.
+     * [loadSubscriptionAccountSignal] never enters this path.
      */
     sealed class TrialActivationResult {
         data class Ready(val load: PreferredSubscriptionLoad) : TrialActivationResult()
@@ -196,48 +196,54 @@ class GetLineSessionRepository(
     }
 
     /**
-     * Subscription destination load: authenticated GET /api/subscriptions with
-     * single 401 recovery, then [SubscriptionsResponse.selectPreferred].
+     * Optional account signal: authenticated GET /api/subscriptions with single
+     * 401 recovery. An active preferred item may ask Home to refresh the managed
+     * config, but no response or failure from this method is card presentation data.
      *
-     * Does not create trial or mutate VPN/profile state.
+     * Does not create trial or mutate VPN/profile state. Rejected credentials may
+     * still discard the dead native session through the normal refresh lifecycle.
      */
-    suspend fun loadSubscriptionForUi(): SubscriptionLoadResult {
+    suspend fun loadSubscriptionAccountSignal(): SubscriptionAccountSignal {
         if (!hasSession()) {
-            return SubscriptionLoadResult.SignedOut
+            return SubscriptionAccountSignal.NoRefresh
         }
         return try {
             val response = getSubscriptionsAuthenticated()
-            SubscriptionLoadResult.Success(preferred = response.selectPreferred())
+            if (response.selectPreferred()?.isActive == true) {
+                SubscriptionAccountSignal.RefreshManagedProfile
+            } else {
+                SubscriptionAccountSignal.NoRefresh
+            }
         } catch (e: CancellationException) {
-            // Lifecycle cancellation must not be mapped to UI failure states.
+            // Lifecycle cancellation must not be mapped to a best-effort signal.
             throw e
         } catch (e: GetLineAuthException.HttpFailure) {
             // Refresh recovery may already have invalidated the session. A 403 from
             // subscriptions itself is endpoint policy, not refresh-token rejection.
             if (!hasSession()) {
-                SubscriptionLoadResult.SignedOut
+                SubscriptionAccountSignal.NoRefresh
             } else if (e.code == 401) {
                 invalidateRejectedSession()
-                SubscriptionLoadResult.SignedOut
+                SubscriptionAccountSignal.NoRefresh
             } else {
-                Log.w("subscription_ui http_failure code=${e.code}")
-                SubscriptionLoadResult.TransientFailure
+                Log.w("subscription_account_signal http_failure code=${e.code}")
+                SubscriptionAccountSignal.Unavailable
             }
         } catch (e: GetLineAuthException) {
             // Malformed/transient refresh failures keep the last persisted session.
             if (!hasSession()) {
-                SubscriptionLoadResult.SignedOut
+                SubscriptionAccountSignal.NoRefresh
             } else {
-                Log.w("subscription_ui auth_failure kind=${e::class.simpleName}")
-                SubscriptionLoadResult.TransientFailure
+                Log.w("subscription_account_signal auth_failure kind=${e::class.simpleName}")
+                SubscriptionAccountSignal.Unavailable
             }
         } catch (e: Exception) {
             if (!hasSession()) {
-                SubscriptionLoadResult.SignedOut
+                SubscriptionAccountSignal.NoRefresh
             } else {
                 // Common when VPN is up and control-plane is routed via broken tunnel.
-                Log.w("subscription_ui network_failure kind=${e::class.simpleName}")
-                SubscriptionLoadResult.TransientFailure
+                Log.w("subscription_account_signal network_failure kind=${e::class.simpleName}")
+                SubscriptionAccountSignal.Unavailable
             }
         }
     }

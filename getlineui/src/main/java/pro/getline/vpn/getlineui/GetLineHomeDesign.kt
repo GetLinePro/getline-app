@@ -136,13 +136,6 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
 
         data object Empty : SubscriptionScreen
 
-        data class SignedOut(
-            val hasImportedProfile: Boolean,
-            val card: CardContent? = null,
-            val isRefreshing: Boolean = false,
-            val refreshFailed: Boolean = false,
-        ) : SubscriptionScreen
-
         data object Failed : SubscriptionScreen
     }
 
@@ -328,6 +321,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         binding.appRoutingSummary = context.getString(R.string.get_line_home_app_routing_all)
         applyProductState(GetLineProductState.Loading, GetLineRecoveryAction.None)
         applySubscriptionScreen(SubscriptionScreen.Loading)
+        applySubscriptionSignInBlock(visible = false)
         applyServersScreen(ServersScreen.Loading)
         applyAccountPortalUi(
             visible = false,
@@ -459,6 +453,13 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         }
     }
 
+    /** Account capability, independent of the subscription-card state. */
+    suspend fun setSubscriptionSignInVisible(visible: Boolean) {
+        withContext(Dispatchers.Main) {
+            applySubscriptionSignInBlock(visible)
+        }
+    }
+
     /**
      * Account portal CTA under the subscription card.
      * Home never shows this block.
@@ -470,6 +471,17 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     ) {
         withContext(Dispatchers.Main) {
             applyAccountPortalUi(visible, launching, showError)
+        }
+    }
+
+    /** Distribution capability, independent of the subscription-card state. */
+    suspend fun setAccountPortalAvailable(visible: Boolean) {
+        withContext(Dispatchers.Main) {
+            applyAccountPortalUi(
+                visible = visible,
+                launching = accountPortalLaunching && visible,
+                showError = accountPortalErrorVisible && visible,
+            )
         }
     }
 
@@ -993,10 +1005,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     private fun applySubscriptionScreen(screen: SubscriptionScreen) {
         when (screen) {
             is SubscriptionScreen.Loading -> {
-                applyLinkOnlyBlock(visible = false)
                 applyCard(content = null, isRefreshing = false, transientError = false)
-                // Hide portal CTA while loading (native session unknown / in flight).
-                applyAccountPortalUi(visible = false, launching = false, showError = false)
                 binding.subscriptionStateView.renderMessage(
                     title = R.string.get_line_state_loading_title,
                     explanation = R.string.get_line_state_loading_explanation,
@@ -1005,28 +1014,15 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 )
             }
             is SubscriptionScreen.Ready -> {
-                applyLinkOnlyBlock(visible = false)
                 binding.subscriptionStateView.hide()
                 applyCard(
                     content = screen.card,
                     isRefreshing = screen.isRefreshing,
                     transientError = screen.transientError,
                 )
-                applyAccountPortalUi(
-                    visible = true,
-                    launching = accountPortalLaunching,
-                    showError = accountPortalErrorVisible,
-                )
             }
             is SubscriptionScreen.Empty -> {
-                applyLinkOnlyBlock(visible = false)
                 applyCard(content = null, isRefreshing = false, transientError = false)
-                // Authenticated empty — user can resolve plan issues in the web cabinet.
-                applyAccountPortalUi(
-                    visible = true,
-                    launching = accountPortalLaunching,
-                    showError = accountPortalErrorVisible,
-                )
                 binding.subscriptionStateView.renderMessage(
                     title = R.string.get_line_subscription_empty_title,
                     explanation = R.string.get_line_subscription_empty_explanation,
@@ -1034,39 +1030,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                     action = GetLineRecoveryAction.Retry,
                 )
             }
-            is SubscriptionScreen.SignedOut -> {
-                // Portal is session-only; never show it on SignedOut.
-                applyAccountPortalUi(visible = false, launching = false, showError = false)
-                if (screen.card != null) {
-                    binding.subscriptionStateView.hide()
-                    applyCard(
-                        content = screen.card,
-                        isRefreshing = screen.isRefreshing,
-                        transientError = screen.refreshFailed,
-                        transientErrorTextRes =
-                            R.string.get_line_subscription_link_only_refresh_failed,
-                    )
-                    applyLinkOnlyBlock(visible = true)
-                } else {
-                    applyLinkOnlyBlock(visible = false)
-                    applyCard(content = null, isRefreshing = false, transientError = false)
-                    binding.subscriptionStateView.renderMessage(
-                        title = R.string.get_line_subscription_signed_out_title,
-                        explanation = R.string.get_line_subscription_signed_out_explanation,
-                        loading = false,
-                        action = GetLineRecoveryAction.SignIn,
-                    )
-                }
-            }
             is SubscriptionScreen.Failed -> {
-                applyLinkOnlyBlock(visible = false)
                 applyCard(content = null, isRefreshing = false, transientError = false)
-                // Failed after a session-backed load attempt — portal may still help.
-                applyAccountPortalUi(
-                    visible = true,
-                    launching = accountPortalLaunching,
-                    showError = accountPortalErrorVisible,
-                )
                 binding.subscriptionStateView.renderMessage(
                     title = R.string.get_line_subscription_load_failed_title,
                     explanation = R.string.get_line_subscription_load_failed_explanation,
@@ -1077,8 +1042,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         }
     }
 
-    private fun applyLinkOnlyBlock(visible: Boolean) {
-        binding.linkOnlyBlock.visibility = if (visible) View.VISIBLE else View.GONE
+    private fun applySubscriptionSignInBlock(visible: Boolean) {
+        binding.subscriptionSignInBlock.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     private fun applyAccountPortalUi(

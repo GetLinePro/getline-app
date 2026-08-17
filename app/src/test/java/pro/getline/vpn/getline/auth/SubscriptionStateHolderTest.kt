@@ -2,7 +2,6 @@ package pro.getline.vpn.getline.auth
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,163 +16,119 @@ class SubscriptionStateHolderTest {
     }
 
     @Test
-    fun tabSwitch_doesNotNeedSecondFetch_whenReady() {
+    fun localCard_isReadyIndependentOfAccountSignal() {
         val holder = SubscriptionStateHolder()
         assertTrue(holder.beginInitialLoad())
-        holder.applyLoadResult(
-            SubscriptionLoadResult.Success(preferred = sampleItem()),
-            presentation = samplePresentation(),
+
+        holder.applyLocalResult(
+            presentation = samplePresentation(title = "Standard"),
+            failed = false,
         )
-        assertTrue(holder.state is SubscriptionUiState.Ready)
+
+        val ready = holder.state as SubscriptionUiState.Ready
+        assertEquals("Standard", ready.subscription.title)
         assertFalse(holder.needsInitialLoad())
-        assertFalse(holder.beginInitialLoad())
     }
 
     @Test
-    fun parallelRefresh_secondPressRejected() {
+    fun noManagedProfile_isEmpty() {
         val holder = SubscriptionStateHolder()
         assertTrue(holder.beginInitialLoad())
-        holder.applyLoadResult(
-            SubscriptionLoadResult.Success(preferred = sampleItem()),
-            presentation = samplePresentation(),
-        )
-        assertTrue(holder.beginRefresh())
-        assertFalse(holder.beginRefresh())
+
+        holder.applyLocalResult(presentation = null, failed = false)
+
+        assertTrue(holder.state is SubscriptionUiState.Empty)
+    }
+
+    @Test
+    fun unavailableAccountSignal_doesNotStartManagedCardRefresh() {
+        val holder = readyHolder("Local")
+        val signal = SubscriptionAccountSignal.Unavailable
+
+        if (signal.shouldRefreshManagedProfile(hasManagedBinding = true)) {
+            holder.beginRefresh()
+        }
+
+        assertFalse(holder.requestInFlight)
+        val ready = holder.state as SubscriptionUiState.Ready
+        assertEquals("Local", ready.subscription.title)
+        assertFalse(ready.isRefreshing)
+        assertFalse(ready.transientError)
+    }
+
+    @Test
+    fun activeAccountSignal_startsManagedCardRefresh() {
+        val holder = readyHolder("Local")
+        val signal = SubscriptionAccountSignal.RefreshManagedProfile
+
+        if (signal.shouldRefreshManagedProfile(hasManagedBinding = true)) {
+            holder.beginRefresh()
+        }
+
+        assertTrue(holder.requestInFlight)
         assertTrue((holder.state as SubscriptionUiState.Ready).isRefreshing)
     }
 
     @Test
-    fun transientRefreshFailure_keepsReadyCard() {
-        val holder = SubscriptionStateHolder()
-        assertTrue(holder.beginInitialLoad())
-        val presentation = samplePresentation(title = "Trial")
-        holder.applyLoadResult(
-            SubscriptionLoadResult.Success(preferred = sampleItem()),
-            presentation = presentation,
-        )
+    fun parallelRefresh_secondPressRejected_andKeepsCardVisible() {
+        val holder = readyHolder("Local")
+
         assertTrue(holder.beginRefresh())
-        holder.applyLoadResult(SubscriptionLoadResult.TransientFailure, presentation = null)
+        assertFalse(holder.beginRefresh())
 
         val ready = holder.state as SubscriptionUiState.Ready
-        assertEquals("Trial", ready.subscription.title)
+        assertEquals("Local", ready.subscription.title)
+        assertTrue(ready.isRefreshing)
+    }
+
+    @Test
+    fun localRefreshFailure_keepsReadyCard() {
+        val holder = readyHolder("Local")
+        assertTrue(holder.beginRefresh())
+
+        holder.applyLocalResult(presentation = null, failed = true)
+
+        val ready = holder.state as SubscriptionUiState.Ready
+        assertEquals("Local", ready.subscription.title)
         assertFalse(ready.isRefreshing)
         assertTrue(ready.transientError)
     }
 
     @Test
-    fun firstRequestFailure_showsFailed() {
+    fun configRefreshFailure_withReadableSnapshot_keepsLocalCardReady() {
         val holder = SubscriptionStateHolder()
         assertTrue(holder.beginInitialLoad())
-        holder.applyLoadResult(SubscriptionLoadResult.TransientFailure, presentation = null)
+
+        holder.applyLocalResult(
+            presentation = samplePresentation("Saved"),
+            failed = true,
+        )
+
+        val ready = holder.state as SubscriptionUiState.Ready
+        assertEquals("Saved", ready.subscription.title)
+        assertTrue(ready.transientError)
+    }
+
+    @Test
+    fun firstLocalReadFailure_showsFailed() {
+        val holder = SubscriptionStateHolder()
+        assertTrue(holder.beginInitialLoad())
+
+        holder.applyLocalResult(presentation = null, failed = true)
+
         assertTrue(holder.state is SubscriptionUiState.Failed)
     }
 
     @Test
-    fun emptySubscriptions_showsEmpty() {
-        val holder = SubscriptionStateHolder()
-        assertTrue(holder.beginInitialLoad())
-        holder.applyLoadResult(
-            SubscriptionLoadResult.Success(preferred = null),
-            presentation = null,
-        )
-        assertTrue(holder.state is SubscriptionUiState.Empty)
-    }
-
-    @Test
-    fun localPresentation_withoutPreferred_isReady() {
-        val holder = SubscriptionStateHolder()
-        assertTrue(holder.beginInitialLoad())
-        holder.applyLoadResult(
-            SubscriptionLoadResult.Success(preferred = null),
-            presentation = samplePresentation(title = "Standard"),
-        )
-        val ready = holder.state as SubscriptionUiState.Ready
-        assertEquals("Standard", ready.subscription.title)
-    }
-
-    @Test
-    fun updateReadyCard_replacesSubscriptionOnly() {
-        val holder = SubscriptionStateHolder()
-        assertTrue(holder.beginInitialLoad())
-        holder.applyLoadResult(
-            SubscriptionLoadResult.Success(preferred = sampleItem()),
-            presentation = samplePresentation(title = "Old"),
-        )
-        holder.updateReadyCard(samplePresentation(title = "New"))
-        assertEquals(
-            "New",
-            (holder.state as SubscriptionUiState.Ready).subscription.title,
-        )
-    }
-
-    @Test
-    fun updateReadyCard_recoversFailedLocalSnapshot() {
-        val holder = SubscriptionStateHolder()
-        assertTrue(holder.beginInitialLoad())
-        holder.applyLoadResult(SubscriptionLoadResult.TransientFailure, presentation = null)
-
-        holder.updateReadyCard(samplePresentation(title = "Recovered"))
-
-        val ready = holder.state as SubscriptionUiState.Ready
-        assertEquals("Recovered", ready.subscription.title)
-        assertFalse(ready.transientError)
-    }
-
-    @Test
-    fun updateReadyCard_doesNotResurrectSignedOutState() {
-        val holder = SubscriptionStateHolder()
-        holder.applySignedOut(hasImportedProfile = true)
-
-        holder.updateReadyCard(samplePresentation(title = "Stale"))
-
-        assertTrue(holder.state is SubscriptionUiState.SignedOut)
-    }
-
-    @Test
-    fun signedOut_withAndWithoutProfile() {
-        val holder = SubscriptionStateHolder()
-        holder.applySignedOut(hasImportedProfile = true)
-        assertEquals(
-            SubscriptionUiState.SignedOut(hasImportedProfile = true),
-            holder.state,
-        )
-        holder.applySignedOut(hasImportedProfile = false)
-        assertEquals(
-            SubscriptionUiState.SignedOut(hasImportedProfile = false),
-            holder.state,
-        )
-    }
-
-    @Test
-    fun invalidateSessionState_fromSignedOut_allowsForcedReload() {
-        val holder = SubscriptionStateHolder()
-        holder.applySignedOut(hasImportedProfile = true)
-        assertFalse(holder.needsInitialLoad())
-
-        holder.invalidateSessionState()
-        assertTrue(holder.state is SubscriptionUiState.Loading)
-        assertTrue(holder.needsInitialLoad())
+    fun successfulRefresh_replacesCardAtomically() {
+        val holder = readyHolder("Old")
         assertTrue(holder.beginRefresh())
-        holder.applyLoadResult(
-            SubscriptionLoadResult.Success(preferred = sampleItem()),
-            presentation = samplePresentation(),
-        )
-        assertTrue(holder.state is SubscriptionUiState.Ready)
-    }
 
-    @Test
-    fun successReplacesPresentationAtomically() {
-        val holder = SubscriptionStateHolder()
-        assertTrue(holder.beginInitialLoad())
-        holder.applyLoadResult(
-            SubscriptionLoadResult.Success(preferred = sampleItem(id = "1")),
-            presentation = samplePresentation(title = "Old"),
-        )
-        assertTrue(holder.beginRefresh())
-        holder.applyLoadResult(
-            SubscriptionLoadResult.Success(preferred = sampleItem(id = "2")),
+        holder.applyLocalResult(
             presentation = samplePresentation(title = "New"),
+            failed = false,
         )
+
         val ready = holder.state as SubscriptionUiState.Ready
         assertEquals("New", ready.subscription.title)
         assertFalse(ready.isRefreshing)
@@ -181,109 +136,61 @@ class SubscriptionStateHolderTest {
     }
 
     @Test
-    fun beginLinkOnlyRefresh_keepsCardAndSetsRefreshing() {
-        val holder = SubscriptionStateHolder()
-        val card = samplePresentation(title = "Standard")
-        holder.applySignedOut(hasImportedProfile = true, card = card)
-        val gen = holder.beginLinkOnlyRefresh()
-        assertTrue(gen != null)
-        val signedOut = holder.state as SubscriptionUiState.SignedOut
-        assertEquals(card, signedOut.card)
-        assertTrue(signedOut.isRefreshing)
-        assertFalse(signedOut.refreshFailed)
+    fun confirmedMissingProfile_afterRefresh_becomesEmpty() {
+        val holder = readyHolder("Old")
+        assertTrue(holder.beginRefresh())
+
+        holder.applyLocalResult(presentation = null, failed = false)
+
+        assertTrue(holder.state is SubscriptionUiState.Empty)
+    }
+
+    @Test
+    fun staleCompletion_isIgnored() {
+        val holder = readyHolder("Old")
+        assertTrue(holder.beginRefresh())
+        val first = holder.flightGeneration
+        assertTrue(holder.beginRefresh(supersede = true))
+        val second = holder.flightGeneration
+
+        holder.applyLocalResult(
+            presentation = samplePresentation("Stale"),
+            failed = false,
+            generation = first,
+        )
         assertTrue(holder.requestInFlight)
-        assertEquals(gen, holder.flightGeneration)
+        assertEquals("Old", (holder.state as SubscriptionUiState.Ready).subscription.title)
+
+        holder.applyLocalResult(
+            presentation = samplePresentation("Current"),
+            failed = false,
+            generation = second,
+        )
+        assertEquals("Current", (holder.state as SubscriptionUiState.Ready).subscription.title)
     }
 
     @Test
-    fun beginLinkOnlyRefresh_secondCallRejected() {
-        val holder = SubscriptionStateHolder()
-        holder.applySignedOut(
-            hasImportedProfile = true,
-            card = samplePresentation(),
-        )
-        assertTrue(holder.beginLinkOnlyRefresh() != null)
-        assertNull(holder.beginLinkOnlyRefresh())
-    }
+    fun cancellation_clearsRefreshing_withoutChangingCard() {
+        val holder = readyHolder("Local")
+        assertTrue(holder.beginRefresh())
+        val generation = holder.flightGeneration
 
-    @Test
-    fun onRequestCancelled_clearsLinkOnlyRefreshing() {
-        val holder = SubscriptionStateHolder()
-        holder.applySignedOut(
-            hasImportedProfile = true,
-            card = samplePresentation(),
-        )
-        val gen = holder.beginLinkOnlyRefresh()!!
-        holder.onRequestCancelled(gen)
-        val signedOut = holder.state as SubscriptionUiState.SignedOut
-        assertFalse(signedOut.isRefreshing)
+        holder.onRequestCancelled(generation)
+
+        val ready = holder.state as SubscriptionUiState.Ready
+        assertEquals("Local", ready.subscription.title)
+        assertFalse(ready.isRefreshing)
         assertFalse(holder.requestInFlight)
     }
 
-    @Test
-    fun onRequestCancelled_staleGenerationIgnored() {
-        val holder = SubscriptionStateHolder()
-        holder.applySignedOut(
-            hasImportedProfile = true,
-            card = samplePresentation(),
-        )
-        val first = holder.beginLinkOnlyRefresh()!!
-        // Supersede as host would after cancel + new begin.
-        val second = holder.beginLinkOnlyRefresh(supersede = true)!!
-        assertTrue(second > first)
-        holder.onRequestCancelled(first)
-        assertTrue(holder.requestInFlight)
-        assertTrue((holder.state as SubscriptionUiState.SignedOut).isRefreshing)
-        holder.onRequestCancelled(second)
-        assertFalse(holder.requestInFlight)
-        assertFalse((holder.state as SubscriptionUiState.SignedOut).isRefreshing)
-    }
-
-    @Test
-    fun applyLinkOnlyRefreshResult_nullRemovesCard() {
-        val holder = SubscriptionStateHolder()
-        holder.applySignedOut(
-            hasImportedProfile = true,
-            card = samplePresentation(),
-        )
-        val gen = holder.beginLinkOnlyRefresh()!!
-        // Confirmed absence after successful inventory — not a transient IPC failure.
-        holder.applyLinkOnlyRefreshResult(card = null, failed = true, generation = gen)
-        val signedOut = holder.state as SubscriptionUiState.SignedOut
-        assertNull(signedOut.card)
-        assertFalse(signedOut.isRefreshing)
-        assertTrue(signedOut.refreshFailed)
-        assertFalse(holder.requestInFlight)
-    }
-
-    @Test
-    fun applyLinkOnlyRefreshResult_failedKeepsLastKnownCard() {
-        val holder = SubscriptionStateHolder()
-        val card = samplePresentation()
-        holder.applySignedOut(hasImportedProfile = true, card = card)
-        val gen = holder.beginLinkOnlyRefresh()!!
-        // Transient snapshot/update failure: host re-passes previous presentation.
-        holder.applyLinkOnlyRefreshResult(card = card, failed = true, generation = gen)
-        val signedOut = holder.state as SubscriptionUiState.SignedOut
-        assertEquals(card, signedOut.card)
-        assertFalse(signedOut.isRefreshing)
-        assertTrue(signedOut.refreshFailed)
-    }
-
-    @Test
-    fun applyLinkOnlyRefreshResult_staleGenerationIgnored() {
-        val holder = SubscriptionStateHolder()
-        val card = samplePresentation()
-        holder.applySignedOut(hasImportedProfile = true, card = card)
-        val first = holder.beginLinkOnlyRefresh()!!
-        val second = holder.beginLinkOnlyRefresh(supersede = true)!!
-        holder.applyLinkOnlyRefreshResult(card = null, failed = false, generation = first)
-        // Stale completion must not wipe the superseding refresh.
-        assertTrue(holder.requestInFlight)
-        assertEquals(card, (holder.state as SubscriptionUiState.SignedOut).card)
-        holder.applyLinkOnlyRefreshResult(card = card, failed = true, generation = second)
-        assertFalse(holder.requestInFlight)
-        assertTrue((holder.state as SubscriptionUiState.SignedOut).refreshFailed)
+    private fun readyHolder(title: String): SubscriptionStateHolder {
+        return SubscriptionStateHolder().also { holder ->
+            assertTrue(holder.beginInitialLoad())
+            holder.applyLocalResult(
+                presentation = samplePresentation(title),
+                failed = false,
+            )
+        }
     }
 
     private fun samplePresentation(title: String = "Trial"): SubscriptionPresentation {
@@ -297,28 +204,6 @@ class SubscriptionStateHolderTest {
             trafficUsedBytes = 100L,
             trafficLimitBytes = 1000L,
             trafficUnlimited = false,
-        )
-    }
-
-    private fun sampleItem(id: String = "1"): SubscriptionItem {
-        return SubscriptionItem(
-            id = id,
-            name = "n",
-            planName = "Trial",
-            planType = "trial",
-            kind = "trial",
-            isPrimary = true,
-            isActive = true,
-            expireAtEpochMillis = 1_700_000_000_000L,
-            daysLeft = 2,
-            deviceLimit = 3,
-            totalDeviceLimit = 3,
-            devicesCount = -1,
-            traffic = SubscriptionTraffic(100L, 1000L, 10.0, false),
-            autopayEnabled = false,
-            renewalDisabled = false,
-            planArchived = false,
-            subscriptionLink = "https://example.test/sub",
         )
     }
 }
