@@ -30,13 +30,13 @@ import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.GetLineSessionStorageException
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
+import pro.getline.vpn.getline.auth.SubscriptionAccountCapabilityPolicy
+import pro.getline.vpn.getline.auth.SubscriptionCardFlow
 import pro.getline.vpn.getline.auth.SubscriptionHeaderDisplay
-import pro.getline.vpn.getline.auth.SubscriptionLoadResult
 import pro.getline.vpn.getline.auth.SubscriptionPresentation
 import pro.getline.vpn.getline.auth.SubscriptionStateHolder
 import pro.getline.vpn.getline.auth.SubscriptionUiState
-import pro.getline.vpn.getline.auth.shouldRefreshManagedProfileConfig
-import pro.getline.vpn.getline.auth.shouldTreatManagedSnapshotAsTransient
+import pro.getline.vpn.getline.auth.shouldRefreshManagedProfile
 import pro.getline.vpn.getline.GetLineSubscriptionSummary
 import com.github.kr328.clash.AccessControlActivity
 import com.github.kr328.clash.HelpActivity
@@ -90,6 +90,23 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             },
         )
     }
+    private val subscriptionCardFlow by lazy {
+        SubscriptionCardFlow(
+            host = object : SubscriptionCardFlow.Host {
+                override fun managedProfileUuid(): String? =
+                    sessionRepository.managedProfileUuid()
+
+                override suspend fun requestConfigUpdate(
+                    id: GetLineSubscriptionId,
+                ): ConfigUpdateResult = backend.subscriptions.requestConfigUpdate(id)
+
+                override suspend fun findImported(
+                    id: GetLineSubscriptionId,
+                ): GetLineBackendResult<GetLineSubscriptionSummary?> =
+                    managedLocalSummaryResult(id.value)
+            },
+        )
+    }
     /** Split tunnelling state for the Home routing row; owned by the service. */
     private val serviceStore by lazy { ServiceStore(this) }
     /** Survives tab switches; cleared only when Activity is destroyed. */
@@ -125,6 +142,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
     private var connectionTimeout: Job? = null
     private var subscriptionLoadJob: Job? = null
+    private var subscriptionAccountSignalJob: Job? = null
     private var serverLoadJob: Job? = null
     /** Bug 3 diagnostic once per process — remove after saveSession question is closed. */
     private val subscriptionConsistencyLogged = AtomicBoolean(false)
@@ -183,7 +201,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             if (refreshAfterPortal) {
                                 // Re-enable portal CTA; error cleared on successful leave/return.
                                 design.setAccountPortalUi(
-                                    visible = shouldShowAccountPortalCta(),
+                                    visible = isAccountPortalAvailable(),
                                     launching = false,
                                     showError = false,
                                 )
@@ -196,7 +214,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             // After onboarding/sign-in (or logout elsewhere): sync session vs UI.
                             // Does not re-import profile or touch VPN.
                             design.onSubscriptionHostResumed()
-                            if (refreshAfterPortal && sessionRepository.hasSession()) {
+                            if (refreshAfterPortal) {
                                 // Force load after real portal return. If a refresh is already
                                 // in flight, queue one more force load (see pendingForce).
                                 design.refreshSubscriptionUi(force = true)
@@ -309,9 +327,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         // The screen also drops QR / manual import there — the
                         // subscription already exists.
                         GetLineHomeDesign.Request.SignIn ->
-                            if (usesLinkOnlyUi() &&
-                                sessionRepository.managedProfileUuid() != null
-                            ) {
+                            if (shouldResumeManagedSubscriptionSignIn()) {
                                 backend.navigation.openLinkOnlySignIn()
                             } else {
                                 backend.navigation.openOnboarding()
@@ -329,13 +345,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         GetLineHomeDesign.Request.OpenAccountPortal ->
                             design.openAccountPortal()
                         GetLineHomeDesign.Request.RefreshSubscription,
-                        GetLineHomeDesign.Request.RetrySubscription -> {
-                            if (usesLinkOnlyUi()) {
-                                design.refreshLinkOnlySubscription()
-                            } else {
-                                design.refreshSubscriptionUi(force = true)
-                            }
-                        }
+                        GetLineHomeDesign.Request.RetrySubscription ->
+                            design.refreshSubscriptionUi(force = true)
                         GetLineHomeDesign.Request.RetryServers ->
                             design.refreshServersUi(force = true)
                         GetLineHomeDesign.Request.SelectServer -> {
@@ -796,60 +807,11 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         ServerSection.Youtube -> GetLineUiR.string.get_line_servers_section_youtube
     }
 
-    /**
-     * Host resumed (onStart). Reconcile session cookie with holder without
-     * always re-fetching a valid Ready card.
-     *
-     * Successful onboarding while this Activity stays alive:
-     * SignedOut + real account session → [SubscriptionStateHolder.invalidateSessionState]
-     * → forced load → Ready/Empty/Failed. No profile import, no VPN restart.
-     *
-     * Mixed post-login (session + still-link-only binding) is treated as link-only
-     * UI — see [usesLinkOnlyUi].
-     */
+    /** Repaint account capabilities after session changes without touching the card. */
     private fun GetLineHomeDesign.onSubscriptionHostResumed() {
-        when {
-            usesLinkOnlyUi() -> {
-                // No usable account card: pure signed-out, or session exists but the
-                // post-login step never finished (still link-only binding).
-                // Drop pending portal-return refresh; do not touch browser cookies.
-                accountPortalVisit.clear()
-                pendingForceSubscriptionRefresh.clear()
-                when (subscriptionState.state) {
-                    is SubscriptionUiState.Ready,
-                    is SubscriptionUiState.Empty,
-                    is SubscriptionUiState.Failed -> {
-                        // Drop session-bound card immediately (not after snapshot IPC).
-                        cancelSubscriptionJob()
-                        subscriptionState.invalidateSessionState()
-                        paintSubscriptionState()
-                        scheduleApplySignedOutState()
-                    }
-                    is SubscriptionUiState.SignedOut,
-                    is SubscriptionUiState.Loading -> {
-                        // Keep in-flight link-only refresh / apply; do not silent-cancel.
-                        if (subscriptionState.requestInFlight ||
-                            subscriptionLoadJob?.isActive == true
-                        ) {
-                            paintSubscriptionState()
-                        } else {
-                            scheduleApplySignedOutState()
-                        }
-                    }
-                }
-            }
-            subscriptionState.state is SubscriptionUiState.SignedOut -> {
-                // Sign-in completed and binding is account-bound; invalidate and force load.
-                cancelSubscriptionJob()
-                subscriptionState.invalidateSessionState()
-                paintSubscriptionState()
-                refreshSubscriptionUi(force = true)
-            }
-            selectedTab == GetLineHomeDesign.Tab.Subscription -> {
-                // Already signed-in with stable state — paint cache; load only if needed.
-                ensureSubscriptionLoaded()
-            }
-            else -> Unit
+        paintSubscriptionAccountCapabilities()
+        if (selectedTab == GetLineHomeDesign.Tab.Subscription) {
+            ensureSubscriptionLoaded()
         }
     }
 
@@ -859,32 +821,12 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * (see [onSubscriptionHostResumed]).
      */
     private fun GetLineHomeDesign.ensureSubscriptionLoaded() {
-        if (usesLinkOnlyUi()) {
-            // Do not cancel an in-flight link-only refresh when switching tabs.
-            if (subscriptionState.requestInFlight ||
-                subscriptionLoadJob?.isActive == true
-            ) {
-                paintSubscriptionState()
-                return
-            }
-            scheduleApplySignedOutState()
-            return
-        }
-
         if (!subscriptionState.needsInitialLoad()) {
             paintSubscriptionState()
             return
         }
 
         refreshSubscriptionUi(force = false)
-    }
-
-    /** Async inventory → SignedOut (+ optional link-only card), then paint. */
-    private fun GetLineHomeDesign.scheduleApplySignedOutState() {
-        subscriptionLoadJob = launch {
-            applySignedOutState()
-            paintSubscriptionState()
-        }
     }
 
     /**
@@ -897,45 +839,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         job?.cancel()
     }
 
-    /**
-     * Build SignedOut (with optional link-only card) from the stable managed binding.
-     *
-     * Transient profile-backend failure ([GetLineBackendResult.Unavailable]) must
-     * not erase an existing link-only card — only a successful lookup can prove
-     * the managed profile is missing.
-     */
-    private suspend fun applySignedOutState() {
-        val managed = sessionRepository.managedProfileUuid()
-        if (managed == null) {
-            subscriptionState.applySignedOut(
-                hasImportedProfile = hasKnownImportedProfile,
-                card = null,
-            )
-            return
-        }
-        when (val snap = managedLocalSummaryResult()) {
-            is GetLineBackendResult.Success -> {
-                subscriptionState.applySignedOut(
-                    hasImportedProfile = hasKnownImportedProfile,
-                    card = snap.value?.let(::localSubscriptionCard),
-                )
-            }
-            GetLineBackendResult.Unavailable -> {
-                val previousCard =
-                    (subscriptionState.state as? SubscriptionUiState.SignedOut)?.card
-                subscriptionState.applySignedOut(
-                    hasImportedProfile = hasKnownImportedProfile,
-                    card = previousCard,
-                )
-            }
-            null -> subscriptionState.applySignedOut(
-                hasImportedProfile = hasKnownImportedProfile,
-                card = null,
-            )
-        }
-    }
-
-    /** One card source for an imported profile — with or without a session. */
+    /** One card source for an imported profile, independent of account session. */
     private fun localSubscriptionCard(
         summary: GetLineSubscriptionSummary,
     ): SubscriptionPresentation =
@@ -945,9 +849,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         )
 
     /** Resolve the stable managed binding, independent of the active VPN profile. */
-    private suspend fun managedLocalSummaryResult():
-        GetLineBackendResult<GetLineSubscriptionSummary?>? {
-        val managed = sessionRepository.managedProfileUuid() ?: return null
+    private suspend fun managedLocalSummaryResult(
+        managed: String?,
+    ): GetLineBackendResult<GetLineSubscriptionSummary?> {
+        if (managed == null) return GetLineBackendResult.Success(null)
         val result = backend.subscriptions.findImported(GetLineSubscriptionId(managed))
         if (result is GetLineBackendResult.Success) {
             if (result.value != null) {
@@ -962,14 +867,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             }
         }
         return result
-    }
-
-    private suspend fun managedLocalSummary(): GetLineSubscriptionSummary? {
-        return when (val result = managedLocalSummaryResult()) {
-            is GetLineBackendResult.Success -> result.value
-            null,
-            GetLineBackendResult.Unavailable -> null
-        }
     }
 
     /**
@@ -992,33 +889,11 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     }
 
     /**
-     * Load or refresh /api/subscriptions into [subscriptionState].
-     *
-     * When the preferred subscription is active, also silently re-fetches the
-     * managed URL profile so Servers pick up provider node list changes
-     * (renew, plan/pool change — not only expire placeholders). Uses in-process
-     * update (no ProfileWorker result notifications). [Event.ProfileChanged]
-     * reloads the server list. Does not restart VPN.
-     *
-     * Force requests that arrive while a load is already in flight are queued
-     * via [pendingForceSubscriptionRefresh] and run once after completion so a
-     * portal-return refresh is not silently dropped.
+     * Materialize the card only from the managed binding and imported row.
+     * Forced triggers first refresh the remote config; initial display only reads
+     * the snapshot and starts the optional account signal after painting it.
      */
     private fun GetLineHomeDesign.refreshSubscriptionUi(force: Boolean) {
-        if (usesLinkOnlyUi()) {
-            pendingForceSubscriptionRefresh.clear()
-            // Not a silent no-op: rebuild SignedOut (stub or link-only) and paint.
-            if (subscriptionState.requestInFlight ||
-                subscriptionLoadJob?.isActive == true
-            ) {
-                // Prefer not to cancel link-only refresh mid-flight; paint current.
-                paintSubscriptionState()
-                return
-            }
-            scheduleApplySignedOutState()
-            return
-        }
-
         val started = if (force) {
             subscriptionState.beginRefresh()
         } else {
@@ -1039,83 +914,28 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         cancelSubscriptionJob()
         subscriptionLoadJob = launch {
             try {
-                val result = sessionRepository.loadSubscriptionForUi()
+                val outcome = subscriptionCardFlow.materialize(refreshManaged = force)
                 if (!isActive) return@launch
-
-                when (result) {
-                    is SubscriptionLoadResult.Success -> {
-                        val preferred = result.preferred
-                        val fallbackTitle = getString(GetLineUiR.string.get_line_home_plan_unknown)
-                        val local = managedLocalSummaryResult()
-                        val presentation = when (local) {
-                            is GetLineBackendResult.Success ->
-                                local.value?.let(::localSubscriptionCard)
-                            // No managed binding: retain the account-only card path.
-                            null -> preferred?.let {
-                                SubscriptionPresentation.fromPreferred(
-                                    item = it,
-                                    fallbackTitle = fallbackTitle,
-                                )
-                            }
-                            // A transient local snapshot failure is not permission to
-                            // switch a managed card back to account API data.
-                            GetLineBackendResult.Unavailable -> null
-                        }
-                        val localSnapshotMissing =
-                            local is GetLineBackendResult.Success && local.value == null
-                        val shouldRefreshManaged = shouldRefreshManagedProfileConfig(preferred)
-                        val localFailureIsTransient = shouldTreatManagedSnapshotAsTransient(
-                            localUnavailable = local == GetLineBackendResult.Unavailable,
-                            localMissing = localSnapshotMissing,
-                            repairWillRun = shouldRefreshManaged,
-                        )
-                        val appliedResult = if (localFailureIsTransient) {
-                            SubscriptionLoadResult.TransientFailure
-                        } else {
-                            result
-                        }
-                        subscriptionState.applyLoadResult(
-                            result = appliedResult,
-                            presentation = presentation,
-                            generation = generation,
-                        )
-                        Log.i(
-                            "subscription_ui load ok preferred=${preferred != null}",
-                        )
-                        // STATUS is display-only. Keep config refresh driven by the
-                        // account API's active flag so migrated rows with no saved
-                        // status can fetch and backfill the new headers.
-                        if (shouldRefreshManaged) {
-                            refreshManagedProfileConfigAfterActiveSubscription()
-                        }
-                    }
-                    SubscriptionLoadResult.SignedOut -> {
-                        pendingForceSubscriptionRefresh.clear()
-                        applySignedOutState()
-                        Log.i("subscription_ui load signed_out")
-                    }
-                    SubscriptionLoadResult.TransientFailure -> {
-                        subscriptionState.applyLoadResult(
-                            result = result,
-                            presentation = null,
-                            generation = generation,
-                        )
-                        Log.w(
-                            "subscription_ui load failed " +
-                                "state=${subscriptionState.state::class.simpleName}",
-                        )
-                    }
-                }
+                val presentation = outcome.summary?.let(::localSubscriptionCard)
+                subscriptionState.applyLocalResult(
+                    presentation = presentation,
+                    failed = outcome.failed,
+                    generation = generation,
+                )
+                Log.i(
+                    "subscription_ui local managed=${outcome.hasManagedBinding} " +
+                        "found=${presentation != null} failed=${outcome.failed}",
+                )
                 paintSubscriptionState()
+                if (!force) {
+                    requestSubscriptionAccountSignal()
+                }
             } finally {
                 if (!isActive) {
                     subscriptionState.onRequestCancelled(generation)
                     // Cancelled jobs are often superseded by a newer load; do not start
                     // another force from here (avoids double-refresh races).
-                } else if (
-                    !usesLinkOnlyUi() &&
-                    pendingForceSubscriptionRefresh.consume()
-                ) {
+                } else if (pendingForceSubscriptionRefresh.consume()) {
                     // Drain at most one queued force refresh after a normal completion.
                     // Portal return while a Ready refresh was busy relies on this.
                     refreshSubscriptionUi(force = true)
@@ -1124,104 +944,19 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
     }
 
-    /**
-     * Re-fetch managed URL profile config for link-only (no account session).
-     * Keeps the SignedOut card visible; failures surface as transient error text.
-     *
-     * When there is no managed binding (or begin is rejected), rebuilds SignedOut
-     * and paints — never a silent no-op for Refresh/Retry.
-     */
-    private fun GetLineHomeDesign.refreshLinkOnlySubscription() {
-        val managed = sessionRepository.managedProfileUuid()
-        if (managed == null) {
-            // No managed binding (e.g. 401 cleared session+uuid): rebuild SignedOut, not no-op.
-            cancelSubscriptionJob()
-            scheduleApplySignedOutState()
-            return
-        }
-        // Parallel press while refresh is already in flight.
-        if (subscriptionState.requestInFlight) {
-            paintSubscriptionState()
-            return
-        }
-        // Drop a non-flight inventory job (if any) before starting refresh.
-        cancelSubscriptionJob()
-        val generation = subscriptionState.beginLinkOnlyRefresh()
-        if (generation == null) {
-            scheduleApplySignedOutState()
-            return
-        }
-        paintSubscriptionState()
-        subscriptionLoadJob = launch {
-            try {
-                val updated = backend.subscriptions
-                    .requestConfigUpdate(GetLineSubscriptionId(managed))
-                if (!isActive) return@launch
-                val previousCard =
-                    (subscriptionState.state as? SubscriptionUiState.SignedOut)?.card
-                when (val snap = managedLocalSummaryResult()) {
-                    is GetLineBackendResult.Success -> {
-                        subscriptionState.applyLinkOnlyRefreshResult(
-                            card = snap.value?.let(::localSubscriptionCard),
-                            // Clear card only when inventory confirms managed is gone;
-                            // update failure alone keeps whatever snapshot returned.
-                            // Unlike account-backed active state, link-only does not
-                            // recreate a profile the local inventory says was removed.
-                            failed = updated == ConfigUpdateResult.Unavailable,
-                            generation = generation,
-                        )
-                    }
-                    GetLineBackendResult.Unavailable -> {
-                        // Lookup failed: keep last known card; treat as refresh failure.
-                        subscriptionState.applyLinkOnlyRefreshResult(
-                            card = previousCard,
-                            failed = true,
-                            generation = generation,
-                        )
-                    }
-                    null -> subscriptionState.applyLinkOnlyRefreshResult(
-                        card = null,
-                        failed = false,
-                        generation = generation,
-                    )
-                }
-                paintSubscriptionState()
-            } finally {
-                if (!isActive) {
-                    subscriptionState.onRequestCancelled(generation)
-                }
-            }
-        }
-    }
-
-    /**
-     * Re-fetch managed URL config after the account API says it is active.
-     * Updated stays silent; NotFound is a consistency fault and runs the existing
-     * network repair, applying its product state. Other outcomes preserve current state.
-     */
-    private fun GetLineHomeDesign.refreshManagedProfileConfigAfterActiveSubscription() {
-        val managedUuid = sessionRepository.managedProfileUuid() ?: return
-        launch {
-            when (
-                backend.subscriptions.requestConfigUpdate(
-                    GetLineSubscriptionId(managedUuid),
+    /** API latency/failure is isolated from card materialization. */
+    private fun GetLineHomeDesign.requestSubscriptionAccountSignal() {
+        if (!sessionRepository.hasSession()) return
+        if (subscriptionAccountSignalJob?.isActive == true) return
+        subscriptionAccountSignalJob = launch {
+            val signal = sessionRepository.loadSubscriptionAccountSignal()
+            paintSubscriptionAccountCapabilities()
+            if (signal.shouldRefreshManagedProfile(
+                    hasManagedBinding = sessionRepository.managedProfileUuid() != null,
                 )
             ) {
-                ConfigUpdateResult.NotFound -> {
-                    fetch(showLoading = false, allowNetwork = true)
-                }
-                ConfigUpdateResult.Updated -> Unit
-                ConfigUpdateResult.NotRefreshable,
-                ConfigUpdateResult.Unavailable -> return@launch
+                refreshSubscriptionUi(force = true)
             }
-            val summary = managedLocalSummary() ?: return@launch
-            subscriptionState.updateReadyCard(
-                SubscriptionPresentation.fromLocalSummary(
-                    summary = summary,
-                    string = { getString(it) },
-                ),
-            )
-            paintSubscriptionState()
         }
     }
 
@@ -1235,40 +970,51 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         "verdict=${sessionRepository.consistencyVerdict()} " +
                         "state=${subscriptionState.state::class.simpleName}",
                 )
-                // Mixed post-login (session + still-link-only) legitimately paints SignedOut.
-                if (
-                    hasSession &&
-                    subscriptionState.state is SubscriptionUiState.SignedOut &&
-                    !sessionRepository.needsPostLoginSubscriptionStep()
-                ) {
-                    Log.w("subscription_ui inconsistent SignedOut while has_refresh=true")
-                }
             }
             setSubscriptionScreen(subscriptionState.state.toScreen(this@paintSubscriptionState))
-            setAccountAction(accountAction())
+            applySubscriptionAccountCapabilities()
         }
     }
 
     /**
-     * Session exists but the post-login step never finished: the active profile is
-     * still the link-only one, so the tab must describe it, not the account.
-     *
-     * Exit path already exists: link-only «Войти для управления» opens Onboarding,
-     * which reads [GetLineSessionRepository.needsPostLoginSubscriptionStep] and
-     * resumes the mismatch dialog. No persisted flag and no new navigation.
+     * Sign-in on top of a managed URL binding resumes the existing mismatch flow.
+     * The mixed post-login state takes the same route so its working profile stays.
      */
-    private fun usesLinkOnlyUi(): Boolean =
-        !sessionRepository.hasSession() ||
-            sessionRepository.needsPostLoginSubscriptionStep()
+    private fun shouldResumeManagedSubscriptionSignIn(): Boolean =
+        SubscriptionAccountCapabilityPolicy.shouldResumeManagedSubscriptionSignIn(
+            hasSession = sessionRepository.hasSession(),
+            hasManagedBinding = sessionRepository.managedProfileUuid() != null,
+            needsPostLoginStep = sessionRepository.needsPostLoginSubscriptionStep(),
+        )
+
+    /** SignOut is unsafe until the post-login binding mismatch has been resolved. */
+    private fun canSafelySignOut(): Boolean =
+        SubscriptionAccountCapabilityPolicy.canSafelySignOut(
+            hasSession = sessionRepository.hasSession(),
+            needsPostLoginStep = sessionRepository.needsPostLoginSubscriptionStep(),
+        )
 
     private fun accountAction(): GetLineHomeDesign.AccountAction = when {
         // Real account session only. Mixed post-login still has tokens but must
-        // show RemoveSubscription — SignOut would clear the link-only binding via
+        // show RemoveSubscription — SignOut would clear the managed binding via
         // logout() under the wrong label (and delete the working profile).
-        !usesLinkOnlyUi() -> GetLineHomeDesign.AccountAction.SignOut
+        canSafelySignOut() -> GetLineHomeDesign.AccountAction.SignOut
         sessionRepository.managedProfileUuid() != null ->
             GetLineHomeDesign.AccountAction.RemoveSubscription
         else -> GetLineHomeDesign.AccountAction.None
+    }
+
+    private suspend fun GetLineHomeDesign.applySubscriptionAccountCapabilities() {
+        val action = accountAction()
+        setSubscriptionSignInVisible(
+            action == GetLineHomeDesign.AccountAction.RemoveSubscription,
+        )
+        setAccountAction(action)
+        setAccountPortalAvailable(isAccountPortalAvailable())
+    }
+
+    private fun GetLineHomeDesign.paintSubscriptionAccountCapabilities() {
+        launch { applySubscriptionAccountCapabilities() }
     }
 
     /**
@@ -1304,6 +1050,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     override suspend fun onSessionCleared() {
                         accountPortalVisit.clear()
                         pendingForceSubscriptionRefresh.clear()
+                        subscriptionAccountSignalJob?.cancel()
                         cancelSubscriptionJob()
                         subscriptionState.resetToLoading()
                         hasKnownActiveProfile = false
@@ -1318,8 +1065,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                     paintSubscriptionState()
                 }
                 LogoutFlow.Outcome.SignOutFailed -> {
-                    // Tokens are gone but the binding remains addressable as link-only.
-                    scheduleApplySignedOutState()
+                    // Tokens are gone but the managed binding remains addressable.
+                    refreshSubscriptionUi(force = false)
                     fetch(showLoading = false)
                 }
                 LogoutFlow.Outcome.Completed -> {
@@ -1354,13 +1101,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 )
             is SubscriptionUiState.Empty ->
                 GetLineHomeDesign.SubscriptionScreen.Empty
-            is SubscriptionUiState.SignedOut ->
-                GetLineHomeDesign.SubscriptionScreen.SignedOut(
-                    hasImportedProfile = hasImportedProfile,
-                    card = card?.toCard(design),
-                    isRefreshing = isRefreshing,
-                    refreshFailed = refreshFailed,
-                )
             is SubscriptionUiState.Failed ->
                 GetLineHomeDesign.SubscriptionScreen.Failed
         }
@@ -1554,26 +1294,22 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
     }
 
-    private fun shouldShowAccountPortalCta(): Boolean {
-        return when (subscriptionState.state) {
-            is SubscriptionUiState.Ready,
-            is SubscriptionUiState.Empty,
-            is SubscriptionUiState.Failed -> true
-            is SubscriptionUiState.Loading,
-            is SubscriptionUiState.SignedOut -> false
-        }
-    }
+    /** Distribution-policy seam for #73. Current channels allow the portal. */
+    private fun isAccountPortalAvailable(): Boolean = true
 
     /**
      * Opens the web account portal in a Custom Tab (HTTPS portal host for this flavor).
      * Does not pass native tokens, use WebView, or import profiles / touch VPN.
      */
     private fun GetLineHomeDesign.openAccountPortal() {
+        if (!isAccountPortalAvailable()) {
+            return
+        }
         if (!accountPortalVisit.canLaunch()) {
             return
         }
 
-        val showCta = shouldShowAccountPortalCta()
+        val showCta = isAccountPortalAvailable()
         val uri = try {
             AccountPortalUriPolicy.dashboardUri()
         } catch (_: Exception) {

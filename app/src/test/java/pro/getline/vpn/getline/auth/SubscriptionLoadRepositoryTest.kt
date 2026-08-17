@@ -150,32 +150,31 @@ class SubscriptionLoadRepositoryTest {
         }
 
     @Test
-    fun loadSubscriptionForUi_noSession_signedOut() = runBlocking {
+    fun loadSubscriptionAccountSignal_noSession_skipsApi() = runBlocking {
         val api = FakeAuthApi()
         val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         val repo = GetLineSessionRepository(api, store)
 
-        val result = repo.loadSubscriptionForUi()
-        assertEquals(SubscriptionLoadResult.SignedOut, result)
+        val result = repo.loadSubscriptionAccountSignal()
+        assertEquals(SubscriptionAccountSignal.NoRefresh, result)
         assertEquals(0, api.subscriptionsCalls)
     }
 
     @Test
-    fun loadSubscriptionForUi_emptyList_successNullPreferred() = runBlocking {
+    fun loadSubscriptionAccountSignal_emptyList_doesNotRefresh() = runBlocking {
         val api = FakeAuthApi(
             subscriptions = SubscriptionsResponse(false, emptyList()),
         )
         val store = seededStore()
         val repo = GetLineSessionRepository(api, store)
 
-        val result = repo.loadSubscriptionForUi()
-        assertTrue(result is SubscriptionLoadResult.Success)
-        assertEquals(null, (result as SubscriptionLoadResult.Success).preferred)
+        val result = repo.loadSubscriptionAccountSignal()
+        assertEquals(SubscriptionAccountSignal.NoRefresh, result)
     }
 
     @Test
-    fun loadSubscriptionForUi_selectsPreferred() = runBlocking {
+    fun loadSubscriptionAccountSignal_activePreferred_requestsRefresh() = runBlocking {
         val primary = item(id = "1", primary = true, link = "https://a")
         val other = item(id = "2", primary = false, link = "https://b")
         val api = FakeAuthApi(
@@ -183,8 +182,8 @@ class SubscriptionLoadRepositoryTest {
         )
         val repo = GetLineSessionRepository(api, seededStore())
 
-        val result = repo.loadSubscriptionForUi() as SubscriptionLoadResult.Success
-        assertEquals("1", result.preferred?.id)
+        val result = repo.loadSubscriptionAccountSignal()
+        assertEquals(SubscriptionAccountSignal.RefreshManagedProfile, result)
     }
 
     @Test
@@ -233,7 +232,7 @@ class SubscriptionLoadRepositoryTest {
     }
 
     @Test
-    fun loadSubscriptionForUi_expiredAccess_refresh401OrInvalidGrant_rejectsAccountSession() =
+    fun loadSubscriptionAccountSignal_expiredAccess_rejection_discardsAccountSession() =
         runBlocking {
             for (error in listOf(
                 GetLineAuthException.HttpFailure(401, "refresh rejected"),
@@ -247,8 +246,8 @@ class SubscriptionLoadRepositoryTest {
                 }
                 val repo = GetLineSessionRepository(api, store)
 
-                val result = repo.loadSubscriptionForUi()
-                assertEquals(SubscriptionLoadResult.SignedOut, result)
+                val result = repo.loadSubscriptionAccountSignal()
+                assertEquals(SubscriptionAccountSignal.NoRefresh, result)
                 assertFalse(store.hasRefreshToken())
                 assertEquals("managed-uuid", store.managedProfileUuid)
                 assertEquals("subscription-id", store.subscriptionId)
@@ -261,7 +260,7 @@ class SubscriptionLoadRepositoryTest {
         }
 
     @Test
-    fun loadSubscriptionForUi_expiredAccess_unknown400Or403_isTransient() = runBlocking {
+    fun loadSubscriptionAccountSignal_expiredAccess_unknown400Or403_isUnavailable() = runBlocking {
         for (code in listOf(400, 403)) {
             val api = FakeAuthApi(
                 refreshError = GetLineAuthException.HttpFailure(code, "edge rejected request"),
@@ -271,8 +270,8 @@ class SubscriptionLoadRepositoryTest {
             }
             val repo = GetLineSessionRepository(api, store)
 
-            val result = repo.loadSubscriptionForUi()
-            assertEquals(SubscriptionLoadResult.TransientFailure, result)
+            val result = repo.loadSubscriptionAccountSignal()
+            assertEquals(SubscriptionAccountSignal.Unavailable, result)
             assertTrue(repo.hasSession())
             assertEquals("refresh", store.refreshToken)
             assertEquals("managed-uuid", store.managedProfileUuid)
@@ -286,7 +285,7 @@ class SubscriptionLoadRepositoryTest {
     }
 
     @Test
-    fun loadSubscriptionForUi_expiredAccess_refresh5xx_isTransient() = runBlocking {
+    fun loadSubscriptionAccountSignal_expiredAccess_refresh5xx_isUnavailable() = runBlocking {
         val api = FakeAuthApi(
             refreshError = GetLineAuthException.HttpFailure(503, "refresh unavailable"),
         )
@@ -295,8 +294,8 @@ class SubscriptionLoadRepositoryTest {
         }
         val repo = GetLineSessionRepository(api, store)
 
-        val result = repo.loadSubscriptionForUi()
-        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        val result = repo.loadSubscriptionAccountSignal()
+        assertEquals(SubscriptionAccountSignal.Unavailable, result)
         assertTrue(repo.hasSession())
         assertEquals("refresh", store.refreshToken)
         assertEquals("managed-uuid", store.managedProfileUuid)
@@ -308,7 +307,7 @@ class SubscriptionLoadRepositoryTest {
     }
 
     @Test
-    fun loadSubscriptionForUi_refresh5xx_transientAndPreservesState() = runBlocking {
+    fun loadSubscriptionAccountSignal_refresh5xx_preservesState() = runBlocking {
         val api = FakeAuthApi(
             failSubscriptionsTimes = 1,
             refreshError = GetLineAuthException.HttpFailure(503, "refresh unavailable"),
@@ -316,8 +315,8 @@ class SubscriptionLoadRepositoryTest {
         val store = seededManagedStore()
         val repo = GetLineSessionRepository(api, store)
 
-        val result = repo.loadSubscriptionForUi()
-        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        val result = repo.loadSubscriptionAccountSignal()
+        assertEquals(SubscriptionAccountSignal.Unavailable, result)
         assertTrue(repo.hasSession())
         assertEquals("refresh", store.refreshToken)
         assertEquals("managed-uuid", store.managedProfileUuid)
@@ -327,7 +326,7 @@ class SubscriptionLoadRepositoryTest {
     }
 
     @Test
-    fun loadSubscriptionForUi_networkRefreshFailure_transientAndPreservesState() = runBlocking {
+    fun loadSubscriptionAccountSignal_networkRefreshFailure_preservesState() = runBlocking {
         val api = FakeAuthApi(
             failSubscriptionsTimes = 1,
             refreshError = IOException("offline"),
@@ -335,8 +334,8 @@ class SubscriptionLoadRepositoryTest {
         val store = seededManagedStore()
         val repo = GetLineSessionRepository(api, store)
 
-        val result = repo.loadSubscriptionForUi()
-        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        val result = repo.loadSubscriptionAccountSignal()
+        assertEquals(SubscriptionAccountSignal.Unavailable, result)
         assertTrue(repo.hasSession())
         assertEquals("refresh", store.refreshToken)
         assertEquals("managed-uuid", store.managedProfileUuid)
@@ -346,7 +345,7 @@ class SubscriptionLoadRepositoryTest {
     }
 
     @Test
-    fun loadSubscriptionForUi_protocolRefreshFailure_transientAndPreservesState() = runBlocking {
+    fun loadSubscriptionAccountSignal_protocolRefreshFailure_preservesState() = runBlocking {
         val api = FakeAuthApi(
             failSubscriptionsTimes = 1,
             refreshError = GetLineAuthException.Protocol("malformed refresh"),
@@ -354,8 +353,8 @@ class SubscriptionLoadRepositoryTest {
         val store = seededManagedStore()
         val repo = GetLineSessionRepository(api, store)
 
-        val result = repo.loadSubscriptionForUi()
-        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        val result = repo.loadSubscriptionAccountSignal()
+        assertEquals(SubscriptionAccountSignal.Unavailable, result)
         assertTrue(repo.hasSession())
         assertEquals("managed-uuid", store.managedProfileUuid)
         assertEquals("subscription-id", store.subscriptionId)
@@ -393,7 +392,7 @@ class SubscriptionLoadRepositoryTest {
     }
 
     @Test
-    fun loadSubscriptionForUi_cancelDuringRefresh_rethrowsAndKeepsSession() = runBlocking {
+    fun loadSubscriptionAccountSignal_cancelDuringRefresh_rethrowsAndKeepsSession() = runBlocking {
         val enteredRefresh = CompletableDeferred<Unit>()
         val api = FakeAuthApi(
             failSubscriptionsTimes = 1,
@@ -406,7 +405,7 @@ class SubscriptionLoadRepositoryTest {
         val repo = GetLineSessionRepository(api, store)
 
         val deferred = async {
-            repo.loadSubscriptionForUi()
+            repo.loadSubscriptionAccountSignal()
         }
         enteredRefresh.await()
         deferred.cancel()
@@ -414,31 +413,31 @@ class SubscriptionLoadRepositoryTest {
             deferred.await()
             fail("expected CancellationException")
         } catch (_: CancellationException) {
-            // expected — not mapped to TransientFailure / SignedOut
+            // expected — not mapped to an account signal
         }
         assertTrue(store.hasRefreshToken())
     }
 
     @Test
-    fun loadSubscriptionForUi_serverError_transient() = runBlocking {
+    fun loadSubscriptionAccountSignal_serverError_isUnavailable() = runBlocking {
         val api = FakeAuthApi(subscriptionsHttpCode = 500)
         val store = seededStore()
         val repo = GetLineSessionRepository(api, store)
 
-        val result = repo.loadSubscriptionForUi()
-        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        val result = repo.loadSubscriptionAccountSignal()
+        assertEquals(SubscriptionAccountSignal.Unavailable, result)
         assertTrue(repo.hasSession())
         assertEquals(1, api.subscriptionsCalls)
     }
 
     @Test
-    fun loadSubscriptionForUi_403_keepsSession_transient() = runBlocking {
+    fun loadSubscriptionAccountSignal_403_keepsSession() = runBlocking {
         val api = FakeAuthApi(subscriptionsHttpCode = 403)
         val store = seededStore()
         val repo = GetLineSessionRepository(api, store)
 
-        val result = repo.loadSubscriptionForUi()
-        assertEquals(SubscriptionLoadResult.TransientFailure, result)
+        val result = repo.loadSubscriptionAccountSignal()
+        assertEquals(SubscriptionAccountSignal.Unavailable, result)
         assertTrue(repo.hasSession())
     }
 

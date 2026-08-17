@@ -42,7 +42,7 @@ interface GetLineAuthApi {
     /**
      * GET /api/dashboard. On current prod this may auto-activate a trial
      * (`trial_auto_activated`). Call only after an explicit user confirmation —
-     * never from [GetLineSessionRepository.loadSubscriptionForUi] or unprompted
+     * never from [GetLineSessionRepository.loadSubscriptionAccountSignal] or unprompted
      * login import.
      */
     suspend fun getDashboard(accessToken: String): DashboardInfo
