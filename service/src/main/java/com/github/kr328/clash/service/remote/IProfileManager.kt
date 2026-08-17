@@ -14,14 +14,14 @@ interface IProfileManager {
     suspend fun delete(uuid: UUID)
     suspend fun patch(uuid: UUID, name: String, source: String, interval: Long, ageSecretKey: String?)
     /**
-     * Schedules [ProfileWorker] (transient FGS/progress only; no result shade entries).
+     * Force re-fetch imported URL profile in-process.
      * Prefer [updateSilently] for product/background sync.
      */
     suspend fun update(uuid: UUID)
     /**
      * Force re-fetch imported URL profile in-process.
      * Emits [com.github.kr328.clash.common.constants.Intents.ACTION_PROFILE_CHANGED] on success.
-     * Does not start ProfileWorker and posts no result notifications / Properties deep-links.
+     * Does not own periodic schedule and posts no result notifications.
      */
     suspend fun updateSilently(uuid: UUID)
     suspend fun queryByUUID(uuid: UUID): Profile?
