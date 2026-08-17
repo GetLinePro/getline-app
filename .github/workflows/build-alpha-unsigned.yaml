@@ -106,6 +106,7 @@ jobs:
             :app:processAlphaProdReleaseMainManifest \
             :app:processAlphaProdDebugMainManifest
           ./scripts/check-advanced-release-gate.sh --require-merged
+          ./scripts/check-release-fgs-gate.sh --require-merged
 
       - name: Lint app and build
         if: success()

@@ -19,7 +19,6 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission"
         tools:node="remove" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.CAMERA" />
 
@@ -264,14 +263,6 @@
             android:exported="false"
             android:label="@string/files" />
 
-        <service
-            android:name=".LogcatService"
-            android:exported="false"
-            android:label="@string/clash_logcat"
-            android:foregroundServiceType="specialUse">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-            android:value="explanation_for_special_use"/>
-        </service>
         <service
             android:name=".TileService"
             android:exported="true"

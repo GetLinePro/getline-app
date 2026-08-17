@@ -3,6 +3,7 @@ package com.github.kr328.clash.service.clash.module
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -76,7 +77,11 @@ class DynamicNotificationModule(
         if (foregroundStarted) {
             notificationManager.notify(R.id.nf_clash_status, notification)
         } else {
-            service.startForegroundCompat(R.id.nf_clash_status, notification)
+            service.startForegroundCompat(
+                R.id.nf_clash_status,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
+            )
             foregroundStarted = true
             onForegroundStarted()
         }

@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.IBinder
 import android.os.IInterface
@@ -153,7 +154,11 @@ class LogcatService : Service(), CoroutineScope by CoroutineScope(Dispatchers.De
             )
             .build()
 
-        startForegroundCompat(R.id.nf_logcat_status, notification)
+        startForegroundCompat(
+            R.id.nf_logcat_status,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+        )
     }
 
     companion object {

@@ -82,6 +82,34 @@ failure at the current install base. Tracked in `docs/internal/security-register
 
 ---
 
+## Release FGS is `TunService` / `systemExempted`, not `specialUse`
+
+**Decided:** 2026-08-17. **Status:** in effect. Issue #39.
+
+Release does not declare `specialUse`, `FOREGROUND_SERVICE_SPECIAL_USE`, or
+`PROPERTY_SPECIAL_USE_FGS_SUBTYPE`. `TunService` is the only GetLine-owned
+service with a `foregroundServiceType`, and that type is `systemExempted`.
+Debug `LogcatService` is declared only in `app/src/debug/AndroidManifest.xml`
+with `specialUse` and `FOREGROUND_SERVICE_SPECIAL_USE`. It never enters a
+release merge.
+
+`startForegroundCompat()` takes the runtime type as a parameter. A global
+constant would declare debug `LogcatService` as `systemExempted` against its
+manifest and crash the start on API 34+.
+
+`androidx.work` `SystemForegroundService` without a type is library
+infrastructure. `ProfileRefreshWorker` does not call `setForeground()` /
+`setForegroundAsync()`. Do not set `enable_system_foreground_service_default`
+to false.
+
+### Do not
+
+- Write `specialUse` justifications for Play. That posing was cancelled.
+- Swap the helper's constant globally instead of passing the type.
+- Treat WorkManager's untyped `SystemForegroundService` as a GetLine FGS.
+
+---
+
 ## Split tunnelling warns about lockdown, it does not detect it
 
 **Status:** in effect from 2026-08-13. Alpha scope, revisit if it bites.
