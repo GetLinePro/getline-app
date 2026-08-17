@@ -8,6 +8,7 @@ import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
+import pro.getline.vpn.getline.refresh.ManagedProfileRefresh
 import java.io.IOException
 
 /**
@@ -24,6 +25,7 @@ class GetLineSessionRepository(
 
     fun logout() {
         store.clearAccountState()
+        ManagedProfileRefresh.cancel(store.appContext)
     }
 
     /** Drop tokens/customer but keep link-only managed profile binding. */
@@ -377,6 +379,7 @@ class GetLineSessionRepository(
         if (src != null) {
             store.managedProfileSource = src
         }
+        ManagedProfileRefresh.ensure(store.appContext)
     }
 
     fun rememberSubscription(id: String?) {

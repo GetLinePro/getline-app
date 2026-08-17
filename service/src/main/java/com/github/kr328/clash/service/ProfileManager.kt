@@ -17,7 +17,6 @@ import com.github.kr328.clash.service.util.directoryLastModified
 import com.github.kr328.clash.service.util.generateProfileUUID
 import com.github.kr328.clash.service.util.importedDir
 import com.github.kr328.clash.service.util.pendingDir
-import com.github.kr328.clash.service.util.sendProfileChanged
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -32,8 +31,6 @@ class ProfileManager(private val context: Context) : IProfileManager,
     init {
         launch {
             Database.database //.init
-
-            ProfileReceiver.rescheduleAll(context)
         }
     }
 
@@ -132,20 +129,17 @@ class ProfileManager(private val context: Context) : IProfileManager,
     }
 
     override suspend fun update(uuid: UUID) {
-        scheduleUpdate(uuid, true)
+        updateSilently(uuid)
     }
 
     override suspend fun updateSilently(uuid: UUID) {
-        // In-process fetch: same config path as ProfileWorker, without its notifications
-        // or PropertiesActivity result PendingIntent.
+        // In-process fetch. Periodic schedule is owned by app WorkManager
+        // for the GetLine managed profile only.
         ProfileProcessor.update(context, uuid, null)
-        scheduleUpdate(uuid, false)
     }
 
     override suspend fun commit(uuid: UUID, callback: IFetchObserver?) {
         ProfileProcessor.apply(context, uuid, callback)
-
-        scheduleUpdate(uuid, false)
     }
 
     override suspend fun release(uuid: UUID) {
@@ -153,10 +147,6 @@ class ProfileManager(private val context: Context) : IProfileManager,
     }
 
     override suspend fun delete(uuid: UUID) {
-        ImportedDao().queryByUUID(uuid)?.also {
-            ProfileReceiver.cancelNext(context, it)
-        }
-
         ProfileProcessor.delete(context, uuid)
     }
 
@@ -255,15 +245,5 @@ class ProfileManager(private val context: Context) : IProfileManager,
         t.deleteRecursively()
 
         s.copyRecursively(t)
-    }
-
-    private suspend fun scheduleUpdate(uuid: UUID, startImmediately: Boolean) {
-        val imported = ImportedDao().queryByUUID(uuid) ?: return
-
-        if (startImmediately) {
-            ProfileReceiver.schedule(context, imported)
-        } else {
-            ProfileReceiver.scheduleNext(context, imported)
-        }
     }
 }

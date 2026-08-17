@@ -93,7 +93,7 @@ interface GetLineSubscriptionRepository {
      * Force re-fetch of an imported URL profile config (nodes + userinfo) in-process.
      * Used after /api/subscriptions shows active so Servers pick up provider node changes.
      *
-     * Silent: no ProfileWorker result notifications / Properties deep-link.
+     * Silent: no progress notification / Properties deep-link.
      * [ConfigUpdateResult.Updated] still emits ProfileChanged for Servers/Home reload.
      * Missing and non-refreshable profiles remain distinguishable from an update.
      */
