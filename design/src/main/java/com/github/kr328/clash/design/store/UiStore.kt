@@ -15,11 +15,6 @@ class UiStore(context: Context) {
             .asStoreProvider()
     )
 
-    var enableVpn: Boolean by store.boolean(
-        key = "enable_vpn",
-        defaultValue = true
-    )
-
     var hideAppIcon: Boolean by store.boolean(
         key = "hide_app_icon",
         defaultValue = context.packageManager.getComponentEnabledSetting(context.mainActivityAlias)

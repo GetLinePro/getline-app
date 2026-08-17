@@ -9,15 +9,6 @@
 
     <application>
         <service
-            android:name=".ClashService"
-            android:exported="false"
-            android:label="@string/getline_service_name"
-            android:process=":background"
-            android:foregroundServiceType="specialUse">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="explanation_for_special_use"/>
-        </service>
-        <service
             android:name=".TunService"
             android:exported="false"
             android:label="@string/getline_service_name"
