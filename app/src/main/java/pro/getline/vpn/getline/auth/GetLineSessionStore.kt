@@ -30,7 +30,7 @@ class GetLineSessionStore internal constructor(
         encryptedStorageResetter = ::resetEncryptedStorage,
     )
 
-    private val appContext: Context = context.applicationContext
+    internal val appContext: Context = context.applicationContext
     private var prefs: SharedPreferences
 
     /** True only when this instance discarded an unreadable encrypted session. */

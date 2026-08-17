@@ -140,9 +140,11 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.browser)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.work.runtime)
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.work.testing)
 }
 
 tasks.getByName("clean", type = Delete::class) {

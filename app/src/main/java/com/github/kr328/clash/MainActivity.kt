@@ -25,6 +25,7 @@ import pro.getline.vpn.getline.SessionRoutingSnapshot
 import pro.getline.vpn.getline.StartupRoutingPolicy
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.isAdvancedLaunch
+import pro.getline.vpn.getline.refresh.ManagedProfileRefresh
 import pro.getline.vpn.GetLineHomeActivity
 import pro.getline.vpn.GetLineOnboardingActivity
 import com.github.kr328.clash.util.startClashService
@@ -199,7 +200,9 @@ class MainActivity : BaseActivity<MainDesign>() {
                 val store = GetLineSessionStore(this@MainActivity)
                 // Routing fields first. hasSession is log-only on this path — isolate so a
                 // failed refresh_token decrypt cannot collapse pending_import / managed.
-                val hasManagedProfile = !store.managedProfileUuid.isNullOrBlank()
+                val managedProfileUuid = store.managedProfileUuid
+                val hasManagedProfile = !managedProfileUuid.isNullOrBlank()
+                runCatching { ManagedProfileRefresh.sync(this@MainActivity, managedProfileUuid) }
                 val hasPendingImport = store.hasPendingImport()
                 val hasSession = runCatching { store.hasRefreshToken() }.getOrDefault(false)
                 SessionRoutingSnapshot(

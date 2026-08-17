@@ -21,6 +21,7 @@ zxingCpp = "2.3.0"
 androidx-activity-ktx = "1.9.0"
 androidx-browser = "1.10.0"
 androidx-security-crypto = "1.1.0"
+androidx-work = "2.9.1"
 junit = "4.13.2"
 robolectric = "4.14.1"
 
@@ -54,6 +55,8 @@ zxing-cpp = { group = "io.github.zxing-cpp", name = "android", version.ref = "zx
 androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "androidx-activity-ktx" }
 androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "androidx-browser" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "androidx-security-crypto" }
+androidx-work-runtime = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "androidx-work" }
+androidx-work-testing = { group = "androidx.work", name = "work-testing", version.ref = "androidx-work" }
 junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 
