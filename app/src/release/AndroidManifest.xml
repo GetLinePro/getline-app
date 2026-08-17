@@ -30,10 +30,6 @@
         <activity
             android:name=".LogcatActivity"
             tools:node="remove" />
-        <!-- GL-12 / #39 PR 1: debug-only LogcatService stays in main; drop it from release. -->
-        <service
-            android:name=".LogcatService"
-            tools:node="remove" />
         <activity
             android:name=".SettingsActivity"
             tools:node="remove" />

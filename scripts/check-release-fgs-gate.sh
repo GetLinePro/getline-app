@@ -11,8 +11,10 @@
 #   1) Source (always):
 #      service main: SYSTEM_EXEMPTED permission, TunService systemExempted,
 #      no specialUse / PROPERTY_SPECIAL_USE_FGS_SUBTYPE.
-#      app main: no FOREGROUND_SERVICE_SPECIAL_USE.
-#      app debug: FOREGROUND_SERVICE_SPECIAL_USE present (LogcatService).
+#      app main: no LogcatService, specialUse, PROPERTY_SPECIAL_USE_FGS_SUBTYPE,
+#      or FOREGROUND_SERVICE_SPECIAL_USE.
+#      app debug: LogcatService with specialUse, subtype, and SPECIAL_USE
+#      permission. Release overlay must not mention LogcatService.
 #      ProfileRefreshWorker does not call setForeground / setForegroundAsync.
 #      no resource sets enable_system_foreground_service_default to false.
 #   2) Merged release (when available / required):
@@ -43,6 +45,7 @@ cd "$ROOT"
 SERVICE_SRC="service/src/main/AndroidManifest.xml"
 APP_MAIN_SRC="app/src/main/AndroidManifest.xml"
 APP_DEBUG_SRC="app/src/debug/AndroidManifest.xml"
+APP_RELEASE_SRC="app/src/release/AndroidManifest.xml"
 REFRESH_DIR="app/src/main/java/pro/getline/vpn/getline/refresh"
 DEFAULT_MERGED_RELEASE="app/build/intermediates/merged_manifest/alphaProdRelease/processAlphaProdReleaseMainManifest/AndroidManifest.xml"
 DEFAULT_MERGED_DEBUG="app/build/intermediates/merged_manifest/alphaProdDebug/processAlphaProdDebugMainManifest/AndroidManifest.xml"
@@ -189,20 +192,53 @@ if require_file "$SERVICE_SRC"; then
   fi
 fi
 
-# --- source: app main / debug ----------------------------------------------
+# --- source: app main / debug / release overlay ----------------------------
 
 if require_file "$APP_MAIN_SRC"; then
   if has_perm "$APP_MAIN_SRC" "FOREGROUND_SERVICE_SPECIAL_USE"; then
     fail "$APP_MAIN_SRC still declares FOREGROUND_SERVICE_SPECIAL_USE (must live in $APP_DEBUG_SRC)"
   fi
+  if grep -q 'foregroundServiceType="specialUse"' "$APP_MAIN_SRC"; then
+    fail "$APP_MAIN_SRC still declares specialUse"
+  fi
+  if grep -q 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE' "$APP_MAIN_SRC"; then
+    fail "$APP_MAIN_SRC still declares PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+  fi
+  while IFS=$'\t' read -r name _; do
+    [[ -n "$name" ]] || continue
+    if is_logcat_service "$name"; then
+      fail "$APP_MAIN_SRC still declares LogcatService (must live in $APP_DEBUG_SRC)"
+    fi
+  done < <(parse_services "$APP_MAIN_SRC")
 fi
 
 if require_file "$APP_DEBUG_SRC"; then
   if ! has_perm "$APP_DEBUG_SRC" "FOREGROUND_SERVICE_SPECIAL_USE"; then
     fail "$APP_DEBUG_SRC missing FOREGROUND_SERVICE_SPECIAL_USE for debug LogcatService"
   fi
+  if ! grep -q 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE' "$APP_DEBUG_SRC"; then
+    fail "$APP_DEBUG_SRC missing PROPERTY_SPECIAL_USE_FGS_SUBTYPE on LogcatService"
+  fi
+  logcat_ok=0
+  while IFS=$'\t' read -r name ftype; do
+    [[ -n "$name" ]] || continue
+    if is_logcat_service "$name" && [[ "$ftype" == "specialUse" ]]; then
+      logcat_ok=1
+    elif is_logcat_service "$name"; then
+      fail "$APP_DEBUG_SRC: LogcatService foregroundServiceType=${ftype:-<none>}"
+    fi
+  done < <(parse_services "$APP_DEBUG_SRC")
+  if ((logcat_ok != 1)); then
+    fail "$APP_DEBUG_SRC must declare LogcatService with specialUse"
+  fi
 else
-  fail "missing $APP_DEBUG_SRC (debug-only SPECIAL_USE permission)"
+  fail "missing $APP_DEBUG_SRC (debug-only LogcatService + SPECIAL_USE)"
+fi
+
+if require_file "$APP_RELEASE_SRC"; then
+  if grep -q 'LogcatService' "$APP_RELEASE_SRC"; then
+    fail "$APP_RELEASE_SRC still mentions LogcatService; it belongs only in $APP_DEBUG_SRC"
+  fi
 fi
 
 # --- source: worker must not take a foreground lifetime --------------------

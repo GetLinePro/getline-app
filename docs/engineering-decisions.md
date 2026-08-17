@@ -89,8 +89,9 @@ failure at the current install base. Tracked in `docs/internal/security-register
 Release does not declare `specialUse`, `FOREGROUND_SERVICE_SPECIAL_USE`, or
 `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`. `TunService` is the only GetLine-owned
 service with a `foregroundServiceType`, and that type is `systemExempted`.
-Debug `LogcatService` keeps `specialUse`; the permission lives in
-`app/src/debug/AndroidManifest.xml` so release is clean by construction.
+Debug `LogcatService` is declared only in `app/src/debug/AndroidManifest.xml`
+with `specialUse` and `FOREGROUND_SERVICE_SPECIAL_USE`. It never enters a
+release merge.
 
 `startForegroundCompat()` takes the runtime type as a parameter. A global
 constant would declare debug `LogcatService` as `systemExempted` against its
