@@ -5,7 +5,6 @@ import android.os.Build
 import android.view.View
 import com.github.kr328.clash.design.databinding.DesignSettingsCommonBinding
 import com.github.kr328.clash.design.preference.*
-import com.github.kr328.clash.design.store.UiStore
 import com.github.kr328.clash.design.ui.ToastDuration
 import com.github.kr328.clash.design.util.applyFrom
 import com.github.kr328.clash.design.util.bindAppBarElevation
@@ -16,7 +15,6 @@ import kotlinx.coroutines.launch
 
 class NetworkSettingsDesign(
     context: Context,
-    uiStore: UiStore,
     srvStore: ServiceStore,
     running: Boolean,
 ) : Design<NetworkSettingsDesign.Request>(context) {
@@ -39,19 +37,6 @@ class NetworkSettingsDesign(
 
         val screen = preferenceScreen(context) {
             val vpnDependencies: MutableList<Preference> = mutableListOf()
-
-            val vpn = switch(
-                value = uiStore::enableVpn,
-                icon = R.drawable.ic_baseline_vpn_lock,
-                title = R.string.route_system_traffic,
-                summary = R.string.routing_via_vpn_service
-            ) {
-                listener = OnChangedListener {
-                    vpnDependencies.forEach {
-                        it.enabled = uiStore.enableVpn
-                    }
-                }
-            }
 
             category(R.string.vpn_service_options)
 
@@ -114,13 +99,9 @@ class NetworkSettingsDesign(
             }
 
             if (running) {
-                vpn.enabled = false
-
                 vpnDependencies.forEach {
                     it.enabled = false
                 }
-            } else {
-                vpn.listener?.onChanged()
             }
         }
 
