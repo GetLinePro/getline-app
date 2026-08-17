@@ -30,7 +30,6 @@ class DynamicNotificationModule(
 ) : Module<Unit>(service) {
     private val builder = NotificationCompat.Builder(service, StaticNotificationModule.CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_logo_service)
-        .setOngoing(true)
         .setColor(service.getColorCompat(R.color.color_clash))
         .setOnlyAlertOnce(true)
         .setShowWhen(false)
