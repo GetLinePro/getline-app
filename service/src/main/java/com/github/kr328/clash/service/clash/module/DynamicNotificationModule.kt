@@ -44,6 +44,7 @@ class DynamicNotificationModule(
                 pendingIntentFlags(PendingIntent.FLAG_UPDATE_CURRENT)
             )
         )
+        .addStopAction(service)
 
     private val notificationManager = NotificationManagerCompat.from(service)
     private var foregroundStarted = false
