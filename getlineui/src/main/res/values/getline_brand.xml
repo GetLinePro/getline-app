@@ -10,6 +10,8 @@
       Was #0F0F0F (darker than bg), which read as holes punched into the screen.
     -->
     <color name="getline_brand_surface">#1A1C1F</color>
+    <!-- Dialog window elevation would brighten the shared surface via Material's overlay. -->
+    <color name="getline_share_dialog_surface">#181A1D</color>
     <!-- Text fields sit above surface, so one more step up. -->
     <color name="getline_onboarding_field_fill">#22252A</color>
     <!-- Dark ink on cyan primary (~7.7:1). White on #22B8CF is only ~2.4:1. -->

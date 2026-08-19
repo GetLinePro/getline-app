@@ -5,11 +5,14 @@ import android.app.Application
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.graphics.Bitmap
+import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
-import com.google.zxing.qrcode.QRCodeReader
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -119,9 +122,17 @@ class SubscriptionLinkShareTest {
     }
 
     @Test
-    fun encodeQr_roundTripsExactPayload() {
-        val bitmap = SubscriptionLinkShare.encodeQr(exactUrl)
+    fun encodeQr_brandedInvertedQrRoundTripsExactPayload() {
+        val bitmap = SubscriptionLinkShare.encodeQr(context, exactUrl)
         assertEquals(exactUrl, decodeQr(bitmap))
+        assertTrue(bitmapCenterContainsWordmark(bitmap))
+    }
+
+    @Test
+    fun encodeQr_brandedInvertedQrRoundTripsDensePayload() {
+        val denseUrl = "https://sub.example.test/link?token=" + "AbC123xyz".repeat(28)
+        val bitmap = SubscriptionLinkShare.encodeQr(context, denseUrl)
+        assertEquals(denseUrl, decodeQr(bitmap))
     }
 
     @Test
@@ -193,7 +204,29 @@ class SubscriptionLinkShareTest {
         val pixels = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
         val source = RGBLuminanceSource(bitmap.width, bitmap.height, pixels)
-        return QRCodeReader().decode(BinaryBitmap(HybridBinarizer(source))).text
+        val hints = mapOf(
+            DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+            DecodeHintType.TRY_HARDER to true,
+            DecodeHintType.ALSO_INVERTED to true,
+        )
+        return MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(source)), hints).text
+    }
+
+    private fun bitmapCenterContainsWordmark(bitmap: Bitmap): Boolean {
+        val background = ContextCompat.getColor(
+            context,
+            pro.getline.vpn.getlineui.R.color.getline_brand_background,
+        )
+        val left = (bitmap.width * 0.37f).toInt()
+        val right = (bitmap.width * 0.63f).toInt()
+        val top = (bitmap.height * 0.47f).toInt()
+        val bottom = (bitmap.height * 0.53f).toInt()
+        for (y in top until bottom) {
+            for (x in left until right) {
+                if (bitmap.getPixel(x, y) != background) return true
+            }
+        }
+        return false
     }
 
     private fun ready(

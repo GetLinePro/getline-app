@@ -2,6 +2,14 @@
 <resources>
     <dimen name="dialog_padding">20dp</dimen>
     <dimen name="dialog_button_margin">5dp</dimen>
+    <dimen name="get_line_share_dialog_padding">24dp</dimen>
+    <dimen name="get_line_share_dialog_corner">24dp</dimen>
+    <dimen name="get_line_share_dialog_content_gap">20dp</dimen>
+    <dimen name="get_line_share_dialog_actions_gap">20dp</dimen>
+    <dimen name="get_line_share_dialog_button_gap">8dp</dimen>
+    <dimen name="get_line_share_qr_size">240dp</dimen>
+    <dimen name="get_line_share_qr_padding">8dp</dimen>
+    <dimen name="get_line_share_qr_corner">16dp</dimen>
     <dimen name="surface_landscape_min_width">500dp</dimen>
     <dimen name="main_padding_horizontal">30dp</dimen>
     <dimen name="get_line_onboarding_button_min_height">52dp</dimen>
