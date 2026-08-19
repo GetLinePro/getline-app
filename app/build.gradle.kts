@@ -137,6 +137,7 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.zxing.cpp)
+    implementation(libs.zxing.core)
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.browser)
     implementation(libs.androidx.security.crypto)

@@ -46,6 +46,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
          */
         OpenAccountPortal,
         RefreshSubscription,
+        /** Share the current subscription URL (QR + copy). Not account export. */
+        ShareSubscription,
         /** Retry Subscription destination load (not Home product-state retry). */
         RetrySubscription,
         /** Open existing onboarding/auth from Subscription signed-out. */
@@ -278,6 +280,10 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             binding.refreshSubscription,
             context.getString(R.string.get_line_home_refresh_subscription),
         )
+        TooltipCompat.setTooltipText(
+            binding.shareSubscription,
+            context.getString(R.string.get_line_share_subscription),
+        )
         binding.stateView.setOnRecoveryAction {
             when (it) {
                 GetLineRecoveryAction.Retry -> request(Request.Retry)
@@ -450,6 +456,16 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     suspend fun setSubscriptionScreen(screen: SubscriptionScreen) {
         withContext(Dispatchers.Main) {
             applySubscriptionScreen(screen)
+        }
+    }
+
+    /**
+     * Share control on the Subscription heading. Visibility only — the URL
+     * never enters this design.
+     */
+    suspend fun setSubscriptionShareVisible(visible: Boolean) {
+        withContext(Dispatchers.Main) {
+            binding.shareSubscription.visibility = if (visible) View.VISIBLE else View.GONE
         }
     }
 

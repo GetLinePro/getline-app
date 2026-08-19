@@ -123,6 +123,11 @@
     <string name="get_line_tariff_lte">Mobile LTE+</string>
     <string name="get_line_tariff_friends">friends</string>
     <string name="get_line_home_refresh_subscription">Refresh subscription</string>
+    <string name="get_line_share_subscription">Share subscription</string>
+    <string name="get_line_share_subscription_unavailable">Subscription link unavailable</string>
+    <string name="get_line_share_subscription_qr">QR code of the subscription link</string>
+    <string name="get_line_share_subscription_copy">Copy</string>
+    <string name="get_line_share_subscription_copied">Copied</string>
     <string name="get_line_subscription_refreshing">Refreshing subscription</string>
     <string name="get_line_subscription_load_failed_title">Couldn’t load subscription</string>
     <string name="get_line_subscription_load_failed_explanation">Check your connection and try again.</string>
