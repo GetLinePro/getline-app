@@ -69,9 +69,14 @@ The range starts at the last commit that touched `versionName`, found with
 
 A subject in that range that is **not** a Conventional Commit fails the release.
 Skipping it would let `Add servers screen` hide a `feat` behind `bump=patch`.
-Merges are squash-only (enforced in repository settings) and the PR gate validates
-the squash title, so an unclassifiable subject on main can only have arrived by a
-direct push or a local merge — which is exactly the case that needs a human.
+Repository policy is squash-only and the PR gate validates the squash title, so
+an unclassifiable subject on main arrived outside the intended path and needs a
+human.
+
+One recovery exception is pinned to the `0.8.2` release base: the exact Git
+objects for the eight GitHub merge commits from PRs #148-#156 are skipped while
+their non-merge commits are still classified. The base guard makes the exception
+inert after the next release; new merge commits remain release-blocking.
 
 If releases ever need to be prepared ahead of time, the source of truth moves to
 a dedicated release PR and per-PR labels become inputs to it.

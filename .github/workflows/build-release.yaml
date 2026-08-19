@@ -159,14 +159,32 @@ jobs:
         run: |
           set -euo pipefail
           base=$(git log -1 --format=%H -G'^\s*versionName = ' -- build.gradle.kts)
-          subjects=$(git log --format='%s' "$base..HEAD")
-          bodies=$(git log --format='%B' "$base..HEAD")
-          printf 'commits since %s:\n%s\n' "${base:0:8}" "$subjects"
-
           breaking=0; feat=0; fix=0; product=0
-          if printf '%s' "$bodies" | grep -qE '^BREAKING[ -]CHANGE'; then breaking=1; fi
-          while IFS= read -r s; do
-            [ -n "$s" ] || continue
+          printf 'commits since %s:\n' "${base:0:8}"
+          while IFS= read -r commit; do
+            s=$(git show -s --format='%s' "$commit")
+            printf '%s %s\n' "${commit:0:8}" "$s"
+
+            # One-time recovery for the GitHub merge commits accidentally used
+            # for PRs #148-#156. Exact object IDs make this an immutable allowlist,
+            # and the base guard disables it after the first post-0.8.2 release.
+            if [ "$base" = "5fcec30805eb509da9f8ca01d128859df70a8829" ]; then
+              case "$commit" in
+                0b9fb70a8cc1d69b62e2146d03697839df9baea9|\
+                a2abee0f9014ae09e485ec0d1b9ce8b907e6065b|\
+                59e68344bc7c5031b0d54117e1943f262c9e3ba5|\
+                7be2ce5026bb6f7f5e9bee5de8d14beaee66d5a4|\
+                f5fb04ab9c945a00c3a507ffcfc85c6b4c0f9e52|\
+                6d968dc62dedf330d8eeed648c468c7b94a152b8|\
+                a69312d725e9143ef609e175e2b7c95a68e94929|\
+                1650016d064a3a03c89c0acbe5f833e5aa870f3b)
+                  echo "accepted one-time legacy merge ${commit:0:8}"
+                  continue ;;
+              esac
+            fi
+
+            body=$(git show -s --format='%B' "$commit")
+            if printf '%s' "$body" | grep -qE '^BREAKING[ -]CHANGE'; then breaking=1; fi
             type=$(printf '%s' "$s" | grep -oE '^[a-z]+(\([^)]*\))?!?:' || true)
             # Fail closed. A free-form subject cannot be classified, so skipping
             # it would let "Add servers screen" hide a feat behind bump=patch.
@@ -186,7 +204,7 @@ jobs:
               refactor|build|revert) product=1 ;;
               *) : ;;
             esac
-          done <<< "$subjects"
+          done < <(git rev-list "$base..HEAD")
 
           if [ "$breaking" -eq 1 ] || [ "$feat" -eq 1 ]; then required=minor
           elif [ "$fix" -eq 1 ] || [ "$product" -eq 1 ]; then required=patch
