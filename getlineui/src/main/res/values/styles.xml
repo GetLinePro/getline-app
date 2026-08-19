@@ -174,6 +174,14 @@
         <item name="rippleColor">@color/getline_brand_primary</item>
     </style>
 
+    <style name="Widget.GetLine.ShareDialog.PrimaryButton" parent="Widget.GetLine.Onboarding.PrimaryButton">
+        <item name="android:letterSpacing">0.02</item>
+    </style>
+
+    <style name="Widget.GetLine.ShareDialog.SecondaryButton" parent="Widget.GetLine.SecondaryTextButton">
+        <item name="android:letterSpacing">0.02</item>
+    </style>
+
     <!--
       Neutral text-only footer action (Help, etc.): 48dp hit target, button type.
       Not AdvancedButton (40dp caption) and not Logout (error color).

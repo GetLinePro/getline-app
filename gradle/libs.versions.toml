@@ -18,6 +18,7 @@ room = "2.4.2"
 multiprocess = "1.0.0"
 camera = "1.4.2"
 zxingCpp = "2.3.0"
+zxingCore = "3.5.4"
 androidx-activity-ktx = "1.9.0"
 androidx-browser = "1.10.0"
 androidx-security-crypto = "1.1.0"
@@ -52,6 +53,7 @@ androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", 
 androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camera" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camera" }
 zxing-cpp = { group = "io.github.zxing-cpp", name = "android", version.ref = "zxingCpp" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "androidx-activity-ktx" }
 androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "androidx-browser" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "androidx-security-crypto" }

@@ -472,13 +472,36 @@
                 android:paddingTop="@{self.surface.insets.top + (int) @dimen/get_line_home_section_gap}"
                 android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_shell_content_bottom}">
 
-                <TextView
-                    style="@style/Widget.GetLine.Text.Title"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/get_line_shell_subscription_title"
-                    android:textColor="@color/getline_text_primary"
-                    tools:text="Subscription" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Title"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/get_line_shell_subscription_title"
+                        android:textColor="@color/getline_text_primary"
+                        tools:text="Subscription" />
+
+                    <ImageView
+                        android:id="@+id/share_subscription"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:contentDescription="@string/get_line_share_subscription"
+                        android:focusable="true"
+                        android:onClick="@{() -> self.request(Request.ShareSubscription)}"
+                        android:padding="12dp"
+                        android:src="@drawable/ic_share"
+                        android:visibility="gone"
+                        app:tint="@color/getline_text_secondary"
+                        tools:visibility="visible" />
+                </LinearLayout>
 
                 <pro.getline.vpn.getlineui.view.GetLineStateView
                     android:id="@+id/subscription_state_view"

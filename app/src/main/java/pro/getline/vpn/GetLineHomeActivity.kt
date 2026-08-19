@@ -26,6 +26,7 @@ import pro.getline.vpn.getline.accountportal.AccountPortalVisitCoordinator
 import pro.getline.vpn.getline.accountportal.DefaultAccountPortalLauncher
 import pro.getline.vpn.getline.accountportal.PendingForceSubscriptionRefresh
 import pro.getline.vpn.diagnostics.DiagnosticReportShare
+import pro.getline.vpn.getline.share.SubscriptionLinkShare
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.GetLineSessionStorageException
@@ -369,6 +370,25 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                                 activity = this@GetLineHomeActivity,
                                 hasSession = sessionRepository.hasSession(),
                             )
+                        GetLineHomeDesign.Request.ShareSubscription -> {
+                            val url = SubscriptionLinkShare.resolve(
+                                state = subscriptionState.state,
+                                managedUuid = sessionRepository.managedProfileUuid(),
+                                managedSource = sessionRepository.managedProfileSource(),
+                            )
+                            if (url == null) {
+                                design.setSubscriptionShareVisible(false)
+                                design.showToast(
+                                    GetLineUiR.string.get_line_share_subscription_unavailable,
+                                    ToastDuration.Short,
+                                )
+                            } else {
+                                SubscriptionLinkShare.present(
+                                    activity = this@GetLineHomeActivity,
+                                    url = url,
+                                )
+                            }
+                        }
                     }
                 }
                 // The rendezvous ticker blocks without a receiver, so a stopped
@@ -972,6 +992,13 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 )
             }
             setSubscriptionScreen(subscriptionState.state.toScreen(this@paintSubscriptionState))
+            setSubscriptionShareVisible(
+                SubscriptionLinkShare.resolve(
+                    state = subscriptionState.state,
+                    managedUuid = sessionRepository.managedProfileUuid(),
+                    managedSource = sessionRepository.managedProfileSource(),
+                ) != null,
+            )
             applySubscriptionAccountCapabilities()
         }
     }
