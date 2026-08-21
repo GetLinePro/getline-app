@@ -4,17 +4,13 @@ import android.content.Context
 import android.view.View
 import androidx.core.view.updatePadding
 import androidx.core.widget.addTextChangedListener
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.github.kr328.clash.design.adapter.AppAdapter
 import com.github.kr328.clash.design.component.AccessControlMenu
 import com.github.kr328.clash.design.databinding.DesignAccessControlBinding
 import com.github.kr328.clash.design.databinding.DialogSearchBinding
 import com.github.kr328.clash.design.dialog.FullScreenDialog
 import com.github.kr328.clash.design.model.AppInfo
-import com.github.kr328.clash.design.preference.OnChangedListener
-import com.github.kr328.clash.design.preference.TipsPreference
-import com.github.kr328.clash.design.preference.preferenceScreen
-import com.github.kr328.clash.design.preference.selectableList
-import com.github.kr328.clash.design.preference.tips
 import com.github.kr328.clash.design.store.UiStore
 import com.github.kr328.clash.design.util.*
 import com.github.kr328.clash.service.model.AccessControlMode
@@ -86,11 +82,26 @@ class AccessControlDesign(
         // that wraps to a different number of lines per locale. Measure it instead
         // of guessing: a constant here would either hide the first app under the
         // bar or leave a gap. Posted, so padding is never set mid-layout.
+        //
+        // LinearLayoutManager keeps the current child's screen coordinate when
+        // padding changes, so item 0 stays put while the caption grows over it.
+        // If the list is already at the logical start, re-anchor it after the
+        // new padding; a scrolled list is left alone.
         binding.activityBarLayout.addOnLayoutChangeListener { view, _, top, _, bottom, _, _, _, _ ->
             val height = bottom - top
-            if (binding.mainList.paddingTop != height) {
-                view.post {
-                    binding.mainList.updatePadding(top = height)
+
+            view.post {
+                val list = binding.mainList
+
+                if (list.paddingTop != height) {
+                    val wasAtTop = !list.canScrollVertically(-1)
+
+                    list.updatePadding(top = height)
+
+                    if (wasAtTop && adapter.itemCount > 0) {
+                        (list.layoutManager as LinearLayoutManager)
+                            .scrollToPositionWithOffset(0, 0)
+                    }
                 }
             }
         }
@@ -118,66 +129,60 @@ class AccessControlDesign(
      * Writes straight through to [ServiceStore]; the tunnel is not re-established
      * here. AccessControlActivity does that once on the way out, so a user still
      * making up their mind does not drop the connection on every tap.
+     *
+     * The initial check is applied before the listener so restoring the stored
+     * mode is not treated as a user change.
      */
     private fun bindModeHeader(srvStore: ServiceStore, initialMode: AccessControlMode) {
-        val modes = AccessControlMode.values()
+        binding.accessControlModeGroup.check(buttonId(initialMode))
+        applyMode(initialMode)
 
-        val header = preferenceScreen(context) {
-            // Set after the row below is built — both lines belong under the mode
-            // they qualify, and the screen renders elements in call order.
-            var lockdown: TipsPreference? = null
-            var inert: TipsPreference? = null
-
-            selectableList(
-                value = srvStore::accessControlMode,
-                values = modes,
-                valuesText = arrayOf(
-                    R.string.allow_all_apps,
-                    R.string.allow_selected_apps,
-                    R.string.deny_selected_apps,
-                ),
-                title = R.string.access_control_mode,
-            ) {
-                listener = OnChangedListener {
-                    applyMode(modes[selected], lockdown, inert)
-                }
-            }
-
-            lockdown = tips(R.string.access_control_lockdown_tips)
-            inert = tips(R.string.access_control_all_apps_tips)
-
-            applyMode(initialMode, lockdown, inert)
+        binding.accessControlModeGroup.setOnCheckedChangeListener { _, checkedId ->
+            val mode = modeForButton(checkedId) ?: return@setOnCheckedChangeListener
+            srvStore.accessControlMode = mode
+            applyMode(mode)
         }
-
-        binding.modeHeader.addView(header.root)
     }
 
     /**
-     * Exactly one of the two lines is visible at a time.
+     * One caption, two texts.
      *
      * In `AcceptAll` nothing on the list is applied to the tunnel, so the rows are
-     * dimmed and inert and the line says where the selection would take effect —
-     * a checkbox that stores a choice with no consequence is the control lying
-     * about what it does. The stored selection is not cleared: switching to a
-     * selective mode brings it back as it was.
+     * dimmed and inert and the caption says the list is unused. The stored
+     * selection is not cleared: switching to a selective mode brings it back as
+     * it was.
      *
-     * The other line warns that the selective modes send traffic outside the
+     * The other text warns that the selective modes send traffic outside the
      * tunnel. It is phrased as a condition — the app does not read Android's
      * lockdown setting and must not claim to have detected it.
      */
-    private fun applyMode(
-        mode: AccessControlMode,
-        lockdown: TipsPreference?,
-        inert: TipsPreference?,
-    ) {
+    private fun applyMode(mode: AccessControlMode) {
         val selectable = mode != AccessControlMode.AcceptAll
 
-        lockdown?.view?.visibility = if (selectable) View.VISIBLE else View.GONE
-        inert?.view?.visibility = if (selectable) View.GONE else View.VISIBLE
+        binding.accessControlModeCaption.setText(
+            if (selectable) {
+                R.string.access_control_lockdown_tips
+            } else {
+                R.string.access_control_all_apps_tips
+            }
+        )
 
         listSelectable = selectable
         adapter.selectable = selectable
         adapter.rebindAll()
+    }
+
+    private fun buttonId(mode: AccessControlMode): Int = when (mode) {
+        AccessControlMode.AcceptAll -> R.id.access_control_mode_all
+        AccessControlMode.AcceptSelected -> R.id.access_control_mode_selected
+        AccessControlMode.DenySelected -> R.id.access_control_mode_except
+    }
+
+    private fun modeForButton(id: Int): AccessControlMode? = when (id) {
+        R.id.access_control_mode_all -> AccessControlMode.AcceptAll
+        R.id.access_control_mode_selected -> AccessControlMode.AcceptSelected
+        R.id.access_control_mode_except -> AccessControlMode.DenySelected
+        else -> null
     }
 
     private suspend fun requestSearch() {
