@@ -3,9 +3,22 @@ package pro.getline.vpn.getline
 import kotlinx.coroutines.CancellationException
 
 /**
- * Pure product logout glue. Keeps Activity code thin and unit-testable.
+ * Pure product navigation glue. Keeps Activity code thin and unit-testable.
  */
 object ProductNavigationPolicy {
+    /**
+     * Necessary condition for Home to keep the product shell: a native session
+     * or a managed binding.
+     *
+     * Not the full routing table. Startup still asks the backend hasImported
+     * probe so a dead :background stays distinguishable from a clean install,
+     * and a session with proven-empty inventory still goes to Onboarding.
+     * Home uses this as a hard guard: if both handles disappear at runtime,
+     * leave for Onboarding.
+     */
+    fun canOwnProductShell(hasSession: Boolean, hasManagedBinding: Boolean): Boolean =
+        hasSession || hasManagedBinding
+
     /**
      * Managed-profile delete during logout is best-effort.
      * Never rethrow — including [CancellationException] — so logout still

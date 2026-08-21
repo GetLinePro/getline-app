@@ -85,4 +85,12 @@ class ProductNavigationPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun canOwnProductShell_requiresSessionOrManagedBinding() {
+        assertFalse(ProductNavigationPolicy.canOwnProductShell(false, false))
+        assertTrue(ProductNavigationPolicy.canOwnProductShell(true, false))
+        assertTrue(ProductNavigationPolicy.canOwnProductShell(false, true))
+        assertTrue(ProductNavigationPolicy.canOwnProductShell(true, true))
+    }
 }

@@ -135,17 +135,14 @@ internal object StartupRoutingPolicy {
         }
 
         return when (val imported = hasImported()) {
+            // This query is the clean-install vs dead-:background discriminator.
+            // Skipping it would make backend failure look like an empty app.
             // Managed / pending already branched above. Remaining local signal is
             // session.
             //
             // #98: empty local + dead backend must not open Home ("service down" is a
             // dead end on clean install). Session without managed → Home recoverable:
             // inventory may still exist only in :background.
-            //
-            // Accepted tradeoff: imported profiles with no session and no managed UUID
-            // (Advanced-only / partial wipe) are also treated as empty and may land
-            // Onboarding with a re-import clobber risk. Prefer that over trapping every
-            // new install; no other local signal proves inventory without IPC.
             GetLineBackendResult.Unavailable -> if (!snapshot.hasSession) {
                 LaunchRoute(
                     target = LaunchTarget.Onboarding,
@@ -163,20 +160,29 @@ internal object StartupRoutingPolicy {
                     backend = "unavailable",
                 )
             }
-            is GetLineBackendResult.Success -> if (imported.value) {
-                LaunchRoute(
+            is GetLineBackendResult.Success -> when {
+                !imported.value -> LaunchRoute(
+                    target = LaunchTarget.Onboarding,
+                    reason = "no_import",
+                    snapshot = snapshot,
+                    imported = "0",
+                    backend = "ok",
+                )
+                ProductNavigationPolicy.canOwnProductShell(
+                    hasSession = snapshot.hasSession,
+                    hasManagedBinding = snapshot.hasManagedProfile,
+                ) -> LaunchRoute(
                     target = LaunchTarget.Home,
                     reason = "has_import",
                     snapshot = snapshot,
                     imported = "1",
                     backend = "ok",
                 )
-            } else {
-                LaunchRoute(
+                else -> LaunchRoute(
                     target = LaunchTarget.Onboarding,
-                    reason = "no_import",
+                    reason = "orphan_import",
                     snapshot = snapshot,
-                    imported = "0",
+                    imported = "1",
                     backend = "ok",
                 )
             }
