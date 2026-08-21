@@ -134,8 +134,8 @@
     <string name="access_control_mode">Режим маршрутизации</string>
     <string name="access_control_packages">Маршрутизация приложений</string>
     <string name="access_control_packages_summary">Выберите, какие приложения идут через VPN</string>
-    <string name="access_control_lockdown_tips">Приложения вне VPN используют обычную сеть. Если в Android включена блокировка подключений без VPN, приложения, исключённые из VPN, могут остаться без доступа к сети.</string>
-    <string name="access_control_all_apps_tips">Через VPN идут все приложения, выбирать нечего. Список применяется в режимах «Только выбранные через VPN» и «Все, кроме выбранных»; отмеченное в нём сохраняется при смене режима.</string>
+    <string name="access_control_lockdown_tips">Если в Android включено „Блокировать без VPN“, приложения вне VPN останутся без сети</string>
+    <string name="access_control_all_apps_tips">Список ниже в этом режиме не используется</string>
 
     <string name="options_unavailable">Настройки недоступны, пока VPN не будет остановлен</string>
 
@@ -243,8 +243,8 @@
     <string name="show_traffic">Показывать трафик</string>
     <string name="show_traffic_summary">Автоматически обновлять счётчик трафика в уведомлении</string>
 
-    <string name="allow_all_apps">Все приложения через VPN</string>
-    <string name="allow_selected_apps">Только выбранные через VPN</string>
+    <string name="allow_all_apps">Все приложения</string>
+    <string name="allow_selected_apps">Только выбранные</string>
     <string name="deny_selected_apps">Все, кроме выбранных</string>
 
     <string name="no_profile_selected">Профиль не выбран</string>

@@ -82,12 +82,74 @@
                   Mode lives with the list, not in a settings tree the product
                   never opens: the list means nothing without the mode that says
                   what being on it does (issue #21).
+                  48dp is the full row tap target — do not add item_padding_vertical.
                 -->
                 <LinearLayout
                     android:id="@+id/mode_header"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical" />
+                    android:orientation="vertical"
+                    android:paddingStart="@dimen/item_header_margin"
+                    android:paddingTop="@dimen/item_text_margin"
+                    android:paddingEnd="@dimen/item_tailing_margin"
+                    android:paddingBottom="@dimen/item_text_margin">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/access_control_mode"
+                        android:textAppearance="?attr/textAppearanceBody2"
+                        android:textColor="?android:attr/textColorSecondary" />
+
+                    <RadioGroup
+                        android:id="@+id/access_control_mode_group"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:saveEnabled="false">
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/access_control_mode_all"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="?attr/selectableItemBackground"
+                            android:gravity="center_vertical"
+                            android:minHeight="48dp"
+                            android:text="@string/allow_all_apps"
+                            android:textAppearance="?attr/textAppearanceBody1"
+                            android:textColor="?android:attr/textColorPrimary" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/access_control_mode_selected"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="?attr/selectableItemBackground"
+                            android:gravity="center_vertical"
+                            android:minHeight="48dp"
+                            android:text="@string/allow_selected_apps"
+                            android:textAppearance="?attr/textAppearanceBody1"
+                            android:textColor="?android:attr/textColorPrimary" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/access_control_mode_except"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="?attr/selectableItemBackground"
+                            android:gravity="center_vertical"
+                            android:minHeight="48dp"
+                            android:text="@string/deny_selected_apps"
+                            android:textAppearance="?attr/textAppearanceBody1"
+                            android:textColor="?android:attr/textColorPrimary" />
+                    </RadioGroup>
+
+                    <TextView
+                        android:id="@+id/access_control_mode_caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="@dimen/item_text_margin"
+                        android:textAppearance="?attr/textAppearanceCaption"
+                        android:textColor="?android:attr/textColorSecondary" />
+                </LinearLayout>
             </LinearLayout>
         </com.github.kr328.clash.design.view.ActivityBarLayout>
     </androidx.coordinatorlayout.widget.CoordinatorLayout>
