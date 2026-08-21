@@ -9,14 +9,14 @@ runs:
       env:
         # MetaCubeX/go publishes one rolling release, tag "build": assets are
         # re-uploaded in place and get fresh IDs, so a pinned ID 404s the moment
-        # upstream refreshes it (this one did, 2026-08-14, taking every build
+        # upstream refreshes it (again on 2026-08-19, taking every build
         # workflow with it). Re-pinning by hand is the deal until the toolchain
         # is mirrored somewhere we control.
         #
-        # go1.26.6, built 2026-08-11 (go/VERSION inside the archive).
-        GO_ASSET_URL: https://api.github.com/repos/MetaCubeX/go/releases/assets/513731967
-        GO_ASSET_SIZE: "67734906"
-        GO_ASSET_SHA256: b5cd93b9b05e96d952ee20c449306ff9ff16849393e4b484ee6165401916451a
+        # go1.26.7, built 2026-08-18 (go/VERSION inside the archive).
+        GO_ASSET_URL: https://api.github.com/repos/MetaCubeX/go/releases/assets/521446667
+        GO_ASSET_SIZE: "67734470"
+        GO_ASSET_SHA256: a1b96a03cf28be04c1770f17f019018b5ba71dff05396118f643ab13516a173f
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail

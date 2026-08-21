@@ -18,6 +18,7 @@ import pro.getline.vpn.getline.ConfigUpdateResult
 import pro.getline.vpn.getline.GetLineBackendResult
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.LogoutFlow
+import pro.getline.vpn.getline.ProductNavigationPolicy
 import pro.getline.vpn.getline.VpnRepairFlow
 import pro.getline.vpn.getline.VpnRepairFlow.RepairOutcome
 import pro.getline.vpn.getline.accountportal.AccountPortalLaunchResult
@@ -172,6 +173,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 ToastDuration.Long,
             )
         }
+        if (leaveIfProductShellUnowned()) {
+            return
+        }
         design.setTab(readPersistedTab())
         design.setVpnStatus(resolveStatus())
         design.refreshAppRouting()
@@ -194,6 +198,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 events.onReceive {
                     when (it) {
                         Event.ActivityStart -> {
+                            if (leaveIfProductShellUnowned()) {
+                                return@onReceive
+                            }
                             // Portal return: exactly one forced subscription refresh when the
                             // host actually stopped after a successful Custom Tab launch.
                             // Active sub also schedules managed URL config update (Servers nodes).
@@ -1001,6 +1008,26 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             )
             applySubscriptionAccountCapabilities()
         }
+    }
+
+    /**
+     * Home has no GetLine subscription handle: no session and no managed binding.
+     * Leave for Onboarding. Does not stop VPN — a working orphan tunnel may be
+     * the only path left to recover.
+     */
+    private fun leaveIfProductShellUnowned(): Boolean {
+        if (loggingOut) return false
+        if (ProductNavigationPolicy.canOwnProductShell(
+                hasSession = sessionRepository.hasSession(),
+                hasManagedBinding = sessionRepository.managedProfileUuid() != null,
+            )
+        ) {
+            return false
+        }
+        Log.i("home_route dest=onboarding reason=orphan_import")
+        backend.navigation.openOnboarding()
+        if (!isFinishing) finish()
+        return true
     }
 
     /**

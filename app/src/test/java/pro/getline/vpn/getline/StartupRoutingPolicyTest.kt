@@ -185,9 +185,9 @@ class StartupRoutingPolicyTest {
     }
 
     @Test
-    fun importedProfile_goesHome() = runBlocking {
+    fun importedProfile_withSession_goesHome() = runBlocking {
         val probe = Probe(
-            snapshot = SessionRoutingSnapshot(storeOk = true),
+            snapshot = SessionRoutingSnapshot(storeOk = true, hasSession = true),
             imported = GetLineBackendResult.Success(true),
         )
 
@@ -198,6 +198,48 @@ class StartupRoutingPolicyTest {
         assertEquals("1", route.imported)
         assertEquals("ok", route.backend)
         assertFalse(route.backendUnavailable)
+    }
+
+    /**
+     * Inventory without a session or managed binding is an orphan, not a product
+     * subscription. Home would paint Empty+Retry with no account action (#150).
+     * Still asks the backend so this stays distinct from a dead `:background`.
+     */
+    @Test
+    fun orphanImport_goesOnboarding() = runBlocking {
+        val probe = Probe(
+            snapshot = SessionRoutingSnapshot(storeOk = true),
+            imported = GetLineBackendResult.Success(true),
+        )
+
+        val route = StartupRoutingPolicy.decide(false, probe::snapshot, probe::imported)
+
+        assertEquals(LaunchTarget.Onboarding, route.target)
+        assertEquals("orphan_import", route.reason)
+        assertEquals("1", route.imported)
+        assertEquals("ok", route.backend)
+        assertEquals(1, probe.backendCalls)
+        assertFalse(route.backendUnavailable)
+    }
+
+    /**
+     * Session is not a blanket ticket to Home. Backend-proven empty inventory
+     * still goes to Onboarding; session-only Home is the Unavailable recovery
+     * branch, not Success(false).
+     */
+    @Test
+    fun sessionWithoutManaged_emptyInventory_goesOnboarding() = runBlocking {
+        val probe = Probe(
+            snapshot = SessionRoutingSnapshot(storeOk = true, hasSession = true),
+            imported = GetLineBackendResult.Success(false),
+        )
+
+        val route = StartupRoutingPolicy.decide(false, probe::snapshot, probe::imported)
+
+        assertEquals(LaunchTarget.Onboarding, route.target)
+        assertEquals("no_import", route.reason)
+        assertEquals("0", route.imported)
+        assertEquals("ok", route.backend)
     }
 
     @Test
