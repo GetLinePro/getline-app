@@ -63,7 +63,7 @@ class LogoutFlowTest {
 
         assertEquals(Outcome.Completed, outcome)
         assertEquals(
-            listOf("vpn-stop", "imports-reset", "delete:old", "delete:managed", "ui-cleared"),
+            listOf("vpn-stop", "delete:old", "delete:managed", "ui-cleared"),
             events,
         )
         assertFalse(sessions.hasSession())
@@ -146,7 +146,7 @@ class LogoutFlowTest {
 
         assertEquals(Outcome.Completed, outcome)
         assertEquals(
-            listOf("vpn-stop", "imports-reset", "ui-cleared", "delete:old", "delete:managed"),
+            listOf("vpn-stop", "ui-cleared", "delete:old", "delete:managed"),
             events,
         )
         assertFalse(sessions.hasSession())
@@ -236,7 +236,7 @@ class LogoutFlowTest {
         assertEquals(Outcome.Completed, outcome)
         assertTrue(subscriptions.deleted.isEmpty())
         assertFalse(sessions.hasSession())
-        assertEquals(listOf("vpn-stop", "imports-reset", "ui-cleared"), events)
+        assertEquals(listOf("vpn-stop", "ui-cleared"), events)
     }
 
     @Test
@@ -252,31 +252,10 @@ class LogoutFlowTest {
         assertTrue(sessions.pendingProfileCleanupUuids().isEmpty())
     }
 
-    @Test
-    fun importFenceFinishesBeforeManagedBindingSnapshot() = runBlocking {
-        seedSession()
-        sessions.rememberManagedProfile("before-reset")
-
-        val outcome = flow(resetImports = {
-            events += "imports-reset"
-            sessions.rememberManagedProfile("after-reset")
-        }).perform(Action.RemoveSubscription)
-
-        assertEquals(Outcome.Completed, outcome)
-        assertEquals(listOf("after-reset"), subscriptions.deleted)
-        assertEquals(
-            listOf("vpn-stop", "imports-reset", "delete:after-reset", "ui-cleared"),
-            events,
-        )
-    }
-
-    private fun flow(
-        resetImports: suspend () -> Unit = { events += "imports-reset" },
-    ): LogoutFlow = LogoutFlow(
+    private fun flow(): LogoutFlow = LogoutFlow(
         backend = LogoutFakeBackend(subscriptions, events),
         sessionRepository = sessions,
         host = host,
-        resetImports = resetImports,
     )
 
     private fun seedSession() {
@@ -368,7 +347,6 @@ private class LogoutFakeSubscriptionRepository(
     ): GetLineBackendResult<GetLineSubscriptionId> = error("not used")
     override suspend fun importAndCommit(
         draft: GetLineSubscriptionDraft,
-        reuseId: GetLineSubscriptionId?,
         onProgress: suspend (pro.getline.vpn.getlineui.model.GetLineImportStage) -> Unit,
     ): GetLineBackendResult<GetLineSubscriptionId> = error("not used")
     override suspend fun requestConfigUpdate(id: GetLineSubscriptionId): ConfigUpdateResult =

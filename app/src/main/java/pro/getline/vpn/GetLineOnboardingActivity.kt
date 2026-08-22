@@ -9,6 +9,7 @@ import com.github.kr328.clash.HelpActivity
 import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.design.R as DesignR
+import com.github.kr328.clash.util.BinderDiedException
 import pro.getline.vpn.getlineui.GetLineOnboardingDesign
 import pro.getline.vpn.getlineui.R as GetLineUiR
 import pro.getline.vpn.getlineui.ToastDuration
@@ -17,12 +18,17 @@ import pro.getline.vpn.getlineui.model.GetLineProductState
 import pro.getline.vpn.getline.GetLineBackendProvider
 import pro.getline.vpn.product.GetLineActivity
 import pro.getline.vpn.getline.GetLineBackendResult
-import pro.getline.vpn.getline.GetLineImportCoordinator
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
-import pro.getline.vpn.getline.ImportTerminalBinding
+import pro.getline.vpn.getline.ImportAttempt
+import pro.getline.vpn.getline.ImportWaitOutcome
+import pro.getline.vpn.getline.abandonPostLoginImportSession
 import pro.getline.vpn.getline.activateImportedProfileWhenForeground
+import pro.getline.vpn.getline.commitActivatedProductImport
+import pro.getline.vpn.getline.importRetryAfterFailedActivation
+import pro.getline.vpn.getline.productImportShouldBind
+import pro.getline.vpn.getline.rememberUnboundCandidateIfDeleteIncomplete
 import pro.getline.vpn.getline.runPendingManagedProfileCleanup
 import pro.getline.vpn.getline.auth.AuthTabRedirectMode
 import pro.getline.vpn.getline.auth.BrowserAuthFlow
@@ -46,13 +52,18 @@ import pro.getline.vpn.GetLineControlPlaneHostPolicy
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
 
 class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private val backend by lazy { GetLineBackendProvider.create(this) }
@@ -82,10 +93,8 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private var browserAuthJob: Job? = null
     /** Import wait can be left without discarding an established session/profile. */
     private var importWaitCancelable = false
-    /** Same source drives the visible label and dismiss behavior. */
-    private var importWaitLeavesFlow = false
-    /** Exact coordinator key that a manual-import Cancel may supersede. */
-    private var activeImportKey: String? = null
+    /** In-flight preferred-load / product-import wait; first complete() owns it. */
+    private var importTerminal: ImportAttempt<*>? = null
     /**
      * Completes on each [onStart]; replaced on [onStop] so [awaitActivityStarted]
      * can suspend without polling or competing for [events].
@@ -140,37 +149,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             // Deep-link native PKCE finished in NativeAuthCallbackActivity.
             intent.getBooleanExtra(EXTRA_NATIVE_AUTH_HANDLED, false) ->
                 handleNativeAuthHandoff(intent)
-            // Explicit external / deep-link import replaces any stale pending work.
+            // Explicit external / deep-link import. Process death does not resume
+            // an in-flight fetch; session/managed state below starts a new attempt.
             initialImport != null -> importSubscription(design, initialImport)
-            // Resume durable import after HOME / process death. Prefer pending over
-            // the incomplete-login fork: UseAccount mid-flight is still link-only
-            // until Success writes subscriptionId.
-            sessionRepository.hasPendingImport() -> {
-                val draft = sessionRepository.pendingImportDraft()
-                when {
-                    draft == null -> {
-                        sessionRepository.clearPendingImport()
-                        refreshEntryState(design)
-                    }
-                    // Offline resume dead-ends on Offline + Retry. With a managed
-                    // profile the VPN is still usable, so go Home instead of
-                    // trapping it here; pending stays durable for the next launch.
-                    !hasValidatedInternetConnection() &&
-                        !sessionRepository.managedProfileUuid().isNullOrBlank() -> {
-                        backend.navigation.openHome()
-                        finish()
-                    }
-                    else -> importSubscription(
-                        design = design,
-                        request = draft,
-                        reuseId = sessionRepository.pendingImportReuseId(),
-                        subscriptionIdToRemember =
-                            sessionRepository.pendingImportSubscriptionIdToRemember(),
-                        previousManagedUuidToDelete =
-                            sessionRepository.pendingImportPreviousManagedUuidToDelete(),
-                    )
-                }
-            }
             // Session + link-only binding: mismatch dialog / import never finished.
             // Do not leave the user on providers with a live mixed state.
             sessionRepository.needsPostLoginSubscriptionStep() ->
@@ -183,27 +164,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 events.onReceive {
                     when {
                         it != Event.ActivityStart || busy -> Unit
-                        // Re-join only while coordinator still running (HOME without destroy).
-                        // Failed imports keep pending for Retry / next cold start, not every onStart.
-                        GetLineImportCoordinator.isInFlight() -> {
-                            val target = retryTarget as? RetryTarget.ImportSubscription
-                            val draft = target?.request
-                                ?: sessionRepository.pendingImportDraft()
-                            if (draft != null) {
-                                importSubscription(
-                                    design = design,
-                                    request = draft,
-                                    reuseId = target?.reuseId
-                                        ?: sessionRepository.pendingImportReuseId(),
-                                    subscriptionIdToRemember = target?.subscriptionIdToRemember
-                                        ?: sessionRepository.pendingImportSubscriptionIdToRemember(),
-                                    previousManagedUuidToDelete =
-                                        target?.previousManagedUuidToDelete
-                                            ?: sessionRepository
-                                                .pendingImportPreviousManagedUuidToDelete(),
-                                )
-                            }
-                        }
                         retryTarget == RetryTarget.Refresh -> refreshEntryState(design)
                         // Portal return / resume: re-read subscriptions without
                         // re-running trial mutation (ActivateTrial stays the target
@@ -294,9 +254,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     /**
-     * External import while another is in flight: do not drop B. The active
-     * waiter finishes (or is superseded by coordinator) and [drainAndContinueImport]
-     * picks B up before opening Home.
+     * External import while another is in flight: do not drop B. Claim Cancel
+     * on the current terminal; [drainAndContinueImport] starts B without joining
+     * HTTP. If success already owns the terminal, B stays queued for drain.
      */
     private suspend fun enqueueOrStartImport(
         design: GetLineOnboardingDesign,
@@ -304,9 +264,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     ) {
         if (busy) {
             pendingExternalImport = request
-            // Cancel headless A so B is the sole in-flight import; A's onTerminal
-            // is invalidated via generation.
-            GetLineImportCoordinator.reset()
+            cancelActiveImport()
             return
         }
         importSubscription(design, request)
@@ -790,9 +748,33 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
      * [GetLineProductState.NoSubscription] via [applyLoginFailure].
      */
     private suspend fun importPreferredSubscription(design: GetLineOnboardingDesign) {
-        setImportWaitCancelable(design, cancelable = true, leavesFlow = true)
+        setImportWaitCancelable(design, cancelable = true)
         val load = try {
-            sessionRepository.loadPreferredSubscriptionWithList()
+            when (
+                val outcome = raceImportAttempt {
+                    sessionRepository.loadPreferredSubscriptionWithList()
+                }
+            ) {
+                ImportWaitOutcome.Cancelled -> {
+                    if (!isFinishing && drainAndContinueImport(design)) {
+                        return
+                    }
+                    if (!isFinishing) {
+                        refreshEntryState(design)
+                    }
+                    return
+                }
+                is ImportWaitOutcome.Completed -> outcome.value
+            }
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            if (!isFinishing && drainAndContinueImport(design)) {
+                return
+            }
+            if (!isFinishing) {
+                refreshEntryState(design)
+            }
+            return
         } finally {
             setImportWaitCancelable(design, false)
         }
@@ -915,7 +897,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             Log.i("link_match matched=$linkMatch account_items=${all.size}")
         }
 
-        var previousManagedUuidToDelete: String? = null
         if (linkOnly && !linkMatch) {
             when (design.confirmAccountMismatch()) {
                 GetLineOnboardingDesign.MismatchChoice.KeepLinkOnly -> {
@@ -924,9 +905,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     finish()
                     return
                 }
-                GetLineOnboardingDesign.MismatchChoice.UseAccount -> {
-                    previousManagedUuidToDelete = managedUuid
-                }
+                GetLineOnboardingDesign.MismatchChoice.UseAccount -> Unit
             }
         }
 
@@ -944,36 +923,23 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             source = source,
         )
 
-        val reuseId = managedUuid
-            ?.takeIf {
-                (previousSubscriptionId != null &&
-                    previousSubscriptionId == subscription.id) ||
-                    linkMatch
-            }
-            ?.let { GetLineSubscriptionId(it) }
-
         importSubscription(
             design = design,
             request = draft,
-            reuseId = reuseId,
             alreadyBusy = true,
             subscriptionIdToRemember = subscription.id,
-            previousManagedUuidToDelete = previousManagedUuidToDelete,
         )
     }
 
     private suspend fun importSubscription(
         design: GetLineOnboardingDesign,
         request: GetLineSubscriptionDraft,
-        reuseId: GetLineSubscriptionId? = null,
         alreadyBusy: Boolean = false,
         subscriptionIdToRemember: String? = null,
-        previousManagedUuidToDelete: String? = null,
     ) {
         if (busy && !alreadyBusy) {
-            // Nested call while waiting: treat as supersede target.
             pendingExternalImport = request
-            GetLineImportCoordinator.reset()
+            cancelActiveImport()
             return
         }
 
@@ -985,18 +951,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
 
         retryTarget = RetryTarget.ImportSubscription(
             request = request,
-            reuseId = reuseId,
             subscriptionIdToRemember = subscriptionIdToRemember,
-            previousManagedUuidToDelete = previousManagedUuidToDelete,
         )
-        val importKey = GetLineImportCoordinator.importKey(
-            source = request.source,
-            subscriptionIdToRemember = subscriptionIdToRemember,
-            reuseId = reuseId,
-        )
-        activeImportKey = importKey
         if (!hasValidatedInternetConnection()) {
-            activeImportKey = null
             design.setProductState(GetLineProductState.Offline)
             return
         }
@@ -1004,112 +961,74 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         if (!alreadyBusy) {
             busy = true
         }
-        setImportWaitCancelable(
-            design = design,
-            cancelable = true,
-            leavesFlow = subscriptionIdToRemember != null || cancelState.loading,
-        )
+        setImportWaitCancelable(design, cancelable = true)
         design.setProductState(GetLineProductState.Loading)
 
-        // Durable request so HOME/relaunch resumes instead of dead-ending.
-        sessionRepository.savePendingImport(
-            draft = request,
-            reuseId = reuseId,
-            subscriptionIdToRemember = subscriptionIdToRemember,
-            previousManagedUuidToDelete = previousManagedUuidToDelete,
-        )
+        var unboundCandidate: GetLineSubscriptionId? = null
         try {
-            // Process-scoped import: Activity destroy cancels this waiter only,
-            // not the fetch (until supersede/reset). Terminal binding in onTerminal
-            // is generation-gated against logout.
-            val terminal = GetLineImportCoordinator.run(
-                request = GetLineImportCoordinator.ImportRequest(
-                    key = importKey,
-                    draft = request,
-                    reuseId = reuseId,
-                ),
-                import = { onProgress ->
-                    backend.subscriptions.importAndCommit(request, reuseId, onProgress)
-                },
-                onProgress = { stage ->
-                    runCatching { design.setImportStage(stage) }
-                },
-                onImported = { id ->
-                    ImportTerminalBinding.recordCreatedUuid(sessionRepository, id.value)
-                },
-                onTerminal = { result ->
-                    ImportTerminalBinding.commit(
-                        sessions = sessionRepository,
-                        result = result,
-                        source = request.source,
-                    )
-                    when (result) {
-                        is GetLineImportCoordinator.ImportTerminal.Success -> {
-                            // Cleanup is not part of import success. Unavailable keeps
-                            // the tombstone for Home repair; Deleted/NotFound consume it.
-                            sessionRepository.pendingProfileCleanupUuids().forEach { pending ->
-                                runPendingManagedProfileCleanup(
-                                    pendingUuid = pending,
-                                    managedUuid = result.id.value,
-                                    canDelete = true,
-                                    // The immediately replaced binding may still
-                                    // own the running tunnel; older tombstones cannot.
-                                    stopBeforeDelete = pending == previousManagedUuidToDelete,
-                                    stopVpn = backend.vpn::stop,
-                                    deleteManaged = backend.subscriptions::deleteManaged,
-                                    clearPending =
-                                        sessionRepository::clearPendingProfileCleanup,
-                                )
+            val terminal = try {
+                when (
+                    val outcome = raceImportAttempt(
+                        onLost = { lost ->
+                            if (lost is ProductImportResult.Imported) {
+                                deleteUnboundCandidate(lost.id)
                             }
-                            // No profile UUID: lands in user-shareable diagnostics (GL-19).
-                            Log.i(
-                                "import_terminal success " +
-                                    "verdict=${sessionRepository.consistencyVerdict()}",
-                            )
-                        }
-                        is GetLineImportCoordinator.ImportTerminal.Unavailable -> {
-                            // reason is a safe discriminator (kind=/code=), never raw t.message.
-                            Log.w(
-                                "import_terminal unavailable " +
-                                    (result.reason ?: "kind=unknown"),
-                            )
-                        }
+                        },
+                    ) {
+                        runProductImport(design, request)
                     }
-                },
-            )
-            if (activeImportKey == importKey) activeImportKey = null
+                ) {
+                    ImportWaitOutcome.Cancelled -> ProductImportResult.Cancelled
+                    is ImportWaitOutcome.Completed -> outcome.value
+                }
+            } catch (e: CancellationException) {
+                currentCoroutineContext().ensureActive()
+                ProductImportResult.Cancelled
+            }
             setImportWaitCancelable(design, false)
 
-            if (terminal == GetLineImportCoordinator.ImportTerminal.Cancelled) {
-                if (sessionRepository.hasSession()) {
-                    if (cancelState.loading) {
-                        finish()
-                    } else {
+            when (terminal) {
+                ProductImportResult.Cancelled -> {
+                    if (!isFinishing && drainAndContinueImport(design)) {
+                        return
+                    }
+                    if (isFinishing) return
+                    if (emailToRestore != null) {
+                        restoreEmailAuth(design)
+                    } else if (sessionRepository.hasSession()) {
                         retryTarget = cancelRetryTarget
                         design.setProductState(cancelState)
+                    } else {
+                        refreshEntryState(design)
                     }
-                } else if (emailToRestore != null) {
-                    restoreEmailAuth(design)
-                } else {
-                    refreshEntryState(design)
                 }
-                return
-            }
-
-            // Prefer a newer external import over Home / fail UI.
-            if (drainAndContinueImport(design)) {
-                return
-            }
-
-            when (terminal) {
-                is GetLineImportCoordinator.ImportTerminal.Success -> {
+                is ProductImportResult.Imported -> {
+                    unboundCandidate = terminal.id
+                    val replacement = takeQueuedImport()
+                    if (replacement != null) {
+                        deleteUnboundCandidate(terminal.id)
+                        unboundCandidate = null
+                        startQueuedImport(design, replacement)
+                        return
+                    }
                     pendingEmailAuth = null
-                    // A live waiter owns activation and its recoverable UI. If the
-                    // waiter was destroyed, the durable managed binding routes the
-                    // next launch to Home, whose repair activates the profile.
-                    activateImportedProfile(design, terminal.id, request)
+                    if (activateImportedProfile(
+                            design = design,
+                            id = terminal.id,
+                            request = request,
+                            subscriptionIdToRemember = subscriptionIdToRemember,
+                        )
+                    ) {
+                        unboundCandidate = null
+                        finishImportToHome(design)
+                    } else {
+                        unboundCandidate = null
+                    }
                 }
-                is GetLineImportCoordinator.ImportTerminal.Unavailable -> {
+                is ProductImportResult.Failed -> {
+                    if (drainAndContinueImport(design)) {
+                        return
+                    }
                     if (emailToRestore != null) {
                         restoreEmailAuth(design)
                     } else {
@@ -1122,21 +1041,12 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                         )
                     }
                 }
-                GetLineImportCoordinator.ImportTerminal.Superseded -> {
-                    // Replacement should have been drained above. A reset without
-                    // a replacement (logout) leaves this Activity until navigation.
-                    design.setProductState(GetLineProductState.Loading)
-                }
-                GetLineImportCoordinator.ImportTerminal.Cancelled -> Unit
             }
         } catch (e: CancellationException) {
-            // UI gone (HOME / renav). Import may still be running; pending kept only
-            // while in-flight — terminal paths clear it.
-            // No importKey: it starts with the subscription URL.
-            Log.i("import_waiter_cancelled in_flight=${GetLineImportCoordinator.isInFlight()}")
+            unboundCandidate?.let { deleteUnboundCandidate(it) }
+            Log.i("import_waiter_cancelled")
             throw e
         } finally {
-            if (activeImportKey == importKey) activeImportKey = null
             setImportWaitCancelable(design, false)
             if (!alreadyBusy) {
                 busy = false
@@ -1145,32 +1055,108 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     /**
+     * Producer and Cancel race [ImportAttempt.tryComplete] / [ImportAttempt.tryCancel].
+     * IO is a sibling of this waiter so a winning Cancel does not join
+     * HttpURLConnection. A losing producer is [onLost], not a second terminal.
+     */
+    private suspend fun <T> raceImportAttempt(
+        onLost: suspend (T) -> Unit = {},
+        produce: suspend () -> T,
+    ): ImportWaitOutcome<T> {
+        val attempt = ImportAttempt<T>()
+        importTerminal = attempt
+        val ioJob = launch(Dispatchers.IO) {
+            try {
+                val value = produce()
+                if (!attempt.tryComplete(value)) {
+                    withContext(NonCancellable) { onLost(value) }
+                }
+            } catch (cancelled: CancellationException) {
+                attempt.tryCancel()
+            } catch (error: Throwable) {
+                attempt.tryFail(error)
+            }
+        }
+        var delivered = false
+        try {
+            val result = attempt.await()
+            delivered = attempt.markDelivered()
+            if (!delivered) {
+                throw CancellationException("Waiter abandoned")
+            }
+            return result
+        } finally {
+            if (!delivered) {
+                val orphaned = attempt.abandonWaiter()
+                if (orphaned != null) {
+                    withContext(NonCancellable) { onLost(orphaned) }
+                }
+            }
+            if (importTerminal === attempt) importTerminal = null
+            ioJob.cancel()
+        }
+    }
+
+    /** True only when Cancel won the terminal. Success already owns otherwise. */
+    private fun cancelActiveImport(): Boolean = importTerminal?.tryCancel() == true
+
+    private suspend fun runProductImport(
+        design: GetLineOnboardingDesign,
+        request: GetLineSubscriptionDraft,
+    ): ProductImportResult {
+        val terminal = try {
+            when (
+                val result = backend.subscriptions.importAndCommit(request) { stage ->
+                    runCatching { design.setImportStage(stage) }
+                }
+            ) {
+                is GetLineBackendResult.Success ->
+                    ProductImportResult.Imported(result.value)
+                GetLineBackendResult.Unavailable ->
+                    ProductImportResult.Failed(reason = "kind=backend")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: BinderDiedException) {
+            ProductImportResult.Failed(reason = "kind=binder_died")
+        } catch (t: Throwable) {
+            ProductImportResult.Failed(reason = importUnavailableReason(t))
+        }
+        if (terminal is ProductImportResult.Failed) {
+            Log.w("import_terminal unavailable ${terminal.reason}")
+        }
+        return terminal
+    }
+
+    /**
      * Drain channel + [pendingExternalImport]. Starts the newest draft if any.
      * @return true if a replacement import was started (caller must not open Home).
      */
     private suspend fun drainAndContinueImport(design: GetLineOnboardingDesign): Boolean {
-        // Keep the no-draft path non-suspending: finishImportToHome calls this
-        // immediately after awaitActivityStarted to close the foreground/navigation race.
+        val draft = takeQueuedImport() ?: return false
+        startQueuedImport(design, draft)
+        return true
+    }
+
+    private fun takeQueuedImport(): GetLineSubscriptionDraft? {
         var latest: GetLineSubscriptionDraft? = pendingExternalImport
         pendingExternalImport = null
         while (true) {
             val next = imports.tryReceive().getOrNull() ?: break
             latest = next
         }
-        val draft = latest ?: return false
-        // Supersede must not drop UseAccount orphan cleanup: savePendingImport in
-        // the nested call would otherwise clear previousManagedUuidToDelete.
-        val previousToDelete =
-            (retryTarget as? RetryTarget.ImportSubscription)?.previousManagedUuidToDelete
-                ?: sessionRepository.pendingImportPreviousManagedUuidToDelete()
-        // Keep outer busy ownership; nested call must not clear it early.
+        return latest
+    }
+
+    private suspend fun startQueuedImport(
+        design: GetLineOnboardingDesign,
+        draft: GetLineSubscriptionDraft,
+    ) {
         importSubscription(
             design = design,
             request = draft,
             alreadyBusy = true,
-            previousManagedUuidToDelete = previousToDelete,
         )
-        return true
     }
 
     /**
@@ -1263,12 +1249,19 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 importSubscription(
                     design = design,
                     request = target.request,
-                    reuseId = target.reuseId,
                     subscriptionIdToRemember = target.subscriptionIdToRemember,
-                    previousManagedUuidToDelete = target.previousManagedUuidToDelete,
                 )
-            is RetryTarget.Activate ->
-                activateImportedProfile(design, target.id, target.request)
+            is RetryTarget.Activate -> {
+                if (activateImportedProfile(
+                        design,
+                        target.id,
+                        target.request,
+                        target.subscriptionIdToRemember,
+                    )
+                ) {
+                    finishImportToHome(design)
+                }
+            }
         }
     }
 
@@ -1286,11 +1279,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private fun setImportWaitCancelable(
         design: GetLineOnboardingDesign,
         cancelable: Boolean,
-        leavesFlow: Boolean = false,
     ) {
         importWaitCancelable = cancelable
-        importWaitLeavesFlow = leavesFlow
-        design.setImportWaitCancelable(cancelable, leavesFlow)
+        design.setImportWaitCancelable(cancelable)
     }
 
     /**
@@ -1317,27 +1308,30 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     /**
-     * Manual import is cancelled and restores its prior state. Account import
-     * keeps running headlessly; "Not now" only detaches this UI.
+     * Explicit Cancel of the visible import wait. Manual import restores prior
+     * product state in the waiter. Post-login Cancel abandons the new session:
+     * link-only keeps the existing subscription and opens Home; cold onboarding
+     * logs out and returns to providers.
      */
     private fun tryCancelImportWait(): Boolean {
         if (!importWaitCancelable) return false
         val design = design ?: return false
-        val target = retryTarget
-
-        if (importWaitLeavesFlow) {
-            setImportWaitCancelable(design, false)
-            finish()
+        val postLogin = sessionRepository.hasSession() &&
+            (
+                retryTarget == RetryTarget.ImportPreferredSubscription ||
+                    (retryTarget as? RetryTarget.ImportSubscription)
+                        ?.subscriptionIdToRemember != null
+            )
+        setImportWaitCancelable(design, false)
+        if (!cancelActiveImport()) {
             return true
         }
-
-        if (target !is RetryTarget.ImportSubscription) return false
-        val key = activeImportKey ?: return false
-        setImportWaitCancelable(design, false)
-        launch {
-            if (GetLineImportCoordinator.cancelIfActive(key)) {
-                // reset/cancel invalidates onTerminal; remove the durable resume too.
-                sessionRepository.clearPendingImport()
+        if (postLogin) {
+            abandonPostLoginImportSession(sessionRepository, linkOnlySignIn)
+            design.setSessionEstablished(false)
+            if (linkOnlySignIn) {
+                backend.navigation.openHome()
+                finish()
             }
         }
         return true
@@ -1358,12 +1352,18 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         }
     }
 
+    /**
+     * Activate [id] while foreground, then bind. Returns true only after the
+     * candidate is the managed profile. Failure leaves the old binding and
+     * best-effort deletes the unbound candidate.
+     */
     private suspend fun activateImportedProfile(
         design: GetLineOnboardingDesign,
         id: GetLineSubscriptionId,
         request: GetLineSubscriptionDraft?,
-    ) {
-        retryTarget = RetryTarget.Activate(id, request)
+        subscriptionIdToRemember: String? = null,
+    ): Boolean {
+        retryTarget = RetryTarget.Activate(id, request, subscriptionIdToRemember)
         design.setProductState(GetLineProductState.Loading)
 
         val activated = activateImportedProfileWhenForeground(
@@ -1372,28 +1372,64 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             activate = { backend.subscriptions.activateIfImported(id) },
         )
 
-        when (activated) {
-            is GetLineBackendResult.Success -> {
-                if (!activated.value) {
-                    // request is non-null on all product import paths; reuse id on retry.
-                    if (request != null) {
-                        retryTarget = RetryTarget.ImportSubscription(
-                            request = request,
-                            reuseId = id,
-                        )
-                    }
-                    // GL-19: ImportFailed without a prior import_terminal line is opaque.
-                    Log.w("import_terminal activate_failed")
-                    design.setProductState(GetLineProductState.ImportFailed)
-                    return
-                }
-
-                finishImportToHome(design)
+        if (!productImportShouldBind(activated)) {
+            deleteUnboundCandidate(id)
+            importRetryAfterFailedActivation(request, subscriptionIdToRemember)?.let { retry ->
+                retryTarget = RetryTarget.ImportSubscription(
+                    request = retry.request,
+                    subscriptionIdToRemember = retry.subscriptionIdToRemember,
+                )
             }
-            GetLineBackendResult.Unavailable -> {
+            if (activated is GetLineBackendResult.Success) {
+                Log.w("import_terminal activate_failed")
+                design.setProductState(GetLineProductState.ImportFailed)
+            } else {
                 Log.w("import_terminal activate_unavailable")
                 design.setProductState(GetLineProductState.BackendUnavailable)
             }
+            return false
+        }
+        bindActivatedCandidate(
+            id = id,
+            source = request?.source,
+            subscriptionIdToRemember = subscriptionIdToRemember,
+        )
+        return true
+    }
+
+    private suspend fun bindActivatedCandidate(
+        id: GetLineSubscriptionId,
+        source: String?,
+        subscriptionIdToRemember: String?,
+    ) {
+        val previous = commitActivatedProductImport(
+            sessions = sessionRepository,
+            candidate = id,
+            source = source,
+            subscriptionIdToRemember = subscriptionIdToRemember,
+        )
+        sessionRepository.pendingProfileCleanupUuids().forEach { pending ->
+            runPendingManagedProfileCleanup(
+                pendingUuid = pending,
+                managedUuid = id.value,
+                canDelete = true,
+                stopBeforeDelete = pending == previous,
+                stopVpn = backend.vpn::stop,
+                deleteManaged = backend.subscriptions::deleteManaged,
+                clearPending = sessionRepository::clearPendingProfileCleanup,
+            )
+        }
+        Log.i(
+            "import_terminal success " +
+                "verdict=${sessionRepository.consistencyVerdict()}",
+        )
+    }
+
+    private suspend fun deleteUnboundCandidate(id: GetLineSubscriptionId) {
+        if (id.value == sessionRepository.managedProfileUuid()) return
+        withContext(NonCancellable) {
+            val result = runCatching { backend.subscriptions.deleteManaged(id) }.getOrNull()
+            rememberUnboundCandidateIfDeleteIncomplete(sessionRepository, id, result)
         }
     }
 
@@ -1588,6 +1624,12 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         val otpSent: Boolean,
     )
 
+    private sealed class ProductImportResult {
+        data class Imported(val id: GetLineSubscriptionId) : ProductImportResult()
+        data class Failed(val reason: String) : ProductImportResult()
+        data object Cancelled : ProductImportResult()
+    }
+
     private sealed class RetryTarget {
         object Refresh : RetryTarget()
         /** Telegram / Google only — never Email. */
@@ -1622,14 +1664,12 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         object ActivateTrial : RetryTarget()
         data class ImportSubscription(
             val request: GetLineSubscriptionDraft,
-            val reuseId: GetLineSubscriptionId? = null,
             val subscriptionIdToRemember: String? = null,
-            /** Link-only profile replaced by account preferred; delete after Success. */
-            val previousManagedUuidToDelete: String? = null,
         ) : RetryTarget()
         data class Activate(
             val id: GetLineSubscriptionId,
             val request: GetLineSubscriptionDraft?,
+            val subscriptionIdToRemember: String? = null,
         ) : RetryTarget()
     }
 
@@ -1702,4 +1742,20 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 )
             }
     }
+}
+
+/** Exception class + optional HTTP status — never [Throwable.message]. */
+private fun importUnavailableReason(error: Throwable): String {
+    val kind = error.javaClass.simpleName.ifBlank { "Throwable" }
+    var current: Throwable? = error
+    var depth = 0
+    while (current != null && depth < 6) {
+        val failure = current as? GetLineAuthException.HttpFailure
+        if (failure != null) {
+            return "kind=$kind code=${failure.code}"
+        }
+        current = current.cause
+        depth++
+    }
+    return "kind=$kind"
 }

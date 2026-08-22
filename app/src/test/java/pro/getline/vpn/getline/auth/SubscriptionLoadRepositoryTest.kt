@@ -392,6 +392,84 @@ class SubscriptionLoadRepositoryTest {
     }
 
     @Test
+    fun refreshSession_logoutDuringRefresh_doesNotResurrectTokens() = runBlocking {
+        val enteredRefresh = CompletableDeferred<Unit>()
+        val finishRefresh = CompletableDeferred<NativeSession>()
+        val api = FakeAuthApi(
+            refreshBlock = {
+                enteredRefresh.complete(Unit)
+                finishRefresh.await()
+            },
+        )
+        val store = seededStore()
+        store.accessTokenExpiresAtEpochMs = 1L
+        val repo = GetLineSessionRepository(api, store)
+
+        val deferred = async {
+            repo.refreshSession()
+        }
+        enteredRefresh.await()
+        repo.logout()
+        finishRefresh.complete(
+            NativeSession(
+                accessToken = "access-resurrected",
+                refreshToken = "refresh-resurrected",
+                expiresInSeconds = 86_400L,
+            ),
+        )
+        try {
+            deferred.await()
+        } catch (_: CancellationException) {
+            // abandoned refresh
+        }
+
+        assertFalse(store.hasRefreshToken())
+        assertTrue(store.accessToken != "access-resurrected")
+        assertTrue(store.refreshToken != "refresh-resurrected")
+    }
+
+    @Test
+    fun getSubscriptionsAuthenticated_discardDuringRefresh_doesNotResurrectTokens() =
+        runBlocking {
+            val enteredRefresh = CompletableDeferred<Unit>()
+            val finishRefresh = CompletableDeferred<NativeSession>()
+            val api = FakeAuthApi(
+                failSubscriptionsTimes = 1,
+                refreshBlock = {
+                    enteredRefresh.complete(Unit)
+                    finishRefresh.await()
+                },
+            )
+            val store = seededManagedStore()
+            val repo = GetLineSessionRepository(api, store)
+
+            val deferred = async {
+                repo.getSubscriptionsAuthenticated()
+            }
+            enteredRefresh.await()
+            repo.discardSessionKeepingSubscription()
+            finishRefresh.complete(
+                NativeSession(
+                    accessToken = "access-resurrected",
+                    refreshToken = "refresh-resurrected",
+                    expiresInSeconds = 86_400L,
+                ),
+            )
+            try {
+                deferred.await()
+            } catch (_: CancellationException) {
+                // abandoned refresh
+            } catch (_: GetLineAuthException) {
+                // mutex waiter after discard may see a missing refresh token
+            }
+
+            assertFalse(store.hasRefreshToken())
+            assertEquals("managed-uuid", store.managedProfileUuid)
+            assertTrue(store.accessToken != "access-resurrected")
+            assertTrue(store.refreshToken != "refresh-resurrected")
+        }
+
+    @Test
     fun loadSubscriptionAccountSignal_cancelDuringRefresh_rethrowsAndKeepsSession() = runBlocking {
         val enteredRefresh = CompletableDeferred<Unit>()
         val api = FakeAuthApi(

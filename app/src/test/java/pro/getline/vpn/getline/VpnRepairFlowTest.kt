@@ -469,7 +469,6 @@ private class FakeSubscriptionRepository(
     ): GetLineBackendResult<Boolean> = error("not used")
     override suspend fun importAndCommit(
         draft: GetLineSubscriptionDraft,
-        reuseId: GetLineSubscriptionId?,
         onProgress: suspend (pro.getline.vpn.getlineui.model.GetLineImportStage) -> Unit,
     ): GetLineBackendResult<GetLineSubscriptionId> = error("not used")
     override suspend fun requestConfigUpdate(id: GetLineSubscriptionId): ConfigUpdateResult =

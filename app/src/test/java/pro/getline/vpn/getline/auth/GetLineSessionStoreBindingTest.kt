@@ -31,17 +31,6 @@ class GetLineSessionStoreBindingTest {
         store.managedProfileUuid = "profile-uuid"
         store.managedProfileSource = "https://sub.example.com/link"
         store.rememberPendingProfileCleanup("old-profile-uuid")
-        store.savePendingImport(
-            PendingImport(
-                name = "GetLine",
-                source = "https://pending",
-                typeName = "Url",
-                reuseUuid = "reuse",
-                subscriptionIdToRemember = "pending-sub",
-                interval = 0L,
-                previousManagedUuidToDelete = "orphan-uuid",
-            ),
-        )
 
         store.clearSessionKeepingBinding()
 
@@ -51,7 +40,6 @@ class GetLineSessionStoreBindingTest {
         assertNull(store.customerId)
         assertNull(store.subscriptionId)
         assertFalse(store.hasRefreshToken())
-        assertFalse(store.hasPendingImport())
 
         assertEquals("profile-uuid", store.managedProfileUuid)
         assertEquals("https://sub.example.com/link", store.managedProfileSource)
@@ -120,94 +108,12 @@ class GetLineSessionStoreBindingTest {
     }
 
     @Test
-    fun commitCreatedImportUuid_usesCommitNotApply() {
-        val app = RuntimeEnvironment.getApplication()
-        val recording = RecordingPreferences(
-            app.getSharedPreferences(GetLineSessionStore.PREFS_FILE_ENCRYPTED, Context.MODE_PRIVATE),
-        )
-        val store = GetLineSessionStore(
-            context = app,
-            encryptedPrefsFactory = { recording },
-            encryptedStorageResetter = {
-                app.deleteSharedPreferences(GetLineSessionStore.PREFS_FILE_ENCRYPTED)
-            },
-        )
-        store.clearAccountState()
-        store.savePendingImport(
-            PendingImport(name = "GetLine", source = "https://pending.example/sub"),
-        )
-        val applyBefore = recording.applyCalls
-        val commitBefore = recording.commitCalls
-
-        assertTrue(store.commitCreatedImportUuid("created-uuid"))
-
-        assertEquals(commitBefore + 1, recording.commitCalls)
-        assertEquals(applyBefore, recording.applyCalls)
-        assertEquals("created-uuid", store.pendingImport()?.reuseUuid)
-    }
-
-    @Test
-    fun commitCreatedImportUuid_falseCommit_isNotSuccess() {
-        val app = RuntimeEnvironment.getApplication()
-        val recording = RecordingPreferences(
-            app.getSharedPreferences(GetLineSessionStore.PREFS_FILE_ENCRYPTED, Context.MODE_PRIVATE),
-        )
-        val store = GetLineSessionStore(
-            context = app,
-            encryptedPrefsFactory = { recording },
-            encryptedStorageResetter = {
-                app.deleteSharedPreferences(GetLineSessionStore.PREFS_FILE_ENCRYPTED)
-            },
-        )
-        store.clearAccountState()
-        store.savePendingImport(
-            PendingImport(name = "GetLine", source = "https://pending.example/sub"),
-        )
-        recording.commitResult = false
-        val commitBefore = recording.commitCalls
-
-        assertFalse(store.commitCreatedImportUuid("created-uuid"))
-        assertEquals(commitBefore + 1, recording.commitCalls)
-    }
-
-    @Test
-    fun pendingImport_persistsPreviousManagedUuidToDelete() {
-        val store = testSessionStore(RuntimeEnvironment.getApplication())
-        store.clearAccountState()
-        store.savePendingImport(
-            PendingImport(
-                name = "GetLine",
-                source = "https://account.example.com/sub",
-                typeName = "Url",
-                reuseUuid = null,
-                subscriptionIdToRemember = "sub-new",
-                interval = 0L,
-                previousManagedUuidToDelete = "old-link-only-uuid",
-            ),
-        )
-
-        val pending = store.pendingImport()
-        assertEquals("old-link-only-uuid", pending?.previousManagedUuidToDelete)
-        assertEquals("https://account.example.com/sub", pending?.source)
-
-        store.clearPendingImport()
-        assertNull(store.pendingImport())
-    }
-
-    @Test
     fun pendingProfileCleanup_keepsMultipleUuids_andClearsOnlyExpectedUuid() {
         val store = testSessionStore(RuntimeEnvironment.getApplication())
         store.clearAccountState()
         store.rememberPendingProfileCleanup("old-profile-uuid")
         store.rememberPendingProfileCleanup("newer-old-profile-uuid")
-        store.savePendingImport(
-            PendingImport(
-                name = "GetLine",
-                source = "https://account.example.com/sub",
-            ),
-        )
 
-        store.clearPendingImport()
         assertEquals(
             setOf("old-profile-uuid", "newer-old-profile-uuid"),
             store.pendingProfileCleanupUuids(),
@@ -326,83 +232,5 @@ class GetLineSessionStoreBindingTest {
         store.subscriptionId = "s"
 
         assertEquals(2, store.rawEntryCount())
-    }
-}
-
-/**
- * Counts [SharedPreferences.Editor.commit] vs [SharedPreferences.Editor.apply].
- * Reading the same prefs instance after apply() is not a durability check.
- */
-private class RecordingPreferences(
-    private val inner: android.content.SharedPreferences,
-) : android.content.SharedPreferences by inner {
-    var commitCalls = 0
-    var applyCalls = 0
-    var commitResult: Boolean? = null
-
-    override fun edit(): android.content.SharedPreferences.Editor = RecordingEditor(inner.edit())
-
-    private inner class RecordingEditor(
-        private val inner: android.content.SharedPreferences.Editor,
-    ) : android.content.SharedPreferences.Editor {
-        override fun putString(
-            key: String?,
-            value: String?,
-        ): android.content.SharedPreferences.Editor {
-            inner.putString(key, value)
-            return this
-        }
-
-        override fun putStringSet(
-            key: String?,
-            values: MutableSet<String>?,
-        ): android.content.SharedPreferences.Editor {
-            inner.putStringSet(key, values)
-            return this
-        }
-
-        override fun putInt(key: String?, value: Int): android.content.SharedPreferences.Editor {
-            inner.putInt(key, value)
-            return this
-        }
-
-        override fun putLong(key: String?, value: Long): android.content.SharedPreferences.Editor {
-            inner.putLong(key, value)
-            return this
-        }
-
-        override fun putFloat(key: String?, value: Float): android.content.SharedPreferences.Editor {
-            inner.putFloat(key, value)
-            return this
-        }
-
-        override fun putBoolean(
-            key: String?,
-            value: Boolean,
-        ): android.content.SharedPreferences.Editor {
-            inner.putBoolean(key, value)
-            return this
-        }
-
-        override fun remove(key: String?): android.content.SharedPreferences.Editor {
-            inner.remove(key)
-            return this
-        }
-
-        override fun clear(): android.content.SharedPreferences.Editor {
-            inner.clear()
-            return this
-        }
-
-        override fun commit(): Boolean {
-            commitCalls += 1
-            val written = inner.commit()
-            return commitResult ?: written
-        }
-
-        override fun apply() {
-            applyCalls += 1
-            inner.apply()
-        }
     }
 }

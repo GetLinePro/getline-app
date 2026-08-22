@@ -105,11 +105,12 @@ class OnboardingExitPolicyTest {
             ),
         )
         assertEquals(
-            OnboardingExitAction.NotNow,
+            OnboardingExitAction.Cancel,
             actionFor(
                 GetLineProductState.Loading,
+                linkOnlySignIn = true,
+                sessionEstablished = true,
                 importWaitCancelable = true,
-                importWaitLeavesFlow = true,
             ),
         )
         assertEquals(
@@ -143,7 +144,6 @@ class OnboardingExitPolicyTest {
         sessionEstablished: Boolean = false,
         browserAuthCancelable: Boolean = false,
         importWaitCancelable: Boolean = false,
-        importWaitLeavesFlow: Boolean = false,
     ): OnboardingExitAction = OnboardingExitPolicy.actionFor(
         state = state,
         authStep = authStep,
@@ -151,6 +151,5 @@ class OnboardingExitPolicyTest {
         sessionEstablished = sessionEstablished,
         browserAuthCancelable = browserAuthCancelable,
         importWaitCancelable = importWaitCancelable,
-        importWaitLeavesFlow = importWaitLeavesFlow,
     )
 }

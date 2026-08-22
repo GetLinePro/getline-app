@@ -66,8 +66,6 @@ class GetLineOnboardingDesign(
     private var browserAuthCancelable: Boolean = false
     /** True while the visible import wait has a defined Cancel destination. */
     private var importWaitCancelable: Boolean = false
-    /** Post-session import keeps running headlessly; the UI action only leaves. */
-    private var importWaitLeavesFlow: Boolean = false
 
     override val root: View
         get() = binding.root
@@ -405,13 +403,9 @@ class GetLineOnboardingDesign(
         applyAuthStepVisibility(lastProductState)
     }
 
-    fun setImportWaitCancelable(
-        cancelable: Boolean,
-        leavesFlow: Boolean = false,
-    ) {
-        if (importWaitCancelable == cancelable && importWaitLeavesFlow == leavesFlow) return
+    fun setImportWaitCancelable(cancelable: Boolean) {
+        if (importWaitCancelable == cancelable) return
         importWaitCancelable = cancelable
-        importWaitLeavesFlow = leavesFlow
         applyAuthStepVisibility(lastProductState)
     }
 
@@ -539,7 +533,6 @@ class GetLineOnboardingDesign(
             sessionEstablished = sessionEstablished,
             browserAuthCancelable = browserAuthCancelable,
             importWaitCancelable = importWaitCancelable,
-            importWaitLeavesFlow = importWaitLeavesFlow,
         )
         binding.dismissVisible = exitAction != OnboardingExitAction.None
         if (exitAction != OnboardingExitAction.None) {

@@ -5,9 +5,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import pro.getline.vpn.GetLineControlPlaneHostPolicy
-import pro.getline.vpn.getline.GetLineSubscriptionDraft
-import pro.getline.vpn.getline.GetLineSubscriptionId
-import pro.getline.vpn.getline.GetLineSubscriptionType
 import pro.getline.vpn.getline.refresh.ManagedProfileRefresh
 import java.io.IOException
 
@@ -20,19 +17,52 @@ class GetLineSessionRepository(
     private val store: GetLineSessionStore,
 ) {
     private val sessionRefreshMutex = Mutex()
+    private val sessionWriteLock = Any()
+    private var sessionWriteGeneration = 0
 
     fun hasSession(): Boolean = store.hasRefreshToken()
 
     fun logout() {
-        store.clearAccountState()
+        abandonSessionWrites { store.clearAccountState() }
         ManagedProfileRefresh.cancel(store.appContext)
     }
 
     /** Drop tokens/customer but keep link-only managed profile binding. */
-    fun discardSessionKeepingSubscription() = store.clearSessionKeepingBinding()
+    fun discardSessionKeepingSubscription() {
+        abandonSessionWrites { store.clearSessionKeepingBinding() }
+    }
 
-    private fun invalidateRejectedSession() =
-        store.clearRejectedSessionKeepingBindingShape()
+    private fun invalidateRejectedSession() {
+        abandonSessionWrites { store.clearRejectedSessionKeepingBindingShape() }
+    }
+
+    /**
+     * Blocking [GetLineAuthApi.refresh] does not see coroutine cancellation.
+     * Bump generation under the same lock as [persistRefreshedSession] so an
+     * in-flight refresh cannot write tokens after logout/discard.
+     */
+    private fun abandonSessionWrites(clear: () -> Unit) {
+        synchronized(sessionWriteLock) {
+            sessionWriteGeneration++
+            clear()
+        }
+    }
+
+    private fun currentSessionWriteGeneration(): Int =
+        synchronized(sessionWriteLock) { sessionWriteGeneration }
+
+    private fun persistRefreshedSession(
+        session: NativeSession,
+        generation: Int,
+    ): NativeSession {
+        synchronized(sessionWriteLock) {
+            if (generation != sessionWriteGeneration) {
+                throw CancellationException("Session abandoned")
+            }
+            store.saveSession(session)
+        }
+        return session
+    }
 
     suspend fun establishFromWebToken(webToken: String): NativeSession {
         // Optional identity probe; failure is non-fatal for handoff.
@@ -80,6 +110,7 @@ class GetLineSessionRepository(
 
     suspend fun refreshSession(): NativeSession {
         return sessionRefreshMutex.withLock {
+            val generation = currentSessionWriteGeneration()
             // Another waiter may have already refreshed while we queued.
             if (store.isAccessTokenValid()) {
                 val access = store.accessToken
@@ -95,8 +126,7 @@ class GetLineSessionRepository(
             val refreshToken = store.refreshToken
                 ?: throw GetLineAuthException.Protocol("Missing refresh token")
             val session = api.refresh(refreshToken)
-            store.saveSession(session)
-            session
+            persistRefreshedSession(session, generation)
         }
     }
 
@@ -321,6 +351,7 @@ class GetLineSessionRepository(
         rejectedRefreshToken: String?,
     ): NativeSession {
         return sessionRefreshMutex.withLock {
+            val generation = currentSessionWriteGeneration()
             val currentAccessToken = store.accessToken
             val currentRefreshToken = store.refreshToken
             val sessionChanged =
@@ -341,8 +372,7 @@ class GetLineSessionRepository(
             val refreshToken = store.refreshToken
                 ?: throw GetLineAuthException.Protocol("Missing refresh token")
             val session = api.refresh(refreshToken)
-            store.saveSession(session)
-            session
+            persistRefreshedSession(session, generation)
         }
     }
 
@@ -401,58 +431,6 @@ class GetLineSessionRepository(
     }
 
     fun rememberedSubscriptionId(): String? = store.subscriptionId
-
-    fun hasPendingImport(): Boolean = store.hasPendingImport()
-
-    fun pendingImport(): PendingImport? = store.pendingImport()
-
-    fun savePendingImport(
-        draft: GetLineSubscriptionDraft,
-        reuseId: GetLineSubscriptionId?,
-        subscriptionIdToRemember: String?,
-        previousManagedUuidToDelete: String? = null,
-    ) {
-        val source = draft.source?.takeIf { it.isNotBlank() } ?: return
-        store.savePendingImport(
-            PendingImport(
-                name = draft.name,
-                source = source,
-                typeName = draft.type.name,
-                reuseUuid = reuseId?.value,
-                subscriptionIdToRemember = subscriptionIdToRemember,
-                interval = draft.interval,
-                previousManagedUuidToDelete = previousManagedUuidToDelete,
-            ),
-        )
-    }
-
-    fun commitCreatedImportUuid(uuid: String): Boolean = store.commitCreatedImportUuid(uuid)
-
-    fun clearPendingImport() {
-        store.clearPendingImport()
-    }
-
-    fun pendingImportDraft(): GetLineSubscriptionDraft? {
-        val pending = store.pendingImport() ?: return null
-        val type = runCatching {
-            GetLineSubscriptionType.valueOf(pending.typeName)
-        }.getOrDefault(GetLineSubscriptionType.Url)
-        return GetLineSubscriptionDraft(
-            type = type,
-            name = pending.name,
-            source = pending.source,
-            interval = pending.interval,
-        )
-    }
-
-    fun pendingImportReuseId(): GetLineSubscriptionId? =
-        store.pendingImport()?.reuseUuid?.let { GetLineSubscriptionId(it) }
-
-    fun pendingImportSubscriptionIdToRemember(): String? =
-        store.pendingImport()?.subscriptionIdToRemember
-
-    fun pendingImportPreviousManagedUuidToDelete(): String? =
-        store.pendingImport()?.previousManagedUuidToDelete
 
     /**
      * Session + still-link-only binding: post-login subscription step incomplete.

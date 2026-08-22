@@ -182,7 +182,6 @@ class MainActivity : BaseActivity<MainDesign>() {
                 "prefs_reset=${flag01(snapshot?.sessionStorageRecovered)} " +
                 "session=${flag01(snapshot?.hasSession)} " +
                 "managed=${flag01(snapshot?.hasManagedProfile)} " +
-                "pending_import=${flag01(snapshot?.hasPendingImport)} " +
                 "imported=${route.imported} backend=${route.backend}",
         )
     }
@@ -199,17 +198,15 @@ class MainActivity : BaseActivity<MainDesign>() {
             runCatching {
                 val store = GetLineSessionStore(this@MainActivity)
                 // Routing fields first. hasSession is log-only on this path — isolate so a
-                // failed refresh_token decrypt cannot collapse pending_import / managed.
+                // failed refresh_token decrypt cannot collapse managed.
                 val managedProfileUuid = store.managedProfileUuid
                 val hasManagedProfile = !managedProfileUuid.isNullOrBlank()
                 runCatching { ManagedProfileRefresh.sync(this@MainActivity, managedProfileUuid) }
-                val hasPendingImport = store.hasPendingImport()
                 val hasSession = runCatching { store.hasRefreshToken() }.getOrDefault(false)
                 SessionRoutingSnapshot(
                     storeOk = true,
                     hasSession = hasSession,
                     hasManagedProfile = hasManagedProfile,
-                    hasPendingImport = hasPendingImport,
                     sessionStorageRecovered = store.recoveredFromStorageFailure,
                     prefsBackend = store.backendName,
                     prefsOther = runCatching { flag01(store.otherPrefsFileExists()) }

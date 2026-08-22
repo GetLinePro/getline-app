@@ -174,82 +174,6 @@ class GetLineSessionStore internal constructor(
         }
     }
 
-    /**
-     * In-flight product import. Survives Activity destroy and process death so
-     * HOME/relaunch can resume instead of dead-ending on a cancelled coroutine.
-     */
-    fun savePendingImport(pending: PendingImport) {
-        prefs.edit { putPendingImport(pending) }
-    }
-
-    /**
-     * Durable marker for a backend-created import UUID. [savePendingImport] uses
-     * apply(); that is not enough after Success and before bind — process death
-     * can land before the XML write. [commit] false is not a saved UUID.
-     */
-    fun commitCreatedImportUuid(uuid: String): Boolean {
-        val id = uuid.takeIf { it.isNotBlank() } ?: return false
-        val current = pendingImport() ?: return false
-        val updated = current.copy(reuseUuid = id)
-        val committed = try {
-            prefs.edit().putPendingImport(updated).commit()
-        } catch (_: Exception) {
-            false
-        }
-        if (!committed) return false
-        return pendingImport()?.reuseUuid == id
-    }
-
-    private fun SharedPreferences.Editor.putPendingImport(
-        pending: PendingImport,
-    ): SharedPreferences.Editor {
-        putString(KEY_PENDING_IMPORT_NAME, pending.name)
-        putString(KEY_PENDING_IMPORT_SOURCE, pending.source)
-        putString(KEY_PENDING_IMPORT_TYPE, pending.typeName)
-        putString(KEY_PENDING_IMPORT_REUSE_UUID, pending.reuseUuid)
-        putString(KEY_PENDING_IMPORT_SUBSCRIPTION_ID, pending.subscriptionIdToRemember)
-        putLong(KEY_PENDING_IMPORT_INTERVAL, pending.interval)
-        putString(
-            KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID,
-            pending.previousManagedUuidToDelete,
-        )
-        return this
-    }
-
-    fun clearPendingImport() {
-        prefs.edit {
-            remove(KEY_PENDING_IMPORT_NAME)
-            remove(KEY_PENDING_IMPORT_SOURCE)
-            remove(KEY_PENDING_IMPORT_TYPE)
-            remove(KEY_PENDING_IMPORT_REUSE_UUID)
-            remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
-            remove(KEY_PENDING_IMPORT_INTERVAL)
-            remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
-        }
-    }
-
-    fun pendingImport(): PendingImport? {
-        val source = prefs.getString(KEY_PENDING_IMPORT_SOURCE, null)?.takeIf { it.isNotBlank() }
-            ?: return null
-        val name = prefs.getString(KEY_PENDING_IMPORT_NAME, null)?.takeIf { it.isNotBlank() }
-            ?: "GetLine"
-        return PendingImport(
-            name = name,
-            source = source,
-            typeName = prefs.getString(KEY_PENDING_IMPORT_TYPE, null) ?: "Url",
-            reuseUuid = prefs.getString(KEY_PENDING_IMPORT_REUSE_UUID, null)?.takeIf { it.isNotBlank() },
-            subscriptionIdToRemember = prefs.getString(KEY_PENDING_IMPORT_SUBSCRIPTION_ID, null)
-                ?.takeIf { it.isNotBlank() },
-            interval = prefs.getLong(KEY_PENDING_IMPORT_INTERVAL, 0L),
-            previousManagedUuidToDelete = prefs.getString(
-                KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID,
-                null,
-            )?.takeIf { it.isNotBlank() },
-        )
-    }
-
-    fun hasPendingImport(): Boolean = pendingImport() != null
-
     fun clearAccountState() {
         commitCleanupOrReset {
             remove(KEY_ACCESS_TOKEN)
@@ -260,13 +184,7 @@ class GetLineSessionStore internal constructor(
             remove(KEY_PROFILE_SOURCE)
             remove(KEY_PENDING_PROFILE_CLEANUP_UUIDS)
             remove(KEY_CUSTOMER_ID)
-            remove(KEY_PENDING_IMPORT_NAME)
-            remove(KEY_PENDING_IMPORT_SOURCE)
-            remove(KEY_PENDING_IMPORT_TYPE)
-            remove(KEY_PENDING_IMPORT_REUSE_UUID)
-            remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
-            remove(KEY_PENDING_IMPORT_INTERVAL)
-            remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
+            removeStalePendingImportKeys()
         }
         deleteLegacySessionStoresBestEffort()
     }
@@ -283,14 +201,7 @@ class GetLineSessionStore internal constructor(
             remove(KEY_ACCESS_EXPIRES_AT)
             remove(KEY_CUSTOMER_ID)
             remove(KEY_SUBSCRIPTION_ID)
-            // pending import keys: this login is abandoned
-            remove(KEY_PENDING_IMPORT_NAME)
-            remove(KEY_PENDING_IMPORT_SOURCE)
-            remove(KEY_PENDING_IMPORT_TYPE)
-            remove(KEY_PENDING_IMPORT_REUSE_UUID)
-            remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
-            remove(KEY_PENDING_IMPORT_INTERVAL)
-            remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
+            removeStalePendingImportKeys()
         }
         deleteLegacySessionStoresBestEffort()
     }
@@ -316,13 +227,7 @@ class GetLineSessionStore internal constructor(
             if (!keepLikelyLinkOnlySource) {
                 remove(KEY_PROFILE_SOURCE)
             }
-            remove(KEY_PENDING_IMPORT_NAME)
-            remove(KEY_PENDING_IMPORT_SOURCE)
-            remove(KEY_PENDING_IMPORT_TYPE)
-            remove(KEY_PENDING_IMPORT_REUSE_UUID)
-            remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
-            remove(KEY_PENDING_IMPORT_INTERVAL)
-            remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
+            removeStalePendingImportKeys()
         }
         deleteLegacySessionStoresBestEffort()
     }
@@ -333,6 +238,17 @@ class GetLineSessionStore internal constructor(
         val expiresAt = accessTokenExpiresAtEpochMs
         if (expiresAt <= 0L) return false
         return nowMs + skewMs < expiresAt
+    }
+
+    /** Drop ignored leftover keys from upgraded installs. Not a product API. */
+    private fun SharedPreferences.Editor.removeStalePendingImportKeys() {
+        remove(KEY_PENDING_IMPORT_NAME)
+        remove(KEY_PENDING_IMPORT_SOURCE)
+        remove(KEY_PENDING_IMPORT_TYPE)
+        remove(KEY_PENDING_IMPORT_REUSE_UUID)
+        remove(KEY_PENDING_IMPORT_SUBSCRIPTION_ID)
+        remove(KEY_PENDING_IMPORT_INTERVAL)
+        remove(KEY_PENDING_IMPORT_PREVIOUS_MANAGED_UUID)
     }
 
     private fun commitCleanupOrReset(block: SharedPreferences.Editor.() -> Unit) {
@@ -505,19 +421,3 @@ class GetLineSessionStorageException : Exception("Secure session storage unavail
 
 /** Internal control-flow marker for a false SharedPreferences commit. */
 private class SessionStorageWriteFailed : Exception()
-
-/**
- * Durable in-flight import request (URL path only for product flows).
- * [typeName] is the [pro.getline.vpn.getline.GetLineSubscriptionType] name.
- * [interval] is the profile update interval in ms (ExternalControl may set it).
- */
-data class PendingImport(
-    val name: String,
-    val source: String,
-    val typeName: String = "Url",
-    val reuseUuid: String? = null,
-    val subscriptionIdToRemember: String? = null,
-    val interval: Long = 0L,
-    /** Link-only UUID to delete after UseAccount import Success. */
-    val previousManagedUuidToDelete: String? = null,
-)
