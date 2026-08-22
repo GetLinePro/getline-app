@@ -75,8 +75,8 @@ subprojects {
 
             // Product version, independent of the CMFA release we forked from.
             // The mihomo core reports its own version via Bridge.nativeCoreVersion().
-            versionName = "0.9.0"
-            versionCode = 2024
+            versionName = "0.9.1"
+            versionCode = 2025
 
             resValue("string", "release_name", "v$versionName")
             resValue("integer", "release_code", "$versionCode")
