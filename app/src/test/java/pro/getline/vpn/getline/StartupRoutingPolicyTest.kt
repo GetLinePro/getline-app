@@ -10,11 +10,12 @@ import org.junit.Test
 /**
  * Where a cold start lands, as a table.
  *
- * This contract has been rewritten several times — pending import ahead of the
- * managed profile, empty+dead-backend → Onboarding (#98) vs session+dead → Home —
- * and each time the evidence was a user who landed on the wrong screen. The
- * priority order is the whole point: getting it wrong offers a fresh import to
- * someone who already has a working VPN profile, or traps a clean install on Home.
+ * This contract has been rewritten several times — empty+dead-backend →
+ * Onboarding (#98) vs session+dead → Home — and each time the evidence was a
+ * user who landed on the wrong screen. The priority order is the whole point:
+ * getting it wrong offers a fresh import to someone who already has a working
+ * VPN profile, or traps a clean install on Home. Process death does not resume
+ * an in-flight fetch; managed/session state starts a new attempt.
  */
 class StartupRoutingPolicyTest {
 
@@ -71,40 +72,6 @@ class StartupRoutingPolicyTest {
         assertEquals("no_import", route.reason)
         assertEquals(1, probe.snapshotReads)
         assertEquals(1, probe.backendCalls)
-    }
-
-    @Test
-    fun pendingImport_resumesOnboarding_withoutAskingTheBackend() = runBlocking {
-        val probe = Probe(snapshot = SessionRoutingSnapshot(storeOk = true, hasPendingImport = true))
-
-        val route = StartupRoutingPolicy.decide(false, probe::snapshot, probe::imported)
-
-        assertEquals(LaunchTarget.Onboarding, route.target)
-        assertEquals("pending_import", route.reason)
-        assertEquals(0, probe.backendCalls)
-        assertEquals("na", route.imported)
-        assertEquals("na", route.backend)
-    }
-
-    /**
-     * A cold start in the middle of an import must resume it, not land Home on the
-     * strength of the profile the import is about to replace — the pending payload
-     * carries the orphan-cleanup UUID and there is no second chance to read it.
-     */
-    @Test
-    fun pendingImport_winsOverAnExistingManagedProfile() = runBlocking {
-        val probe = Probe(
-            snapshot = SessionRoutingSnapshot(
-                storeOk = true,
-                hasManagedProfile = true,
-                hasPendingImport = true,
-            ),
-        )
-
-        val route = StartupRoutingPolicy.decide(false, probe::snapshot, probe::imported)
-
-        assertEquals(LaunchTarget.Onboarding, route.target)
-        assertEquals("pending_import", route.reason)
     }
 
     @Test
@@ -225,7 +192,8 @@ class StartupRoutingPolicyTest {
     /**
      * Session is not a blanket ticket to Home. Backend-proven empty inventory
      * still goes to Onboarding; session-only Home is the Unavailable recovery
-     * branch, not Success(false).
+     * branch, not Success(false). This is a new attempt from persisted session
+     * state, not resume of a killed fetch.
      */
     @Test
     fun sessionWithoutManaged_emptyInventory_goesOnboarding() = runBlocking {

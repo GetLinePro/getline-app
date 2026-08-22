@@ -79,13 +79,14 @@ interface GetLineSubscriptionRepository {
     ): GetLineBackendResult<GetLineSubscriptionId>
 
     /**
-     * Create-or-reuse pending profile, patch from [draft], fetch and commit.
-     * Does not activate — caller decides (see [activateIfImported]).
-     * [onProgress] is best-effort UI feedback; drops intermediate stages under load.
+     * Create a fresh pending profile, patch from [draft], fetch and commit.
+     * Always mints a new UUID. Does not reuse a managed profile; see
+     * [reimportAndActivate] for that path. Does not activate — caller decides
+     * (see [activateIfImported]). [onProgress] is best-effort UI feedback;
+     * drops intermediate stages under load.
      */
     suspend fun importAndCommit(
         draft: GetLineSubscriptionDraft,
-        reuseId: GetLineSubscriptionId? = null,
         onProgress: suspend (GetLineImportStage) -> Unit = {},
     ): GetLineBackendResult<GetLineSubscriptionId>
 

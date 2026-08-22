@@ -25,13 +25,11 @@ internal object OnboardingExitPolicy {
         sessionEstablished: Boolean,
         browserAuthCancelable: Boolean,
         importWaitCancelable: Boolean,
-        importWaitLeavesFlow: Boolean,
     ): OnboardingExitAction {
         if (state.loading) {
             if (state != GetLineProductState.Loading) return OnboardingExitAction.None
             return when {
                 browserAuthCancelable -> OnboardingExitAction.Cancel
-                importWaitCancelable && importWaitLeavesFlow -> OnboardingExitAction.NotNow
                 importWaitCancelable -> OnboardingExitAction.Cancel
                 else -> OnboardingExitAction.None
             }

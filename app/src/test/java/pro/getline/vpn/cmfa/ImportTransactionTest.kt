@@ -7,6 +7,7 @@ import com.github.kr328.clash.service.remote.IFetchObserver
 import com.github.kr328.clash.service.remote.IProfileManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -14,6 +15,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -393,9 +395,97 @@ class ImportTransactionTest {
         assertEquals(listOf(pending), backend.patched)
     }
 
+    @Test
+    fun productImport_withExistingManaged_mintsAFreshUuid() = runBlocking {
+        val managed = UUID.randomUUID()
+        val backend = FakeProfileManager()
+        backend.seed(managed, imported = true)
+
+        val id = backend.importPending(draft, null, {}, activate = false, diagnosticOp = null)
+
+        assertNotEquals(managed.toString(), id.value)
+        assertEquals(listOf(id.value), backend.created.map { it.toString() })
+        assertTrue(backend.deleted.isEmpty())
+        assertEquals(managed, backend.queryByUUID(managed)?.uuid)
+    }
+
+    @Test
+    fun productImport_cancelWithExistingManaged_deletesOnlyTheCandidate() = runBlocking {
+        val managed = UUID.randomUUID()
+        val entered = CompletableDeferred<Unit>()
+        val backend = FakeProfileManager(
+            onCommit = { _, _ ->
+                entered.complete(Unit)
+                awaitCancellation()
+            },
+        )
+        backend.seed(managed, imported = true)
+
+        coroutineScope {
+            val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                backend.importPending(draft, null, {}, activate = false, diagnosticOp = null)
+            }
+            entered.await()
+            job.cancelAndJoin()
+        }
+
+        assertEquals(backend.created, backend.deleted)
+        assertEquals(1, backend.deleted.size)
+        assertEquals(managed, backend.queryByUUID(managed)?.uuid)
+    }
+
+    @Test
+    fun productImport_timeoutWithExistingManaged_deletesOnlyTheCandidate() = runBlocking {
+        val managed = UUID.randomUUID()
+        val backend = FakeProfileManager(
+            onCommit = { _, _ -> awaitCancellation() },
+        )
+        backend.seed(managed, imported = true)
+
+        try {
+            withTimeout(50) {
+                backend.importPending(draft, null, {}, activate = false, diagnosticOp = null)
+            }
+            fail("expected timeout")
+        } catch (_: TimeoutCancellationException) {
+            // expected
+        }
+
+        assertEquals(backend.created, backend.deleted)
+        assertEquals(1, backend.deleted.size)
+        assertEquals(managed, backend.queryByUUID(managed)?.uuid)
+    }
+
+    @Test
+    fun productImport_deletedCandidate_cannotBeActivatedOverTheOldManaged() = runBlocking {
+        val managed = UUID.randomUUID()
+        val entered = CompletableDeferred<Unit>()
+        val backend = FakeProfileManager(
+            onCommit = { _, _ ->
+                entered.complete(Unit)
+                awaitCancellation()
+            },
+        )
+        backend.seed(managed, imported = true)
+
+        var candidate: UUID? = null
+        coroutineScope {
+            val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                backend.importPending(draft, null, {}, activate = false, diagnosticOp = null)
+            }
+            entered.await()
+            candidate = backend.created.single()
+            job.cancelAndJoin()
+        }
+
+        val gone = candidate!!
+        assertEquals(null, backend.queryByUUID(gone))
+        assertEquals(managed, backend.queryByUUID(managed)?.uuid)
+        assertTrue(backend.activated.isEmpty())
+    }
+
     /**
-     * #87 mutation check: resume without the recorded UUID is a second create.
-     * The protection is [recordCreatedUuid] writing reuse before bind.
+     * Product import always mints a fresh UUID; a second call is a new attempt.
      */
     @Test
     fun resumeWithoutRecordedUuid_createsSecondProfile() = runBlocking {

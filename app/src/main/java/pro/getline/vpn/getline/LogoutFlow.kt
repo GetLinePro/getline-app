@@ -15,7 +15,6 @@ internal class LogoutFlow(
     private val backend: GetLineBackend,
     private val sessionRepository: GetLineSessionRepository,
     private val host: Host,
-    private val resetImports: suspend () -> Unit = GetLineImportCoordinator::reset,
 ) {
     interface Host {
         /** Cancel/clear Activity-owned account work after persisted session state changes. */
@@ -38,17 +37,14 @@ internal class LogoutFlow(
     /**
      * Runs one confirmed teardown.
      *
-     * Common prefix: stop VPN, then fence process-scoped import before reading
-     * cleanup state. RemoveSubscription keeps the session until every owned
-     * profile is gone. SignOut drops tokens first so a late account import cannot
-     * repopulate the binding, but keeps that binding until deletion is proven.
+     * Common prefix: stop VPN, then read cleanup state. RemoveSubscription keeps
+     * the session until every owned profile is gone. SignOut drops tokens first so
+     * a late account import cannot repopulate the binding, but keeps that binding
+     * until deletion is proven.
      */
     suspend fun perform(action: Action): Outcome {
         // Always request stop: running may still be false while a start is in flight.
         backend.vpn.stop()
-        withContext(NonCancellable) {
-            resetImports()
-        }
 
         val managedUuid = sessionRepository.managedProfileUuid()
         return when (action) {

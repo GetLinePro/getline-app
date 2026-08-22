@@ -19,7 +19,6 @@ internal data class SessionRoutingSnapshot(
     val storeOk: Boolean = false,
     val hasSession: Boolean = false,
     val hasManagedProfile: Boolean = false,
-    val hasPendingImport: Boolean = false,
     /** Encrypted session was unreadable and was reset once during this launch. */
     val sessionStorageRecovered: Boolean = false,
     /** Usable encrypted backend: enc|na. */
@@ -110,17 +109,6 @@ internal object StartupRoutingPolicy {
             )
         }
 
-        // In-flight durable import (first-time or UseAccount) resumes on Onboarding.
-        // Checked before managed-profile → Home so a mid-import cold start does not
-        // drop the pending UseAccount orphan-cleanup payload.
-        if (snapshot.hasPendingImport) {
-            return LaunchRoute(
-                target = LaunchTarget.Onboarding,
-                reason = "pending_import",
-                snapshot = snapshot,
-            )
-        }
-
         // Managed binding wins. Do NOT force Onboarding solely because the post-login
         // step is incomplete (session + still-link-only): permanent failures
         // (no importable subscription / offline) would trap a working VPN profile
@@ -137,8 +125,7 @@ internal object StartupRoutingPolicy {
         return when (val imported = hasImported()) {
             // This query is the clean-install vs dead-:background discriminator.
             // Skipping it would make backend failure look like an empty app.
-            // Managed / pending already branched above. Remaining local signal is
-            // session.
+            // Managed already branched above. Remaining local signal is session.
             //
             // #98: empty local + dead backend must not open Home ("service down" is a
             // dead end on clean install). Session without managed → Home recoverable:

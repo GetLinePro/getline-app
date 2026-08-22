@@ -234,13 +234,12 @@ private class CmfaGetLineSubscriptionRepository(
 
     override suspend fun importAndCommit(
         draft: GetLineSubscriptionDraft,
-        reuseId: GetLineSubscriptionId?,
         onProgress: suspend (GetLineImportStage) -> Unit,
     ): GetLineBackendResult<GetLineSubscriptionId> {
         val op = UUID.randomUUID().toString().take(8)
         val startedAt = SystemClock.elapsedRealtime()
         var unavailableKind = "unknown"
-        Log.i("profile_import start op=$op reuse=${if (reuseId == null) 0 else 1}")
+        Log.i("profile_import start op=$op")
 
         val result = try {
             callProfileBackend(
@@ -251,7 +250,7 @@ private class CmfaGetLineSubscriptionRepository(
                     Log.i("profile_import stage=remote_acquired op=$op")
                     importPending(
                         draft = draft,
-                        reuseId = reuseId,
+                        reuseId = null,
                         onProgress = onProgress,
                         activate = false,
                         diagnosticOp = op,
