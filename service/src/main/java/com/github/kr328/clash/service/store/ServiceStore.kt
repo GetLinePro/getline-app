@@ -20,6 +20,25 @@ class ServiceStore(context: Context) {
         to = { it?.toString() ?: "" }
     )
 
+    var deviceId: String by store.string(
+        key = "device_id",
+        defaultValue = ""
+    )
+
+    /**
+     * App-scoped HWID: persist a random UUID on first use.
+     * Read-after-write: if the store is still blank after generate, return blank
+     * so callers omit the header rather than mint a one-shot in-memory id.
+     */
+    fun getOrCreateDeviceId(): String {
+        val existing = deviceId
+        if (existing.isNotBlank()) {
+            return existing
+        }
+        deviceId = UUID.randomUUID().toString()
+        return deviceId.takeIf { it.isNotBlank() } ?: ""
+    }
+
     var bypassPrivateNetwork: Boolean by store.boolean(
         key = "bypass_private_network",
         defaultValue = true

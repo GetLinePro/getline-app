@@ -2,6 +2,7 @@ package com.github.kr328.clash.service
 
 import android.content.Context
 import android.net.Network
+import android.os.Build
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,6 +38,7 @@ class PrimaryConfigDownloaderTest {
 
     private companion object {
         const val CONTRACT_VERSION = "9.9.9.Contract"
+        const val SEEDED_HWID = "550e8400-e29b-41d4-a716-446655440000"
     }
 
     @Before
@@ -636,6 +638,7 @@ class PrimaryConfigDownloaderTest {
             openConnection = opener,
             pickNetwork = { network },
             elapsedRealtime = { now },
+            readDeviceId = { SEEDED_HWID },
         )
 
         downloader.download(
@@ -663,6 +666,7 @@ class PrimaryConfigDownloaderTest {
             openConnection = opener,
             pickNetwork = { network },
             elapsedRealtime = { now },
+            readDeviceId = { SEEDED_HWID },
         )
 
         val error = expectIOException {
@@ -694,6 +698,65 @@ class PrimaryConfigDownloaderTest {
     }
 
     @Test
+    fun seededDeviceId_sendsHwidAndDisplayHeaders() = runBlocking {
+        val opener = RecordingOpener(Response(body = "rules: []\n"))
+
+        downloader(opener, readDeviceId = { SEEDED_HWID }).download(
+            context,
+            "https://example.com/sub",
+            temporaryDirectory = temporaryFolder.newFolder("hwid-seeded"),
+        ).use { }
+
+        assertHwidHeaders(opener.connections.single(), SEEDED_HWID)
+        assertEquals(
+            expectedUserAgent(),
+            opener.connections.single().requestHeader("User-Agent"),
+        )
+    }
+
+    @Test
+    fun blankDeviceId_omitsHwidAndDisplayHeaders() = runBlocking {
+        val opener = RecordingOpener(Response(body = "rules: []\n"))
+
+        downloader(opener, readDeviceId = { "" }).download(
+            context,
+            "https://example.com/sub",
+            temporaryDirectory = temporaryFolder.newFolder("hwid-omit"),
+        ).use { }
+
+        assertNoHwidHeaders(opener.connections.single())
+        assertEquals(
+            expectedUserAgent(),
+            opener.connections.single().requestHeader("User-Agent"),
+        )
+    }
+
+    @Test
+    fun hwidHeaders_followUserAgentAcrossPortChangingRedirect() = runBlocking {
+        val opener = RecordingOpener(
+            Response(
+                code = 302,
+                headers = mapOf("Location" to "https://example.com:8443/final"),
+            ),
+            Response(body = "rules: []\n"),
+        )
+
+        downloader(opener, readDeviceId = { SEEDED_HWID }).download(
+            context,
+            "https://user:password@example.com:443/start",
+            temporaryDirectory = temporaryFolder.newFolder("hwid-port-redirect"),
+        ).use { }
+
+        assertEquals(2, opener.connections.size)
+        opener.connections.forEach { assertHwidHeaders(it, SEEDED_HWID) }
+        assertEquals(
+            "Basic dXNlcjpwYXNzd29yZA==",
+            opener.connections[0].requestHeader("Authorization"),
+        )
+        assertNull(opener.connections[1].requestHeader("Authorization"))
+    }
+
+    @Test
     fun oneDeadline_coversConnectionAndResponse() = runBlocking {
         var now = 0L
         val opener = RecordingOpener(Response(onConnect = { now = 60_001L }))
@@ -701,6 +764,7 @@ class PrimaryConfigDownloaderTest {
             openConnection = opener,
             pickNetwork = { null },
             elapsedRealtime = { now },
+            readDeviceId = { SEEDED_HWID },
         )
 
         try {
@@ -727,11 +791,27 @@ class PrimaryConfigDownloaderTest {
     private fun downloader(
         opener: RecordingOpener,
         network: Network? = null,
+        readDeviceId: (Context) -> String = { SEEDED_HWID },
     ) = PrimaryConfigDownloader(
         openConnection = opener,
         pickNetwork = { network },
         elapsedRealtime = { 0L },
+        readDeviceId = readDeviceId,
     )
+
+    private fun assertHwidHeaders(connection: FakeConnection, hwid: String) {
+        assertEquals(hwid, connection.requestHeader("x-hwid"))
+        assertEquals("Android", connection.requestHeader("x-device-os"))
+        assertEquals(Build.VERSION.RELEASE, connection.requestHeader("x-ver-os"))
+        assertEquals(Build.MODEL, connection.requestHeader("x-device-model"))
+    }
+
+    private fun assertNoHwidHeaders(connection: FakeConnection) {
+        assertNull(connection.requestHeader("x-hwid"))
+        assertNull(connection.requestHeader("x-device-os"))
+        assertNull(connection.requestHeader("x-ver-os"))
+        assertNull(connection.requestHeader("x-device-model"))
+    }
 
     private suspend fun expectIOException(block: suspend () -> Unit): IOException {
         return try {

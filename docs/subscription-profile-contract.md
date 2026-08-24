@@ -1,6 +1,7 @@
 # GetLine subscription profile contract
 
-**Decided:** 2026-08-11, restated 2026-08-13. **Status:** in effect. Issue #26.
+**Decided:** 2026-08-11, restated 2026-08-13. HWID request headers: 2026-08-25.
+**Status:** in effect. Issue #26.
 
 How the client asks for a profile, which response markers identify the GetLine
 variant, and what happens when the panel answers with something else.
@@ -25,6 +26,29 @@ The token selects a format. It is not authentication and not a trust boundary.
 HTTPS URL profiles use the Kotlin downloader (`PrimaryConfigDownloader`). Other
 schemes, and rule/proxy providers, go through `core/.../native/config/fetch.go`.
 Providers ignore this User-Agent.
+
+## Device identifier
+
+Primary HTTPS fetch also sends Remnawave HWID headers:
+
+```http
+x-hwid: <app-generated UUID>
+x-device-os: Android
+x-ver-os: <Build.VERSION.RELEASE>
+x-device-model: <Build.MODEL>
+```
+
+`x-hwid` is a random UUID generated once in the app and stored in service
+preferences. It is not derived from `ANDROID_ID` or any other device identifier.
+If the stored value is blank after generate-and-persist, all four headers are
+omitted for that request.
+
+These headers follow `User-Agent` on redirects: sent on every allowed hop
+(same host; cross-host is rejected). They are not gated on same-origin
+(host+port) like `Authorization` / `If-None-Match`.
+
+Do not log the HWID value. Rule/proxy provider fetch (`fetch.go`) does not send
+these headers.
 
 ## Response markers
 
