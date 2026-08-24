@@ -4,10 +4,12 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.Uri
+import android.os.Build
 import android.os.SystemClock
 import android.util.Base64
 import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.common.network.UnderlyingNetworkSelector
+import com.github.kr328.clash.service.store.ServiceStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.Closeable
@@ -76,6 +78,7 @@ internal class PrimaryConfigDownloader(
         ::openPrimaryConfigConnection,
     private val pickNetwork: (Context) -> Network? = ::pickUnderlyingNetwork,
     private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
+    private val readDeviceId: (Context) -> String = { ServiceStore(it).getOrCreateDeviceId() },
 ) {
     suspend fun download(
         context: Context,
@@ -92,6 +95,7 @@ internal class PrimaryConfigDownloader(
         val deadline = elapsedRealtime() + TIMEOUT_MS
         val underlying = pickNetwork(context)
         val userAgent = userAgent(context)
+        val deviceId = readDeviceId(context)
         val authorization = basicAuthorization(initialUrl)
         val condition = usableEtag(ifNoneMatch)
 
@@ -103,6 +107,7 @@ internal class PrimaryConfigDownloader(
                 deadline,
                 BOUND_CONNECT_TIMEOUT_MS.takeIf { underlying != null },
                 userAgent,
+                deviceId,
                 authorization,
                 condition,
             )
@@ -122,6 +127,7 @@ internal class PrimaryConfigDownloader(
                     deadline,
                     null,
                     userAgent,
+                    deviceId,
                     authorization,
                     condition,
                 )
@@ -138,6 +144,7 @@ internal class PrimaryConfigDownloader(
         deadline: Long,
         connectTimeoutLimit: Int?,
         userAgent: String,
+        deviceId: String,
         authorization: String?,
         ifNoneMatch: String?,
     ): PrimaryConfigFetchResult {
@@ -155,6 +162,7 @@ internal class PrimaryConfigDownloader(
                     deadline,
                     connectTimeoutLimit,
                     userAgent,
+                    deviceId,
                     authorization.takeIf { sameOriginHop },
                     conditionForHop,
                 )
@@ -243,6 +251,7 @@ internal class PrimaryConfigDownloader(
         deadline: Long,
         connectTimeoutLimit: Int?,
         userAgent: String,
+        deviceId: String,
         authorization: String?,
         ifNoneMatch: String?,
     ) {
@@ -255,6 +264,12 @@ internal class PrimaryConfigDownloader(
         connection.doInput = true
         connection.instanceFollowRedirects = false
         connection.setRequestProperty("User-Agent", userAgent)
+        if (deviceId.isNotBlank()) {
+            connection.setRequestProperty("x-hwid", deviceId)
+            connection.setRequestProperty("x-device-os", "Android")
+            connection.setRequestProperty("x-ver-os", Build.VERSION.RELEASE)
+            connection.setRequestProperty("x-device-model", Build.MODEL)
+        }
         if (authorization != null) {
             connection.setRequestProperty("Authorization", authorization)
         }

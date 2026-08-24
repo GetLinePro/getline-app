@@ -1,6 +1,6 @@
 ## Privacy Policy — GetLine VPN (Android)
 
-**Last updated:** 2026-07-30
+**Last updated:** 2026-08-25
 
 This document describes how the **GetLine VPN** Android app handles information. It applies to the mobile client (`pro.getline.vpn`). The broader GetLine online service is also covered by the service policy at [https://getline.pro/privacy.html](https://getline.pro/privacy.html).
 
@@ -33,7 +33,7 @@ These items stay on the device unless you export them, share them, or trigger a 
 **Over the network**
 
 1. **Subscription / profile refresh**  
-   When you add or update a subscription, the app requests the subscription URL you provided (typically a GetLine provider endpoint). The request may include a standard client identifier for compatibility. The response can include proxy nodes and optional subscription metadata (for example traffic counters or expiry from the `subscription-userinfo` header).
+   When you add or update a subscription, the app requests the subscription URL you provided (typically a GetLine provider endpoint). The request includes a standard client identifier (`User-Agent`) for compatibility. On that same request the app may send an app-generated device identifier — a random GUID created and stored locally, not derived from the device, hardware, or your account — plus OS and model strings, so the GetLine panel can count this installation against the subscription device limit. This is not analytics. The response can include proxy nodes and optional subscription metadata (for example traffic counters or expiry from the `subscription-userinfo` header).
 
 2. **VPN traffic**  
    While connected, application network traffic is carried through the VPN tunnel to the nodes and routes defined by your profile. Operators of those nodes (and any destination sites) may see connection metadata and content according to the protocols in use. GetLine service-side handling of accounts and payments is described in the service privacy policy.
