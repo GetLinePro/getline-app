@@ -38,9 +38,11 @@ SSH outbound is tracked as **three separate layers** (see applicability doc):
 | **Required enforcement** | **Done via parent-tracked patch** `core/patches/mihomo/0001-…` + `no_ssh` tag (not a published submodule SHA). |
 | **Current state** | After `apply-mihomo-patches.sh` (CI/Gradle/README): `type: ssh` rejected; real adapter not in product `libclash`. Clean gitlink alone is insufficient. |
 
-Residual after enforcement: confirm shipped `libclash.so` (R3); re-open fork parity /
-host-key trust only if SSH is re-enabled. Keep patch applying on every clean submodule update.
-CVE-2025-22870 is closed in the product module graph (`x/net` ≥0.36.0).
+Residual after enforcement: R3 artifact check is done (`scripts/check-libclash-artifact-gate.sh`
+on the just-built `libclash.so`); re-open fork parity / host-key trust only if SSH
+is re-enabled. Keep patch applying on every clean submodule update.
+CVE-2025-22870 is closed because the shipped `.so` resolves `golang.org/x/net`
+to ≥ `v0.36.0` (currently `v0.55.0`), not because environment proxy is unused.
 
 Without that table (or an updated successor), this risk acceptance is **void for
 production/Play**.
@@ -82,7 +84,7 @@ Approximate picture from the first aggregated Android-core report
 | --- | --- |
 | SCA findings listed in `osv-baseline.json` | Accepted as **known upstream risk** until dependency upgrade or replacement |
 | SAST findings in `semgrep-baseline.json` (strcpy in JNI bridge, `unsafe` in native Go, debug pprof/http in native debug helpers) | Accepted as **known native/upstream patterns** for this spike; not expanded without review |
-| Android-core subset of SCA | **Spike-only** bulk accept; track via `osv-android-core.md` + **`ANDROID-CORE-SCA-APPLICABILITY.md`**. SSH enforcement landed (`no_ssh`); CVE-2025-22870 fixed by product `x/net` pin (≥0.36.0, currently 0.55.0). Remaining production gate item: R3 artifact check. |
+| Android-core subset of SCA | **Spike-only** bulk accept; track via `osv-android-core.md` + **`ANDROID-CORE-SCA-APPLICABILITY.md`**. SSH enforcement landed (`no_ssh`); R3 artifact gate landed (`scripts/check-libclash-artifact-gate.sh`). CVE-2025-22870 closed by shipped `x/net` ≥0.36.0 (currently 0.55.0 on `libclash.so`). |
 
 ## What is **not** accepted
 

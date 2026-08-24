@@ -404,12 +404,21 @@ jobs:
           ./gradlew --no-daemon app:assembleAlphaProdRelease
           df -h / | tail -1
 
+      - name: Verify libclash.so artifact gate (alpha)
+        run: |
+          ./scripts/check-libclash-artifact-gate.sh \
+            core/build/outputs/golang/alphaRelease/arm64-v8a/libclash.so \
+            core/build/outputs/golang/alphaRelease/armeabi-v7a/libclash.so \
+            core/build/outputs/golang/alphaRelease/x86/libclash.so \
+            core/build/outputs/golang/alphaRelease/x86_64/libclash.so
+
       # Off by default. Nothing consumes this artifact yet: the app is not on
       # Play, and F-Droid rebuilds metaProdRelease from the tag itself. The Play
       # shape is already validated on every push to main by build-pre-release
       # (unsigned bundleMetaProdRelease + lint), so building it again here only
       # doubled the peak disk usage — which is what ran the runner out of space.
       - name: Release build — signed meta AAB
+        id: meta_aab
         # act 0.2.89 does not populate the typed inputs context for this boolean,
         # but does preserve it in the event payload. Keep that compatibility
         # path ACT-only; GitHub continues to use the typed workflow input.
@@ -418,6 +427,17 @@ jobs:
           df -h / | tail -1
           du -xhd1 "$GITHUB_WORKSPACE" "$HOME/.gradle" 2>/dev/null | sort -h | tail -8
           ./gradlew --no-daemon app:lintMetaProdRelease app:bundleMetaProdRelease
+
+      # Follow the build step, not a second copy of the build_aab expression:
+      # skipped AAB must not look for .so this run never wrote.
+      - name: Verify libclash.so artifact gate (meta)
+        if: ${{ success() && steps.meta_aab.outcome == 'success' }}
+        run: |
+          ./scripts/check-libclash-artifact-gate.sh \
+            core/build/outputs/golang/metaRelease/arm64-v8a/libclash.so \
+            core/build/outputs/golang/metaRelease/armeabi-v7a/libclash.so \
+            core/build/outputs/golang/metaRelease/x86/libclash.so \
+            core/build/outputs/golang/metaRelease/x86_64/libclash.so
 
       - name: Verify signatures and collect audit data
         id: audit

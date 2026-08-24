@@ -96,7 +96,7 @@ Build tags match `core/build.gradle.kts`: `foss`, `with_gvisor`, `cmfa`, `no_ssh
 | CVE-2026-39835 | MEDIUM | x/crypto@0.33 | absent | server panic (CheckHostKey/Authenticate) | unavailable | `not_affected_by_reported_package`; `not_affected_by_shipped_operation` |
 | CVE-2026-46598 | MEDIUM | x/crypto@0.33 | absent | agent client panic | unavailable | `not_affected_by_reported_package`; `not_affected_by_shipped_operation` |
 | CVE-2025-22872 | MEDIUM | x/net (was @0.35) | html **absent** | HTML tokenizer / DOM | unavailable | `not_affected_by_shipped_operation`; product graph now `x/net@0.55.0` |
-| CVE-2025-22870 | MEDIUM | x/net (was @0.35) | httpproxy **linked** | NO_PROXY / IPv6 zone matching | optional (env proxy; not core VPN UX) | `fixed_upstream_in_current_tree` — product modules pin `golang.org/x/net v0.55.0` (≥0.36.0) |
+| CVE-2025-22870 | MEDIUM | x/net (was @0.35) | httpproxy **linked** (graph) | NO_PROXY / IPv6 zone matching | optional (env proxy; not core VPN UX) | `fixed_upstream_in_current_tree` — shipped `libclash.so` resolves `golang.org/x/net` to `v0.55.0` (fix ≥0.36.0). Module buildinfo is not a package inventory. |
 
 ---
 
@@ -155,11 +155,25 @@ Historical design risk in `ssh.go` (default `InsecureIgnoreHostKey()` unless fin
 
 If SSH is product-supported later: require fingerprints / known_hosts and fail closed.
 
-### R3 — Artifact vs `go list`
+### R3 — Artifact vs `go list` (closed)
 
-Applicability above is from module graph + tags, not from `nm`/`libclash.so`
-manifest. Production gate should confirm the shipped artifact matches (no
-`metacubex/ssh` symbols when built with product tags).
+`go list` is the graph gate (`scripts/verify-mihomo-gate.sh`). The shipped
+binary is checked separately by `scripts/check-libclash-artifact-gate.sh`
+against **explicit** `libclash.so` paths (CI passes the files this run built;
+no glob of a cache).
+
+On the artifact, `go version -m` must show:
+
+- build setting `-tags=` includes `no_ssh`
+- module `github.com/metacubex/ssh` absent
+- module `golang.org/x/net` present at ≥ `v0.36.0`
+
+`go version -m` lists **modules and build settings**, not a package inventory.
+It does not by itself prove that `golang.org/x/net/http/httpproxy` was linked.
+
+`strings` must contain the `no_ssh` stub marker and must not contain
+`github.com/metacubex/ssh` or `golang.org/x/crypto/ssh`. The stub marker keeps
+the negative SSH check from going vacuous if upstream moves SSH.
 
 ---
 
@@ -168,17 +182,21 @@ manifest. Production gate should confirm the shipped artifact matches (no
 | Stage | Stance |
 | --- | --- |
 | **Spike** | Bulk acceptance of baselined SCA remains acceptable; this table replaces informal “all android-core OK”. |
-| **Play / production** | Gate base: SSH enforcement done; CVE-2025-22870 fixed by `x/net` pin. Remaining open item: R3 artifact check. |
+| **Play / production** | Gate base: SSH enforcement done; CVE-2025-22870 closed by shipped `x/net` ≥0.36.0; R3 artifact check done (`scripts/check-libclash-artifact-gate.sh`). |
 
 ### Minimum production gate
 
 1. **Decision (done):** SSH outbound is not a planned product path.  
 2. **Enforcement (done):** `no_ssh` build tag on Android flavors; stub rejects config; fork not linked under product tags.  
 3. **If SSH re-enabled:** patch-parity review of the historical 4 (+ optional 2) against **`metacubex/ssh`**, plus host-key trust model (R2).  
-4. Confirm analysis against final **`libclash.so` / build manifest** (R3).  
-5. **CVE-2025-22870 (done):** product modules `core/src/main/golang` and `core/src/foss/golang` pin `golang.org/x/net v0.55.0` (fix ≥0.36.0). Verified: `go list -tags foss,with_gvisor,cmfa,no_ssh -deps` resolves `golang.org/x/net/http/httpproxy` to `v0.55.0`. The mihomo submodule `clash/go.mod` may still *declare* `v0.35.0` for upstream mergeability; MVS from the product modules selects `0.55.0`. Do not treat the submodule floor alone as the shipped version.
+4. **R3 (done):** `scripts/check-libclash-artifact-gate.sh` on the just-built `libclash.so` files.
+5. **CVE-2025-22870 (done):** shipped `libclash.so` resolves `golang.org/x/net` to `v0.55.0`; the advisory is fixed starting with `v0.36.0`. Therefore the vulnerable `x/net` implementation is not present in the shipped artifact. Enforced by the artifact gate (module version on the `.so`, not `clash/go.mod` floor). The submodule may still declare `v0.35.0` for mergeability; do not treat that floor as the shipped version.
 
-**Most important remaining work is not another OSV run for SSH** — confirm R3 on the shipped `.so`.
+   Exposure note: Android `VpnService.setHttpProxy` and its bypass list
+   (`TunService`) are a different mechanism. Go `httpproxy` is environment
+   proxy processing (`HTTP_PROXY` / `NO_PROXY`). Product config does not set
+   those variables, which reduces reachability, but this CVE is closed by the
+   fixed `x/net` version in the `.so`, not by that assumption.
 
 ---
 
@@ -211,6 +229,10 @@ git submodule update --init --recursive --force
 # Stub rejects NewSsh
 (cd core/src/foss/golang/clash && \
   go test -tags 'foss,with_gvisor,cmfa,no_ssh' ./adapter/outbound/ -run TestNewSshDisabled -count=1)
+
+# Shipped .so (R3): pass the files this build produced, not a cache glob
+./scripts/check-libclash-artifact-gate.sh \
+  core/build/outputs/golang/alphaRelease/arm64-v8a/libclash.so
 
 # SCA priority table (writes gitignored security/reports/)
 ./scripts/security/run-sca.sh
