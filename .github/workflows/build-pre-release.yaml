@@ -60,6 +60,15 @@ jobs:
         if: success()
         run: ./gradlew --no-daemon app:lintMetaProdRelease app:bundleMetaProdRelease
 
+      - name: Verify libclash.so artifact gate
+        if: success()
+        run: |
+          ./scripts/check-libclash-artifact-gate.sh \
+            core/build/outputs/golang/metaRelease/arm64-v8a/libclash.so \
+            core/build/outputs/golang/metaRelease/armeabi-v7a/libclash.so \
+            core/build/outputs/golang/metaRelease/x86/libclash.so \
+            core/build/outputs/golang/metaRelease/x86_64/libclash.so
+
       - name: Confirm AAB is unsigned
         if: success()
         run: |
