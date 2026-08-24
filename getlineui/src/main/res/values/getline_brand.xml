@@ -17,10 +17,11 @@
     <!-- Dark ink on cyan primary (~7.7:1). White on #22B8CF is only ~2.4:1. -->
     <color name="getline_brand_on_primary">#141517</color>
     <!--
-      Floating shell bar. Near-opaque (~96%): at 80% the server list scrolled
-      underneath stayed legible through it and read as garbage.
+      Bottom shell dock. Fully opaque, same as getline_brand_surface: even the
+      4% left over at #F51A1C1F let scrolled server rows read through it.
+      Chrome, not a content card — no depth to fake with translucency.
     -->
-    <color name="getline_shell_bar_background">#F51A1C1F</color>
+    <color name="getline_shell_bar_background">@color/getline_brand_surface</color>
 
     <!--
       Hairline separators / card outlines. Neutral white at low alpha, NOT brand

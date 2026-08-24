@@ -31,7 +31,7 @@
     </item>
 
     <!-- Green wash, bottom-end. Pulled off the very corner so it stays visible
-         above the translucent shell bar on Home. -->
+         above the opaque shell dock on Home. -->
     <item>
         <shape
             android:dither="true"

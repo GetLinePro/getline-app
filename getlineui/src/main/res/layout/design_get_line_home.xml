@@ -881,21 +881,25 @@
             </LinearLayout>
         </ScrollView>
 
-        <!-- Floating translucent bottom shell bar (padding hosts system nav inset). -->
+        <!--
+          Opaque bottom dock: solid edge-to-edge, continuing under the system
+          navigation area (paddingBottom hosts the inset) so the same surface
+          reaches the screen edge instead of leaving a transparent gap there.
+          The background lives on this outer container, not the tab row, so it
+          paints across the inset padding too — no separate strip behind the
+          system buttons.
+        -->
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
-            android:paddingStart="@dimen/get_line_shell_bar_margin_horizontal"
-            android:paddingEnd="@dimen/get_line_shell_bar_margin_horizontal"
-            android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_shell_bar_margin_bottom}">
+            android:background="@drawable/bg_getline_shell_bar"
+            android:paddingBottom="@{self.surface.insets.bottom}">
 
             <LinearLayout
                 android:id="@+id/shell_bar"
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/get_line_shell_bar_height"
-                android:background="@drawable/bg_getline_shell_bar"
-                android:elevation="6dp"
                 android:orientation="horizontal"
                 android:paddingTop="8dp"
                 android:paddingBottom="8dp">
