@@ -3,6 +3,7 @@ package com.github.kr328.clash.service.clash.module
 import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import androidx.core.content.getSystemService
 import com.github.kr328.clash.core.Clash
 import com.github.kr328.clash.core.util.parseInetSocketAddress
@@ -14,7 +15,6 @@ import java.security.SecureRandom
 
 class TunModule(private val vpn: VpnService) : Module<Unit>(vpn) {
     data class TunDevice(
-        val fd: Int,
         var stack: String,
         val gateway: String,
         val portal: String,
@@ -23,6 +23,7 @@ class TunModule(private val vpn: VpnService) : Module<Unit>(vpn) {
 
     private val connectivity = service.getSystemService<ConnectivityManager>()!!
     private val close = Channel<Unit>(Channel.CONFLATED)
+    private var httpProxyAddress: InetSocketAddress? = null
 
     private fun queryUid(
         protocol: Int,
@@ -47,16 +48,18 @@ class TunModule(private val vpn: VpnService) : Module<Unit>(vpn) {
     }
 
     fun listenHttp(): InetSocketAddress? {
+        httpProxyAddress?.let { return it }
+
         val r = { 1 + random.nextInt(199) }
         val listenAt = "127.${r()}.${r()}.${r()}:0"
         val address = Clash.startHttp(listenAt)
 
-        return address?.let(::parseInetSocketAddress)
+        return address?.let(::parseInetSocketAddress).also { httpProxyAddress = it }
     }
 
-    fun attach(device: TunDevice) {
+    fun attach(pfd: ParcelFileDescriptor, device: TunDevice) {
         Clash.startTun(
-            fd = device.fd,
+            fd = pfd.detachFd(),
             stack = device.stack,
             gateway = device.gateway,
             portal = device.portal,

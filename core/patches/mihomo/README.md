@@ -8,6 +8,7 @@ git submodule (`MetaCubeX/mihomo`).
 | `0001-disable-ssh-outbound-no_ssh.patch` | Security gate: build tag `no_ssh` + stub; unlink product SSH outbound |
 | `0002-restrict-subscription-redirects.patch` | Subscription/HTTP fetch: same-host redirects only; reject HTTPS→HTTP; trailing-dot host canonicalize + tests |
 | `0003-discard-logrus-output-under-cmfa.patch` | GL-04: under `cmfa`, logrus `Out` → `io.Discard` via `productLogOutput()` build tags; event bus kept for in-app log |
+| `0004-close-tun-fd-before-tunnew.patch` | VpnService fd: close on `sing_tun.New` error before `tunNew`; after `tunNew`, `Listener.Close` owns it |
 
 ## Why not a submodule commit?
 
@@ -92,7 +93,7 @@ Expected footprint after all product patches:
 
 | Kind | Paths |
 | --- | --- |
-| dirty tracked | `adapter/outbound/ssh.go`, `constant/features/tags.go`, `component/http/http.go`, `log/log.go` |
+| dirty tracked | `adapter/outbound/ssh.go`, `constant/features/tags.go`, `component/http/http.go`, `log/log.go`, `listener/sing_tun/server.go` |
 | untracked | `adapter/outbound/ssh_stub.go`, `ssh_stub_test.go`, `constant/features/no_ssh.go`, `no_ssh_stub.go`, `component/http/http_redirect_test.go`, `log/output_cmfa.go`, `log/output_default.go`, `log/output_cmfa_test.go` |
 
 Do **not** commit those paths inside the Mihomo submodule. Refresh

@@ -1,0 +1,49 @@
+From: GetLine maintainers
+Subject: [PATCH] close VpnService fd on sing_tun.New error before tunNew
+
+Parent-tracked patch for the clash-foss (Mihomo) submodule.
+Applied after `git submodule update` by scripts/apply-mihomo-patches.sh
+(and core Gradle Golang build). Do not rely on a dirty submodule working tree.
+
+Upstream gitlink remains MetaCubeX/mihomo @ recorded SHA; this product
+change is intentionally not pushed to upstream.
+
+Android VpnService passes a FileDescriptor into sing_tun.New. Errors before
+tunNew (NewListenerHandler, buildAndroidRules / package manager) returned
+without closing it: Listener.Close sees tunIf == nil. Later errors after
+tunNew already close the fd via tunIf, so a blanket close on every New
+error is a double-close race.
+
+This guard closes the raw fd only until tunNew takes it.
+
+Applies with: git -C core/src/foss/golang/clash apply -p1 < this file
+(or via scripts/apply-mihomo-patches.sh)
+
+---
+diff --git a/listener/sing_tun/server.go b/listener/sing_tun/server.go
+index 3e5ef591..fa3f05b4 100644
+--- a/listener/sing_tun/server.go
++++ b/listener/sing_tun/server.go
+@@ -134,6 +134,14 @@ func checkTunName(tunName string) (ok bool) {
+ }
+ 
+ func New(options LC.Tun, tunnel C.Tunnel, additions ...inbound.Addition) (l *Listener, err error) {
++	tunFd := options.FileDescriptor
++	tunFdReleased := false
++	defer func() {
++		if err != nil && !tunFdReleased && tunFd > 0 {
++			_ = os.NewFile(uintptr(tunFd), "tun").Close()
++		}
++	}()
++
+ 	if len(additions) == 0 {
+ 		additions = []inbound.Addition{
+ 			inbound.WithInName("DEFAULT-TUN"),
+@@ -480,6 +488,7 @@ func New(options LC.Tun, tunnel C.Tunnel, additions ...inbound.Addition) (l *Lis
+ 		err = E.Cause(err, "configure tun interface")
+ 		return
+ 	}
++	tunFdReleased = true
+ 
+ 	l.dnsServerIp = dnsServerIp
+ 	// after tun.New sing-tun has set DNS to TUN interface

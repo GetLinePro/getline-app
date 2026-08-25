@@ -73,7 +73,7 @@ object Clash {
         markSocket: (Int) -> Boolean,
         querySocketUid: (protocol: Int, source: InetSocketAddress, target: InetSocketAddress) -> Int
     ) {
-        Bridge.nativeStartTun(fd, stack, gateway, portal, dns, object : TunInterface {
+        val started = Bridge.nativeStartTun(fd, stack, gateway, portal, dns, object : TunInterface {
             override fun markSocket(fd: Int) {
                 markSocket(fd)
             }
@@ -86,6 +86,9 @@ object Clash {
                 )
             }
         })
+        if (!started) {
+            throw ClashException("start tun failed")
+        }
     }
 
     fun stopTun() {

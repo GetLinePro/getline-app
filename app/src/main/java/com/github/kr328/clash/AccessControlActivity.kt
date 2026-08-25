@@ -10,10 +10,8 @@ import com.github.kr328.clash.design.AccessControlDesign
 import com.github.kr328.clash.design.model.AppInfo
 import com.github.kr328.clash.design.util.toAppInfo
 import com.github.kr328.clash.service.store.ServiceStore
-import com.github.kr328.clash.util.startClashService
-import com.github.kr328.clash.util.stopClashService
+import com.github.kr328.clash.service.util.sendTunPolicyReconcile
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
@@ -36,12 +34,8 @@ class AccessControlActivity : BaseActivity<AccessControlDesign>() {
                 val changed = selected != service.accessControlPackages ||
                     initialMode != service.accessControlMode
                 service.accessControlPackages = selected
-                if (clashRunning && changed) {
-                    stopClashService()
-                    while (clashRunning) {
-                        delay(200)
-                    }
-                    startClashService()
+                if (changed) {
+                    sendTunPolicyReconcile()
                 }
             }
         }

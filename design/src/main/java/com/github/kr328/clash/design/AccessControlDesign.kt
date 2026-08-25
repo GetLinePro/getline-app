@@ -127,8 +127,8 @@ class AccessControlDesign(
      * Routing mode above the list.
      *
      * Writes straight through to [ServiceStore]; the tunnel is not re-established
-     * here. AccessControlActivity does that once on the way out, so a user still
-     * making up their mind does not drop the connection on every tap.
+     * here. AccessControlActivity requests a TUN reconcile on the way out, so a
+     * user still making up their mind does not rebuild the interface on every tap.
      *
      * The initial check is applied before the listener so restoring the stored
      * mode is not treated as a user change.

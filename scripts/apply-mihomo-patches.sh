@@ -75,11 +75,18 @@ LOGRUS_CMFA_NEW_FILES=(
   "log/output_cmfa_test.go"
 )
 
+# Paths from 0004-close-tun-fd-before-tunnew.patch
+TUN_FD_TRACKED=(
+  "listener/sing_tun/server.go"
+)
+TUN_FD_NEW_FILES=()
+
 # Full product patch footprint (exact-tree verify + leftover recovery).
 PRODUCT_TRACKED=(
   "${SSH_GATE_TRACKED[@]}"
   "${REDIRECT_TRACKED[@]}"
   "${LOGRUS_CMFA_TRACKED[@]}"
+  "${TUN_FD_TRACKED[@]}"
 )
 PRODUCT_NEW_FILES=(
   "${SSH_GATE_NEW_FILES[@]}"

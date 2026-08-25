@@ -247,3 +247,42 @@ to. Contract: `docs/subscription-profile-contract.md`.
 
 - Fail closed on a missing GetLine marker.
 - Bump the schema and serve it to clients that cannot apply the new proxy type.
+
+---
+
+## TUN policy is reconciled in-process, not by restarting FGS
+
+**Decided:** 2026-08-25. **Status:** in effect.
+
+A running `TunService` applies the latest desired `AccessControlPlan` by
+rebuilding the Android VPN interface and attaching it to native. The foreground
+service is not stopped and started. `AccessControlActivity` writes the store and
+sends a self-broadcast; it does not wait for `clashRunning`.
+
+Requests are service-owned and conflated. The receiver is registered before the
+initial reconcile request. The request carries no plan snapshot — apply reads
+`ServiceStore` at execution time. An equal plan is a no-op. A later request
+after a fatal apply is not executed.
+
+The HTTP proxy listener is created once per `TunService` lifetime. Every rebuilt
+`VpnService.Builder` reuses that address.
+
+`Builder.establish()` stays a `ParcelFileDescriptor` until the native handoff.
+Builder parameters are computed first; `detachFd()` happens inside
+`TunModule.attach` as the argument to `Clash.startTun`. Native consumes that fd
+on every return path: parse errors before `sing_tun.New` close it in
+`native/tun`; `sing_tun.New` closes it on error before `tunNew` (product patch
+`0004-close-tun-fd-before-tunnew.patch`); after `tunNew`, `Listener.Close` owns
+it. `startTun` returns success/failure through JNI; Kotlin treats failure as an
+exception.
+
+`establish()` is already destructive. There is no rollback to the previous native
+TUN. A failed handoff records the reason and takes the existing
+`finally` / `stopSelf` path.
+
+### Do not
+
+- Restart `TunService` to apply app-routing changes.
+- Call `listenHttp()` again inside a rebuild.
+- Promise that the old VPN survives after `establish()`.
+- Put reconcile events on `Module`'s unlimited queue.
