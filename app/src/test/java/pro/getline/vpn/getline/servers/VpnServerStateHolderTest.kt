@@ -214,13 +214,16 @@ class VpnServerStateHolderTest {
     fun healthCheck_runsOnFirstLoad() {
         val holder = VpnServerStateHolder()
 
+        holder.onVpnStarted()
         assertTrue(holder.shouldHealthCheck(nowMs = 1_000L))
     }
 
     @Test
     fun healthCheck_skippedWithinInterval() {
         val holder = VpnServerStateHolder()
-        holder.onHealthCheckStarted(nowMs = 1_000L)
+        holder.onVpnStarted()
+        val probe = holder.beginHealthCheck(nowMs = 1_000L)!!
+        holder.finishHealthCheck(probe)
 
         // Repeated resumes/rebinds must not re-probe every node.
         assertFalse(holder.shouldHealthCheck(nowMs = 1_000L))
@@ -231,15 +234,20 @@ class VpnServerStateHolderTest {
     @Test
     fun healthCheck_runsAgainAfterInterval() {
         val holder = VpnServerStateHolder()
-        holder.onHealthCheckStarted(nowMs = 1_000L)
+        holder.onVpnStarted()
+        val probe = holder.beginHealthCheck(nowMs = 1_000L)!!
+        holder.finishHealthCheck(probe)
 
         assertTrue(holder.shouldHealthCheck(nowMs = 31_000L))
+        assertEquals(VpnServerStateHolder.LatencyProbeState.Idle, holder.latencyProbeState)
     }
 
     @Test
     fun healthCheck_forcedAfterClearLiveDelays() {
         val holder = VpnServerStateHolder()
-        holder.onHealthCheckStarted(nowMs = 1_000L)
+        holder.onVpnStarted()
+        val probe = holder.beginHealthCheck(nowMs = 1_000L)!!
+        holder.finishHealthCheck(probe)
         assertFalse(holder.shouldHealthCheck(nowMs = 2_000L))
 
         holder.clearLiveDelays()
@@ -270,9 +278,11 @@ class VpnServerStateHolderTest {
     @Test
     fun healthCheck_forcedAfterInvalidate() {
         val holder = VpnServerStateHolder()
-        holder.onHealthCheckStarted(nowMs = 1_000L)
+        holder.onVpnStarted()
+        val probe = holder.beginHealthCheck(nowMs = 1_000L)!!
+        holder.finishHealthCheck(probe)
 
-        holder.invalidate()
+        holder.invalidateForVpnRestart()
 
         assertTrue(holder.shouldHealthCheck(nowMs = 2_000L))
     }
@@ -280,11 +290,84 @@ class VpnServerStateHolderTest {
     @Test
     fun healthCheck_explicitInvalidateOnly() {
         val holder = VpnServerStateHolder()
-        holder.onHealthCheckStarted(nowMs = 1_000L)
+        holder.onVpnStarted()
+        val probe = holder.beginHealthCheck(nowMs = 1_000L)!!
+        holder.finishHealthCheck(probe)
 
         holder.invalidateHealthCheck()
 
         assertTrue(holder.shouldHealthCheck(nowMs = 2_000L))
+    }
+
+    @Test
+    fun healthCheck_transitionsThroughProbeAndCooldown() {
+        val holder = VpnServerStateHolder()
+        holder.onVpnStarted()
+        assertEquals(VpnServerStateHolder.LatencyProbeState.Idle, holder.latencyProbeState)
+
+        val probe = holder.beginHealthCheck(nowMs = 1_000L)!!
+        assertEquals(VpnServerStateHolder.LatencyProbeState.Probing, holder.latencyProbeState)
+
+        assertTrue(holder.finishHealthCheck(probe))
+        assertEquals(
+            VpnServerStateHolder.LatencyProbeState.Cooldown(startedAtMs = 1_000L),
+            holder.latencyProbeState,
+        )
+    }
+
+    @Test
+    fun invalidateHealthCheck_doesNotBreakActiveProbe() {
+        val holder = VpnServerStateHolder()
+        holder.onVpnStarted()
+        val probe = holder.beginHealthCheck(nowMs = 1_000L)!!
+
+        holder.invalidateHealthCheck()
+
+        assertEquals(VpnServerStateHolder.LatencyProbeState.Probing, holder.latencyProbeState)
+        assertTrue(holder.finishHealthCheck(probe))
+        assertEquals(
+            VpnServerStateHolder.LatencyProbeState.Cooldown(startedAtMs = 1_000L),
+            holder.latencyProbeState,
+        )
+    }
+
+    @Test
+    fun inventoryInvalidation_preservesHealthCooldown() {
+        val holder = VpnServerStateHolder()
+        holder.onVpnStarted()
+        val probe = holder.beginHealthCheck(nowMs = 1_000L)!!
+        holder.finishHealthCheck(probe)
+
+        holder.invalidateInventory()
+
+        assertFalse(holder.shouldHealthCheck(nowMs = 2_000L))
+    }
+
+    @Test
+    fun cancelledProbe_stopsProgressAndKeepsCooldown() {
+        val holder = VpnServerStateHolder()
+        holder.onVpnStarted()
+        holder.beginHealthCheck(nowMs = 1_000L)
+
+        holder.onRequestCancelled()
+
+        assertEquals(
+            VpnServerStateHolder.LatencyProbeState.Cooldown(startedAtMs = 1_000L),
+            holder.latencyProbeState,
+        )
+        assertFalse(holder.shouldHealthCheck(nowMs = 2_000L))
+    }
+
+    @Test
+    fun stoppedVpn_makesProbeUnavailableAndStaleFinishIsIgnored() {
+        val holder = VpnServerStateHolder()
+        holder.onVpnStarted()
+        val probe = holder.beginHealthCheck(nowMs = 1_000L)!!
+
+        holder.onVpnStopped()
+
+        assertEquals(VpnServerStateHolder.LatencyProbeState.Unavailable, holder.latencyProbeState)
+        assertFalse(holder.finishHealthCheck(probe))
     }
 
     private fun sampleSuccess(

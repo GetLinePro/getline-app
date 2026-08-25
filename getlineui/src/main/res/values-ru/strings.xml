@@ -87,6 +87,8 @@
     <string name="get_line_home_refresh_servers">Обновить серверы</string>
     <string name="get_line_servers_refreshing">Обновление серверов</string>
     <string name="get_line_servers_refresh_failed">Не удалось обновить. Показан последний известный список.</string>
+    <string name="get_line_servers_latency_prerequisite">Задержка проверяется после подключения к VPN</string>
+    <string name="get_line_server_latency_checking">проверка задержки</string>
     <string name="get_line_shell_subscription_title">Подписка</string>
     <string name="get_line_home_no_profile">Нет активного профиля</string>
     <string name="get_line_home_expire_format">%1$s</string>

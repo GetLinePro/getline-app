@@ -473,6 +473,16 @@
                     android:visibility="gone"
                     tools:visibility="visible" />
 
+                <TextView
+                    android:id="@+id/servers_latency_prerequisite"
+                    style="@style/Widget.GetLine.Text.Caption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/get_line_servers_latency_prerequisite"
+                    android:textColor="@color/getline_text_secondary"
+                    android:visibility="gone" />
+
                 <pro.getline.vpn.getlineui.view.GetLineStateView
                     android:id="@+id/servers_state_view"
                     android:layout_width="match_parent"

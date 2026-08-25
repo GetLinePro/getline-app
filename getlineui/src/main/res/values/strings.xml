@@ -99,6 +99,8 @@
     <string name="get_line_home_refresh_servers">Refresh servers</string>
     <string name="get_line_servers_refreshing">Refreshing servers</string>
     <string name="get_line_servers_refresh_failed">Couldn’t refresh. Showing last known servers.</string>
+    <string name="get_line_servers_latency_prerequisite">Latency is checked after connecting to VPN</string>
+    <string name="get_line_server_latency_checking">checking latency</string>
     <string name="get_line_shell_subscription_title">Subscription</string>
     <string name="get_line_home_no_profile">No active profile</string>
     <string name="get_line_home_expire_format">%1$s</string>

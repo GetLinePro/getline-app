@@ -159,6 +159,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private var serverLoadJob: Job? = null
     /** Manual "Refresh" tap on Servers: force the managed profile's remote config. */
     private var serverProviderRefreshJob: Job? = null
+    private var serverProviderRefreshing = false
     /** Bug 3 diagnostic once per process — remove after saveSession question is closed. */
     private val subscriptionConsistencyLogged = AtomicBoolean(false)
     /**
@@ -191,6 +192,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
         design.setTab(readPersistedTab())
         design.setVpnStatus(resolveStatus())
+        if (backend.vpn.running) {
+            serverState.onVpnStarted()
+        }
         design.refreshAppRouting()
         if (intent.getBooleanExtra(EXTRA_BACKEND_UNAVAILABLE, false)) {
             backendUnavailable = true
@@ -254,7 +258,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         Event.ProfileChanged -> {
                             design.fetch(showLoading = false)
                             // Proxy groups may change with profile; drop cached server list.
-                            serverState.invalidate()
+                            serverState.invalidateInventory()
                             if (design.selectedTab == GetLineHomeDesign.Tab.Servers) {
                                 design.refreshServersUi(force = true)
                             }
@@ -264,11 +268,11 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             Log.i("vpn_state value=started")
                             connectionTimeout?.cancel()
                             connecting = false
+                            serverState.invalidateForVpnRestart()
+                            serverState.onVpnStarted()
                             design.fetch(showLoading = false)
                             if (design.selectedTab == GetLineHomeDesign.Tab.Servers) {
                                 design.refreshServersUi(force = true)
-                            } else {
-                                serverState.invalidate()
                             }
                         }
                         Event.ClashStop,
@@ -302,7 +306,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                                 if (design.selectedTab == GetLineHomeDesign.Tab.Servers) {
                                     design.refreshServersUi(force = true)
                                 } else {
-                                    serverState.invalidate()
+                                    serverState.invalidateInventory()
                                 }
                             }
                         }
@@ -677,7 +681,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         if (serverProviderRefreshJob?.isActive == true) return
 
         serverProviderRefreshJob = launch {
-            setServersRefreshing(true)
+            serverProviderRefreshing = true
+            paintServersRefreshIndicator()
             try {
                 when (serversRefreshFlow.refresh()) {
                     ServersRefreshFlow.Outcome.Updated,
@@ -693,9 +698,17 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         )
                 }
             } finally {
-                if (isActive) setServersRefreshing(false)
+                serverProviderRefreshing = false
+                if (isActive) paintServersRefreshIndicator()
             }
         }
+    }
+
+    private suspend fun GetLineHomeDesign.paintServersRefreshIndicator() {
+        setServersRefreshing(
+            serverProviderRefreshing ||
+                serverState.latencyProbeState == VpnServerStateHolder.LatencyProbeState.Probing,
+        )
     }
 
     private fun GetLineHomeDesign.startServerLoadJob() {
@@ -724,33 +737,46 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * exactly as loaded, just without delays.
      */
     private suspend fun GetLineHomeDesign.measureServerDelays() {
-        if (!backend.vpn.running) return
+        if (!backend.vpn.running) {
+            serverState.onVpnStopped()
+            paintServersRefreshIndicator()
+            return
+        }
         if (serverState.state !is VpnServerUiState.Ready) return
 
         val now = SystemClock.elapsedRealtime()
-        if (!serverState.shouldHealthCheck(now)) return
-        serverState.onHealthCheckStarted(now)
-
-        // A probe may take several seconds and may re-pick the leaf of a nested
-        // dynamic group, but it does not write the main selector's own choice.
-        // Keeping it under serversIoMutex would make a user tap wait before
-        // patchSelector can run and before Servers can return to Home.
-        val measured = backend.servers.healthCheckMainGroup()
-        if (!measured || !isActive) return
-
-        val refreshed = serversIoMutex.withLock {
-            backend.servers.loadMainGroup()
-        }
-        if (!isActive) return
-        // A failed re-read must not clobber a good list.
-        if (refreshed !is VpnServerLoadResult.Success) return
-
-        serverState.applyLoadResult(refreshed)
+        val probe = serverState.beginHealthCheck(now) ?: return
+        paintServersRefreshIndicator()
         paintServersState()
-        // Not only delays: a dynamic group re-picks its leaf off exactly these
-        // measurements, so the Home row would otherwise name the previous node
-        // until the next resume.
-        applyServerLocationFromState()
+
+        try {
+            // A probe may take several seconds and may re-pick the leaf of a nested
+            // dynamic group, but it does not write the main selector's own choice.
+            // Keeping it under serversIoMutex would make a user tap wait before
+            // patchSelector can run and before Servers can return to Home.
+            val measured = backend.servers.healthCheckMainGroup()
+            if (!measured || !isActive) return
+
+            val refreshed = serversIoMutex.withLock {
+                backend.servers.loadMainGroup()
+            }
+            if (!isActive) return
+            // A failed re-read must not clobber a good list.
+            if (refreshed !is VpnServerLoadResult.Success) return
+
+            serverState.applyLoadResult(refreshed)
+            paintServersState()
+            // Not only delays: a dynamic group re-picks its leaf off exactly these
+            // measurements, so the Home row would otherwise name the previous node
+            // until the next resume.
+            applyServerLocationFromState()
+        } finally {
+            serverState.finishHealthCheck(probe)
+            if (isActive) {
+                paintServersRefreshIndicator()
+                paintServersState()
+            }
+        }
     }
 
     private suspend fun GetLineHomeDesign.applyServerLocationFromState() {
@@ -824,6 +850,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private fun GetLineHomeDesign.paintServersState() {
         launch {
             setServersScreen(serverState.state.toScreen())
+            paintServersRefreshIndicator()
         }
     }
 
@@ -832,6 +859,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             is VpnServerUiState.Loading ->
                 GetLineHomeDesign.ServersScreen.Loading
             is VpnServerUiState.Ready -> {
+                val latencyProbing =
+                    serverState.latencyProbeState == VpnServerStateHolder.LatencyProbeState.Probing
                 val current = servers.firstOrNull { it.name == selectedName }?.displayName
                     ?: selectedName
                 val groups = ServerGroupingPolicy.group(
@@ -855,6 +884,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             primaryName = group.primaryRawName,
                             selected = group.selected,
                             resolvedLabel = group.resolvedLabel,
+                            showLatencyProgress = latencyProbing,
                             variants = group.variants.map { variant ->
                                 GetLineHomeDesign.ServerRow(
                                     name = variant.rawName,
@@ -863,11 +893,14 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                                     delayMs = variant.delayMs,
                                     protocol = variant.protocol,
                                     activeViaGroup = variant.activeViaGroup,
+                                    showLatencyProgress = latencyProbing,
                                 )
                             },
                         )
                     },
                     selectable = selectable,
+                    showLatencyPrerequisite = !backend.vpn.running &&
+                        servers.none { it.delayMs != null },
                 )
             }
             is VpnServerUiState.Empty ->

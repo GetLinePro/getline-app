@@ -38,14 +38,31 @@
         android:textColor="@color/getline_text_secondary"
         tools:text="xhttp" />
 
-    <TextView
-        android:id="@+id/variant_delay"
-        style="@style/Widget.GetLine.Text.Caption"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:textColor="@color/getline_text_secondary"
-        android:visibility="gone"
-        tools:text="61 мс"
-        tools:visibility="visible" />
+    <FrameLayout
+        android:id="@+id/variant_delay_slot"
+        android:layout_width="56dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="8dp">
+
+        <TextView
+            android:id="@+id/variant_delay"
+            style="@style/Widget.GetLine.Text.Caption"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical|end"
+            android:textColor="@color/getline_text_secondary"
+            android:visibility="gone"
+            tools:text="61 мс"
+            tools:visibility="visible" />
+
+        <ProgressBar
+            android:id="@+id/variant_delay_progress"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:indeterminate="true"
+            android:indeterminateTint="@color/getline_brand_primary"
+            android:visibility="gone"
+            tools:visibility="gone" />
+    </FrameLayout>
 </LinearLayout>

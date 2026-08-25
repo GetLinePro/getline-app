@@ -6,6 +6,17 @@ package pro.getline.vpn.getline.servers
  * Survives tab switches within the same Activity. Does not call Clash or touch VPN.
  */
 class VpnServerStateHolder {
+    sealed interface LatencyProbeState {
+        data object Unavailable : LatencyProbeState
+        data object Idle : LatencyProbeState
+        data object Probing : LatencyProbeState
+        data class Cooldown(val startedAtMs: Long) : LatencyProbeState
+    }
+
+    data class LatencyProbe(
+        internal val generation: Long,
+    )
+
     data class Selection(
         val name: String,
         val generation: Long,
@@ -23,7 +34,12 @@ class VpnServerStateHolder {
     var requestInFlight: Boolean = false
         private set
 
+    var latencyProbeState: LatencyProbeState = LatencyProbeState.Unavailable
+        private set
+
     private var lastHealthCheckAt: Long? = null
+    private var nextLatencyProbeGeneration = 0L
+    private var activeLatencyProbe: LatencyProbe? = null
 
     private var nextSelectionGeneration = 0L
 
@@ -54,17 +70,71 @@ class VpnServerStateHolder {
      * @param nowMs monotonic clock (SystemClock.elapsedRealtime), not wall time.
      */
     fun shouldHealthCheck(nowMs: Long): Boolean {
+        if (activeLatencyProbe != null) return false
         val last = lastHealthCheckAt ?: return true
-        return nowMs - last >= HEALTH_CHECK_INTERVAL_MS
+        val eligible = nowMs - last >= HEALTH_CHECK_INTERVAL_MS
+        if (eligible && latencyProbeState is LatencyProbeState.Cooldown) {
+            latencyProbeState = LatencyProbeState.Idle
+        }
+        return eligible
     }
 
-    fun onHealthCheckStarted(nowMs: Long) {
-        lastHealthCheckAt = nowMs
+    /** Mark the VPN as a live source of latency measurements. */
+    fun onVpnStarted() {
+        if (activeLatencyProbe != null) return
+        latencyProbeState = lastHealthCheckAt?.let { LatencyProbeState.Cooldown(it) }
+            ?: LatencyProbeState.Idle
     }
 
-    /** Force the next load to measure again (retry, profile change, VPN restart). */
-    fun invalidateHealthCheck() {
+    /** Drop live latency eligibility when the VPN stops. */
+    fun onVpnStopped() {
+        activeLatencyProbe = null
         lastHealthCheckAt = null
+        latencyProbeState = LatencyProbeState.Unavailable
+    }
+
+    /**
+     * Start one real health check, if it is eligible.
+     *
+     * The token prevents a cancelled/stale load job from finishing a newer probe.
+     */
+    fun beginHealthCheck(nowMs: Long): LatencyProbe? {
+        if (!shouldHealthCheck(nowMs)) return null
+
+        val probe = LatencyProbe(++nextLatencyProbeGeneration)
+        lastHealthCheckAt = nowMs
+        activeLatencyProbe = probe
+        latencyProbeState = LatencyProbeState.Probing
+        return probe
+    }
+
+    /** Finish only the still-current probe. */
+    fun finishHealthCheck(probe: LatencyProbe): Boolean {
+        if (activeLatencyProbe != probe) return false
+        activeLatencyProbe = null
+        latencyProbeState = lastHealthCheckAt?.let { LatencyProbeState.Cooldown(it) }
+            ?: LatencyProbeState.Idle
+        return true
+    }
+
+    /** Force the next eligible load to measure again. */
+    fun invalidateHealthCheck() {
+        if (activeLatencyProbe != null) return
+        lastHealthCheckAt = null
+        latencyProbeState = LatencyProbeState.Idle
+    }
+
+    /** Invalidate the server inventory without changing health-check eligibility. */
+    fun invalidateInventory() {
+        requestInFlight = false
+        pendingSelection = null
+        state = VpnServerUiState.Loading
+    }
+
+    /** Invalidate inventory and health-check eligibility for a VPN restart. */
+    fun invalidateForVpnRestart() {
+        invalidateInventory()
+        onVpnStopped()
     }
 
     /**
@@ -129,7 +199,7 @@ class VpnServerStateHolder {
 
     /** Drop live latency after the tunnel stops; the inventory stays. */
     fun clearLiveDelays() {
-        lastHealthCheckAt = null
+        onVpnStopped()
         val ready = state as? VpnServerUiState.Ready ?: return
         if (ready.servers.none { it.delayMs != null }) return
         state = ready.copy(servers = ready.servers.map { it.copy(delayMs = null) })
@@ -218,19 +288,17 @@ class VpnServerStateHolder {
 
     /** Drop cached list so next ensure-load will fetch again. */
     fun invalidate() {
-        requestInFlight = false
-        pendingSelection = null
-        state = VpnServerUiState.Loading
-        lastHealthCheckAt = null
+        invalidateInventory()
     }
 
     /**
      * Called when an in-flight load job is cancelled.
-     * Unlocks parallel-request guard without inventing a new result.
+     * Unlocks the parallel-request guard and clears any probe progress without
+     * allowing a cancelled job to start another probe inside the cooldown.
      */
     fun onRequestCancelled() {
-        if (!requestInFlight) return
         requestInFlight = false
+        activeLatencyProbe?.let { finishHealthCheck(it) }
         if (state is VpnServerUiState.Loading) {
             // Leave Loading; caller may re-trigger ensure.
         }
