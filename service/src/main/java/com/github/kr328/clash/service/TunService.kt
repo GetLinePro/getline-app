@@ -26,7 +26,6 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
         get() = this
 
     private var reason: String? = null
-    private lateinit var loadingNotification: LoadingNotificationGracePeriod
 
     private val runtime = clashRuntime {
         val store = ServiceStore(self)
@@ -37,9 +36,9 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
         val network = install(NetworkObserveModule(self))
 
         if (store.dynamicNotification)
-            install(DynamicNotificationModule(self, loadingNotification::complete))
+            install(DynamicNotificationModule(self))
         else
-            install(StaticNotificationModule(self, loadingNotification::complete))
+            install(StaticNotificationModule(self))
 
         install(AppListCacheModule(self))
         install(TimeZoneModule(self))
@@ -109,14 +108,17 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
     override fun onCreate() {
         super.onCreate()
 
+        // Promote every newly created foreground-service instance before any early stop.
+        // The delayed loading notification can be cancelled before it runs, leaving
+        // startForegroundService() unpaired on affected Android/OEM implementations.
+        StaticNotificationModule.createNotificationChannel(this)
+        StaticNotificationModule.notifyLoadingNotification(this)
+
         if (StatusProvider.serviceRunning)
             return stopSelf()
 
         StatusProvider.serviceRunning = true
         StatusProvider.currentProfile = null
-
-        StaticNotificationModule.createNotificationChannel(this)
-        loadingNotification = LoadingNotificationGracePeriod(this, this)
 
         runtime.launch()
     }
