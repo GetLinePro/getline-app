@@ -26,7 +26,6 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
         get() = this
 
     private var reason: String? = null
-    private lateinit var loadingNotification: LoadingNotificationGracePeriod
 
     private val runtime = clashRuntime {
         val store = ServiceStore(self)
@@ -37,17 +36,27 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
         val network = install(NetworkObserveModule(self))
 
         if (store.dynamicNotification)
-            install(DynamicNotificationModule(self, loadingNotification::complete))
+            install(DynamicNotificationModule(self))
         else
-            install(StaticNotificationModule(self, loadingNotification::complete))
+            install(StaticNotificationModule(self))
 
         install(AppListCacheModule(self))
         install(TimeZoneModule(self))
         install(SuspendModule(self))
 
-        try {
-            tun.open()
+        val coordinator = TunPolicyCoordinator(
+            readDesiredPlan = {
+                AccessControlPlan.of(
+                    mode = store.accessControlMode,
+                    packages = store.accessControlPackages,
+                    ownPackage = packageName,
+                )
+            },
+            apply = { tun.applyPlan(it, store) },
+        )
+        install(TunReconcileModule(self, coordinator::requestReconcile))
 
+        try {
             while (isActive) {
                 val quit = select<Boolean> {
                     close.onEvent {
@@ -64,6 +73,20 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
                         }
 
                         false
+                    }
+                    coordinator.onRequest {
+                        when (val result = coordinator.reconcile()) {
+                            is TunPolicyCoordinator.Result.Failed -> {
+                                Log.e("TUN policy reconcile failed: ${result.message}")
+                                reason = result.message
+                                true
+                            }
+                            is TunPolicyCoordinator.Result.Applied -> {
+                                Log.i("TUN policy applied")
+                                false
+                            }
+                            TunPolicyCoordinator.Result.Unchanged -> false
+                        }
                     }
                 }
 
@@ -85,14 +108,17 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
     override fun onCreate() {
         super.onCreate()
 
+        // Promote every newly created foreground-service instance before any early stop.
+        // The delayed loading notification can be cancelled before it runs, leaving
+        // startForegroundService() unpaired on affected Android/OEM implementations.
+        StaticNotificationModule.createNotificationChannel(this)
+        StaticNotificationModule.notifyLoadingNotification(this)
+
         if (StatusProvider.serviceRunning)
             return stopSelf()
 
         StatusProvider.serviceRunning = true
         StatusProvider.currentProfile = null
-
-        StaticNotificationModule.createNotificationChannel(this)
-        loadingNotification = LoadingNotificationGracePeriod(this, this)
 
         runtime.launch()
     }
@@ -123,10 +149,8 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
         runtime.requestGc()
     }
 
-    private fun TunModule.open() {
-        val store = ServiceStore(self)
-
-        val device = with(Builder()) {
+    private fun TunModule.applyPlan(access: AccessControlPlan, store: ServiceStore) {
+        val pfd = with(Builder()) {
             // Interface address
             addAddress(TUN_GATEWAY, TUN_SUBNET_PREFIX)
             if (store.allowIpv6) {
@@ -163,12 +187,6 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
             // outside the tunnel, while an unapplied deny leaves it inside — the opposite
             // of what the user asked for, with no error anywhere. Log it rather than
             // swallowing it, and never catch anything wider than the lookup failure.
-            val access = AccessControlPlan.of(
-                mode = store.accessControlMode,
-                packages = store.accessControlPackages,
-                ownPackage = packageName,
-            )
-
             access.allowed.forEach {
                 try {
                     addAllowedApplication(it)
@@ -228,17 +246,18 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
                 }
             }
 
-            TunModule.TunDevice(
-                fd = establish()?.detachFd()
-                    ?: throw NullPointerException("Establish VPN rejected by system"),
-                stack = store.tunStackMode,
-                gateway = "$TUN_GATEWAY/$TUN_SUBNET_PREFIX" + if (store.allowIpv6) ",$TUN_GATEWAY6/$TUN_SUBNET_PREFIX6" else "",
-                portal = TUN_PORTAL + if (store.allowIpv6) ",$TUN_PORTAL6" else "",
-                dns = if (store.dnsHijacking) NET_ANY else (TUN_DNS + if (store.allowIpv6) ",$TUN_DNS6" else ""),
-            )
+            establish()
+                ?: throw NullPointerException("Establish VPN rejected by system")
         }
 
-        attach(device)
+        val allowIpv6 = store.allowIpv6
+        val device = TunModule.TunDevice(
+            stack = store.tunStackMode,
+            gateway = "$TUN_GATEWAY/$TUN_SUBNET_PREFIX" + if (allowIpv6) ",$TUN_GATEWAY6/$TUN_SUBNET_PREFIX6" else "",
+            portal = TUN_PORTAL + if (allowIpv6) ",$TUN_PORTAL6" else "",
+            dns = if (store.dnsHijacking) NET_ANY else (TUN_DNS + if (allowIpv6) ",$TUN_DNS6" else ""),
+        )
+        attach(pfd, device)
     }
 
     companion object {

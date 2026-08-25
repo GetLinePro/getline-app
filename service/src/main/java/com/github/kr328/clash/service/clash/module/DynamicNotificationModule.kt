@@ -26,7 +26,6 @@ import java.util.concurrent.TimeUnit
 
 class DynamicNotificationModule(
     service: Service,
-    private val onForegroundStarted: () -> Unit = {},
 ) : Module<Unit>(service) {
     private val builder = NotificationCompat.Builder(service, StaticNotificationModule.CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_logo_service)
@@ -83,7 +82,6 @@ class DynamicNotificationModule(
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
             )
             foregroundStarted = true
-            onForegroundStarted()
         }
     }
 

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"syscall"
 
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
@@ -32,6 +33,7 @@ func Start(fd int, stack, gateway, portal, dns string) (io.Closer, error) {
 		prefix, err := netip.ParsePrefix(gatewayStr)
 		if err != nil {
 			log.Errorln("TUN:", err)
+			closeTunFd(fd)
 			return nil, err
 		}
 
@@ -74,4 +76,11 @@ func Start(fd int, stack, gateway, portal, dns string) (io.Closer, error) {
 	}
 
 	return listener, nil
+}
+
+// closeTunFd consumes the VpnService fd on paths that never call sing_tun.New.
+// New owns the fd on every return: it closes it on error before tunNew, and
+// Listener.Close owns it after tunNew.
+func closeTunFd(fd int) {
+	_ = syscall.Close(fd)
 }

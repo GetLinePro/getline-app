@@ -64,3 +64,7 @@ fun Context.sendClashStopped(reason: String?) {
         )
     )
 }
+
+fun Context.sendTunPolicyReconcile() {
+    sendBroadcastSelf(Intent(Intents.ACTION_TUN_POLICY_RECONCILE))
+}

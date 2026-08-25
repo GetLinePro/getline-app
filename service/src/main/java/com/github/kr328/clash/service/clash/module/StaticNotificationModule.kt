@@ -18,7 +18,6 @@ import kotlinx.coroutines.channels.Channel
 
 class StaticNotificationModule(
     service: Service,
-    private val onForegroundStarted: () -> Unit = {},
 ) : Module<Unit>(service) {
     private val builder = NotificationCompat.Builder(service, CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_logo_service)
@@ -57,7 +56,6 @@ class StaticNotificationModule(
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
             )
-            onForegroundStarted()
         }
     }
 
