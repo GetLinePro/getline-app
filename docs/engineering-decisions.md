@@ -25,8 +25,8 @@ the block would silently re-enable the permission if a dependency ever declares 
 
 Google restricts the permission and requires a declaration form arguing it is core
 functionality. Two features were expected to need it — per-app routing, and applying
-a subscription-delivered list of packages that must bypass the tunnel. Measurement
-showed neither does.
+a subscription-delivered list of packages that stay off the VPN interface.
+Measurement showed neither does.
 
 ### Measured coverage
 
@@ -236,9 +236,11 @@ First import and refresh send `User-Agent: GetLineVPN/<versionName>`. The panel
 uses that token to pick a compatible Mihomo template. The token is format
 selection, not authentication.
 
-Missing or unexpected `x-getline-profile` / `x-getline-schema` is a log line, not
-a reason to reject the update. Only unparseable YAML, a transport failure, or a
-core apply failure keep the last committed profile.
+Missing or unexpected response headers `X-GetLine-Profile` / `X-GetLine-Schema`
+are a log line, not a reason to reject the update. Only unparseable YAML, a
+transport failure, a core apply failure, or a malformed declared YAML
+`x-getline-profile.android.excluded-packages` field keep the last committed
+profile. The response header and the YAML body key are not the same identifier.
 
 New capabilities roll out backend first: a new install has nothing to fall back
 to. Contract: `docs/subscription-profile-contract.md`.
@@ -286,3 +288,46 @@ TUN. A failed handoff records the reason and takes the existing
 - Call `listenHttp()` again inside a rebuild.
 - Promise that the old VPN survives after `establish()`.
 - Put reconcile events on `Module`'s unlimited queue.
+
+---
+
+## Subscription Android exclusions are a TUN Builder policy, not Mihomo routing
+
+**Decided:** 2026-08-25. **Status:** in effect.
+
+Optional `x-getline-profile.android.excluded-packages` is extracted from the
+clean subscription YAML by a product-owned Go preprocessor. Mihomo `RawConfig`
+does not carry the field; it must not be added there, and the client must not
+grow a second Kotlin YAML parser. `schema` / `kind` are ignored.
+
+After a successful `Parse`, native preparation atomically writes
+`android-policy.json` version 1, including when the field is absent (empty
+list). Write failure rejects preparation. `server-catalog.json` remains
+best-effort. Age-encrypted bodies use `age.DecryptBytes` and the same YAML v3
+stack as the main native config path.
+
+The service reads that sidecar as source of truth. It keeps one in-memory
+last-known-good snapshot keyed by the active profile UUID so a reconcile that
+races the sequential imported-directory commit does not observe empty or torn
+policy. A missing or unreadable sidecar for an already-seen UUID keeps that
+snapshot. Malformed or unknown JSON fails closed only on a first-seen UUID.
+A missing sidecar on a first-seen UUID is legacy empty.
+
+`AccessControlPlan` composes user routing with subscription exclusions. GetLine
+cannot be excluded from its own tunnel. Uninstalled packages stay in the
+declared plan; `VpnService.Builder` already skips `NameNotFoundException`.
+`ACTION_PROFILE_CHANGED` is a reconcile trigger next to the user-routing
+broadcast. An equal effective plan is still a no-op.
+
+The field is not authentication. The profile already supplies proxies and
+rules; this only names packages that stay off the VPN interface. Roll out a
+non-empty production list only after compatible Android clients are in the
+field.
+
+### Do not
+
+- Put package names in Mihomo rules or restore subscription-owned `tun` /
+  inbounds / `VpnService.Builder.allowBypass()`.
+- Treat `X-GetLine-Profile` as a parse gate for the YAML body key.
+- Persist a policy cache across `TunService` lifetimes.
+- Add a package install/uninstall listener in this slice.
