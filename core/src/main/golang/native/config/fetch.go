@@ -234,6 +234,11 @@ func ValidateAndPrepareLocalConfig(
 func validateAndPrepare(path string, reportStatus func(string)) error {
 	defer runtime.GC()
 
+	policy, err := extractAndroidPolicy(path)
+	if err != nil {
+		return err
+	}
+
 	rawCfg, err := UnmarshalAndPatch(path)
 	if err != nil {
 		return err
@@ -309,11 +314,11 @@ func validateAndPrepare(path string, reportStatus func(string)) error {
 	if err != nil {
 		return err
 	}
+	defer destroyProviders(cfg)
 
 	// Catalog is a read-model. A write failure must not fail import/refresh:
 	// the tunnel still works, offline list degrades to empty.
 	writeServerCatalogBestEffort(path, mode, groupOrder, cfg)
-	destroyProviders(cfg)
 
-	return nil
+	return writeAndroidPolicy(path, policy)
 }

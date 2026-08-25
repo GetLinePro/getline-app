@@ -13,8 +13,10 @@ import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.service.clash.clashRuntime
 import com.github.kr328.clash.service.clash.module.*
 import com.github.kr328.clash.service.model.AccessControlPlan
+import com.github.kr328.clash.service.model.AndroidPolicy
 import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.service.util.cancelAndJoinBlocking
+import com.github.kr328.clash.service.util.importedDir
 import com.github.kr328.clash.service.util.parseCIDR
 import com.github.kr328.clash.service.util.sendClashStarted
 import com.github.kr328.clash.service.util.sendClashStopped
@@ -44,12 +46,17 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
         install(TimeZoneModule(self))
         install(SuspendModule(self))
 
+        val androidPolicy = AndroidPolicySnapshot()
         val coordinator = TunPolicyCoordinator(
             readDesiredPlan = {
+                val uuid = store.activeProfile
+                val sidecar = uuid?.let { AndroidPolicy.fileIn(importedDir.resolve(it.toString())) }
+                val managed = androidPolicy.resolve(uuid, sidecar)
                 AccessControlPlan.of(
                     mode = store.accessControlMode,
                     packages = store.accessControlPackages,
                     ownPackage = packageName,
+                    subscriptionExcluded = managed.excludedPackages,
                 )
             },
             apply = { tun.applyPlan(it, store) },

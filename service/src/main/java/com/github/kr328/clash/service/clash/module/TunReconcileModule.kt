@@ -11,6 +11,7 @@ class TunReconcileModule(
     override suspend fun run() {
         val broadcasts = receiveBroadcast(capacity = Channel.CONFLATED) {
             addAction(Intents.ACTION_TUN_POLICY_RECONCILE)
+            addAction(Intents.ACTION_PROFILE_CHANGED)
         }
 
         requestReconcile()
