@@ -114,9 +114,6 @@
     <dimen name="get_line_surface_wash_radius_bottom">440dp</dimen>
 
     <!-- GetLine product shell (bottom nav) -->
-    <dimen name="get_line_shell_bar_margin_horizontal">16dp</dimen>
-    <dimen name="get_line_shell_bar_margin_bottom">12dp</dimen>
-    <dimen name="get_line_shell_bar_corner">28dp</dimen>
     <dimen name="get_line_shell_bar_height">72dp</dimen>
     <dimen name="get_line_shell_tab_icon">22dp</dimen>
     <!-- Content bottom inset reserve: bar + margins (system inset applied separately). -->
