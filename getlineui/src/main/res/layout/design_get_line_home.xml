@@ -407,13 +407,49 @@
                 android:paddingTop="@{self.surface.insets.top + (int) @dimen/get_line_home_section_gap}"
                 android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_shell_content_bottom}">
 
-                <TextView
-                    style="@style/Widget.GetLine.Text.Title"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/get_line_shell_servers_title"
-                    android:textColor="@color/getline_text_primary"
-                    tools:text="Servers" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/Widget.GetLine.Text.Title"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/get_line_shell_servers_title"
+                        android:textColor="@color/getline_text_primary"
+                        tools:text="Servers" />
+
+                    <FrameLayout
+                        android:layout_width="48dp"
+                        android:layout_height="48dp">
+
+                        <ImageView
+                            android:id="@+id/refresh_servers"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:clickable="true"
+                            android:contentDescription="@string/get_line_home_refresh_servers"
+                            android:focusable="true"
+                            android:onClick="@{() -> self.request(Request.RefreshServers)}"
+                            android:padding="12dp"
+                            android:src="@drawable/ic_baseline_sync"
+                            app:tint="@color/getline_text_secondary" />
+
+                        <ProgressBar
+                            android:id="@+id/refresh_servers_progress"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:indeterminate="true"
+                            android:indeterminateTint="@color/getline_brand_primary"
+                            android:padding="12dp"
+                            android:visibility="gone"
+                            tools:visibility="gone" />
+                    </FrameLayout>
+                </LinearLayout>
 
                 <TextView
                     style="@style/Widget.GetLine.Text.Secondary"

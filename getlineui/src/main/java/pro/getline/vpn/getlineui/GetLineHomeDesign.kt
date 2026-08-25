@@ -54,6 +54,8 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         SignIn,
         /** Retry Servers destination load. */
         RetryServers,
+        /** Manual server-list refresh from the Servers header icon. */
+        RefreshServers,
         /**
          * Select a proxy by Mihomo name.
          * Payload is [pendingServerName] (enum keeps Java data-binding happy).
@@ -284,6 +286,10 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             binding.shareSubscription,
             context.getString(R.string.get_line_share_subscription),
         )
+        TooltipCompat.setTooltipText(
+            binding.refreshServers,
+            context.getString(R.string.get_line_home_refresh_servers),
+        )
         binding.stateView.setOnRecoveryAction {
             when (it) {
                 GetLineRecoveryAction.Retry -> request(Request.Retry)
@@ -329,6 +335,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         applySubscriptionScreen(SubscriptionScreen.Loading)
         applySubscriptionSignInBlock(visible = false)
         applyServersScreen(ServersScreen.Loading)
+        applyServersRefreshControl(isRefreshing = false)
         applyAccountPortalUi(
             visible = false,
             launching = false,
@@ -574,6 +581,13 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     suspend fun setServersScreen(screen: ServersScreen) {
         withContext(Dispatchers.Main) {
             applyServersScreen(screen)
+        }
+    }
+
+    /** Icon/spinner crossfade on the Servers header while a manual refresh is in flight. */
+    suspend fun setServersRefreshing(isRefreshing: Boolean) {
+        withContext(Dispatchers.Main) {
+            applyServersRefreshControl(isRefreshing)
         }
     }
 
@@ -1198,6 +1212,27 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 R.string.get_line_subscription_refreshing
             } else {
                 R.string.get_line_home_refresh_subscription
+            }
+        )
+
+        if (isRefreshing) {
+            crossFade(show = spinner, hide = icon)
+        } else {
+            crossFade(show = icon, hide = spinner)
+        }
+    }
+
+    /** Same icon/spinner crossfade as [applyRefreshControl], for the Servers header. */
+    private fun applyServersRefreshControl(isRefreshing: Boolean) {
+        val icon = binding.refreshServers
+        val spinner = binding.refreshServersProgress
+
+        icon.isEnabled = !isRefreshing
+        icon.contentDescription = context.getString(
+            if (isRefreshing) {
+                R.string.get_line_servers_refreshing
+            } else {
+                R.string.get_line_home_refresh_servers
             }
         )
 
