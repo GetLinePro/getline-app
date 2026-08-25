@@ -84,6 +84,9 @@
     <string name="get_line_servers_empty_explanation">В активном профиле нет серверов в основной группе.</string>
     <string name="get_line_servers_load_failed_title">Не удалось загрузить серверы</string>
     <string name="get_line_servers_load_failed_explanation">Проверьте подключение и повторите попытку. Текущее VPN-соединение не изменено.</string>
+    <string name="get_line_home_refresh_servers">Обновить серверы</string>
+    <string name="get_line_servers_refreshing">Обновление серверов</string>
+    <string name="get_line_servers_refresh_failed">Не удалось обновить. Показан последний известный список.</string>
     <string name="get_line_shell_subscription_title">Подписка</string>
     <string name="get_line_home_no_profile">Нет активного профиля</string>
     <string name="get_line_home_expire_format">%1$s</string>

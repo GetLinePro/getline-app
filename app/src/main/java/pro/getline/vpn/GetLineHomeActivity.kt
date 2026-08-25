@@ -52,6 +52,7 @@ import pro.getline.vpn.getline.servers.ServerGroupingPolicy
 import pro.getline.vpn.getline.servers.ServerLocationLabel
 import pro.getline.vpn.getline.servers.ServerSection
 import pro.getline.vpn.getline.servers.ServerSectionPolicy
+import pro.getline.vpn.getline.servers.ServersRefreshFlow
 import pro.getline.vpn.getline.servers.VpnServerLoadResult
 import pro.getline.vpn.getline.servers.VpnServerStateHolder
 import pro.getline.vpn.getline.servers.VpnServerUiState
@@ -109,6 +110,18 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             },
         )
     }
+    private val serversRefreshFlow by lazy {
+        ServersRefreshFlow(
+            host = object : ServersRefreshFlow.Host {
+                override fun managedProfileUuid(): String? =
+                    sessionRepository.managedProfileUuid()
+
+                override suspend fun requestConfigUpdate(
+                    id: GetLineSubscriptionId,
+                ): ConfigUpdateResult = backend.subscriptions.requestConfigUpdate(id)
+            },
+        )
+    }
     /** Split tunnelling state for the Home routing row; owned by the service. */
     private val serviceStore by lazy { ServiceStore(this) }
     /** Survives tab switches; cleared only when Activity is destroyed. */
@@ -146,6 +159,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     private var subscriptionLoadJob: Job? = null
     private var subscriptionAccountSignalJob: Job? = null
     private var serverLoadJob: Job? = null
+    /** Manual "Refresh" tap on Servers: force the managed profile's remote config. */
+    private var serverProviderRefreshJob: Job? = null
     /** Bug 3 diagnostic once per process — remove after saveSession question is closed. */
     private val subscriptionConsistencyLogged = AtomicBoolean(false)
     /**
@@ -357,6 +372,8 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             design.refreshSubscriptionUi(force = true)
                         GetLineHomeDesign.Request.RetryServers ->
                             design.refreshServersUi(force = true)
+                        GetLineHomeDesign.Request.RefreshServers ->
+                            design.refreshServersFromProvider()
                         GetLineHomeDesign.Request.SelectServer -> {
                             val name = design.consumePendingServerName()
                             if (name != null) {
@@ -647,6 +664,35 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
 
         paintServersState()
         startServerLoadJob()
+    }
+
+    /**
+     * "Refresh" on the Servers header: delegates to [serversRefreshFlow], then
+     * calls nothing else. `ProfileChanged` already invalidates [serverState]
+     * and reloads/re-probes the list when Servers is the visible tab (see the
+     * event handler above) — a second, explicit reload/health-check here
+     * would race it (GL-121).
+     */
+    private fun GetLineHomeDesign.refreshServersFromProvider() {
+        if (serverProviderRefreshJob?.isActive == true) return
+
+        serverProviderRefreshJob = launch {
+            setServersRefreshing(true)
+            try {
+                when (serversRefreshFlow.refresh()) {
+                    ServersRefreshFlow.Outcome.Updated -> Unit
+                    ServersRefreshFlow.Outcome.NoManagedProfile,
+                    ServersRefreshFlow.Outcome.Failed,
+                    ->
+                        showToast(
+                            GetLineUiR.string.get_line_servers_refresh_failed,
+                            ToastDuration.Short,
+                        )
+                }
+            } finally {
+                if (isActive) setServersRefreshing(false)
+            }
+        }
     }
 
     private fun GetLineHomeDesign.startServerLoadJob() {
