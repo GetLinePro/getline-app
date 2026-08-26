@@ -37,10 +37,8 @@ class ServersRefreshFlowTest {
         assertEquals(listOf("update:managed"), host.calls)
     }
 
-    /** [ConfigUpdateResult.NotFound]/[ConfigUpdateResult.NotRefreshable] collapse into
-     * [ServersRefreshFlow.Outcome.Updated], same as Subscription's existing path. */
     @Test
-    fun managedProfile_notFoundOrNotRefreshable_isUpdated() = runBlocking {
+    fun managedProfile_notFoundOrNotRefreshable_preservesTerminalResult() = runBlocking {
         val notFoundHost = FakeHost(managed = "managed", update = ConfigUpdateResult.NotFound)
         val notRefreshableHost = FakeHost(
             managed = "managed",
@@ -48,11 +46,11 @@ class ServersRefreshFlowTest {
         )
 
         assertEquals(
-            ServersRefreshFlow.Outcome.Updated,
+            ServersRefreshFlow.Outcome.NotFound,
             ServersRefreshFlow(notFoundHost).refresh(),
         )
         assertEquals(
-            ServersRefreshFlow.Outcome.Updated,
+            ServersRefreshFlow.Outcome.NotRefreshable,
             ServersRefreshFlow(notRefreshableHost).refresh(),
         )
     }
