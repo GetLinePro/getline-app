@@ -22,6 +22,12 @@ class ServersRefreshFlow(
     enum class Outcome {
         Updated,
 
+        /** The managed profile binding no longer points to an imported profile. */
+        NotFound,
+
+        /** The managed profile exists but has no remotely refreshable source. */
+        NotRefreshable,
+
         /** No managed profile bound — nothing this action can refresh. */
         NoManagedProfile,
         Failed,
@@ -30,10 +36,11 @@ class ServersRefreshFlow(
     suspend fun refresh(): Outcome {
         val managed = host.managedProfileUuid() ?: return Outcome.NoManagedProfile
         val id = GetLineSubscriptionId(managed)
-        return if (host.requestConfigUpdate(id) == ConfigUpdateResult.Unavailable) {
-            Outcome.Failed
-        } else {
-            Outcome.Updated
+        return when (host.requestConfigUpdate(id)) {
+            ConfigUpdateResult.Updated -> Outcome.Updated
+            ConfigUpdateResult.NotFound -> Outcome.NotFound
+            ConfigUpdateResult.NotRefreshable -> Outcome.NotRefreshable
+            ConfigUpdateResult.Unavailable -> Outcome.Failed
         }
     }
 }

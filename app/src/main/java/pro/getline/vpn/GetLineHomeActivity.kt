@@ -680,7 +680,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             setServersRefreshing(true)
             try {
                 when (serversRefreshFlow.refresh()) {
-                    ServersRefreshFlow.Outcome.Updated -> Unit
+                    ServersRefreshFlow.Outcome.Updated,
+                    ServersRefreshFlow.Outcome.NotFound,
+                    ServersRefreshFlow.Outcome.NotRefreshable,
+                    -> Unit
                     ServersRefreshFlow.Outcome.NoManagedProfile,
                     ServersRefreshFlow.Outcome.Failed,
                     ->
