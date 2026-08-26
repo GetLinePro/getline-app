@@ -20,10 +20,29 @@ class VpnServerStateHolder {
     var state: VpnServerUiState = VpnServerUiState.Loading
         private set
 
-    var requestInFlight: Boolean = false
+    /** True while a request (from any [beginInitialLoad]/[beginRefresh]/[beginReconcile]) owns the guard. */
+    val requestInFlight: Boolean
+        get() = activeRequestToken != null
+
+    /** Whether a real latency probe is in flight. The UI has no use for finer states. */
+    var isProbing: Boolean = false
         private set
 
     private var lastHealthCheckAt: Long? = null
+    private var nextProbeToken = 0L
+    private var activeProbeToken: Long? = null
+
+    private var nextRequestToken = 0L
+    private var activeRequestToken: Long? = null
+
+    /**
+     * Set when an authoritative reload (profile change, VPN restart) is rejected
+     * because a probe from an earlier load is still running. The probe is left
+     * to finish undisturbed — cancelling it would risk it never completing under
+     * frequent reloads — and [consumePendingReload] is checked once it does, so
+     * the reload this flag represents is deferred, never dropped.
+     */
+    private var pendingReload = false
 
     private var nextSelectionGeneration = 0L
 
@@ -54,17 +73,46 @@ class VpnServerStateHolder {
      * @param nowMs monotonic clock (SystemClock.elapsedRealtime), not wall time.
      */
     fun shouldHealthCheck(nowMs: Long): Boolean {
+        if (isProbing) return false
         val last = lastHealthCheckAt ?: return true
         return nowMs - last >= HEALTH_CHECK_INTERVAL_MS
     }
 
-    fun onHealthCheckStarted(nowMs: Long) {
+    /**
+     * Claim the next health check, if eligible.
+     *
+     * The returned token identifies this probe: only the [finishHealthCheck] call
+     * carrying the same token can end it, so a cancelled/stale load job can never
+     * finish a newer job's still-running probe.
+     */
+    fun beginHealthCheck(nowMs: Long): Long? {
+        if (!shouldHealthCheck(nowMs)) return null
+
+        val token = ++nextProbeToken
         lastHealthCheckAt = nowMs
+        activeProbeToken = token
+        isProbing = true
+        return token
     }
 
-    /** Force the next load to measure again (retry, profile change, VPN restart). */
+    /** Finish only if [token] still owns the in-flight probe. */
+    fun finishHealthCheck(token: Long): Boolean {
+        if (activeProbeToken != token) return false
+        activeProbeToken = null
+        isProbing = false
+        return true
+    }
+
+    /** Force the next eligible load to measure again. */
     fun invalidateHealthCheck() {
         lastHealthCheckAt = null
+    }
+
+    /** Invalidate the server inventory without changing health-check eligibility. */
+    fun invalidateInventory() {
+        activeRequestToken = null
+        pendingSelection = null
+        state = VpnServerUiState.Loading
     }
 
     /**
@@ -83,29 +131,49 @@ class VpnServerStateHolder {
     }
 
     /**
-     * Begin initial full-screen load.
-     * Returns false if already in flight or a stable non-reload state already exists.
+     * A load or its trailing health-check probe is busy. [requestInFlight] alone
+     * is not enough: [applyLoadResult] clears it as soon as the group list is
+     * in, before the probe that follows it runs. Without also checking
+     * [isProbing] here, a reconcile arriving mid-probe would pass this guard
+     * and cancel/restart the job that owns it, so a probe could never survive
+     * long enough to finish.
      */
-    fun beginInitialLoad(): Boolean {
-        if (requestInFlight) return false
+    private val isBusy: Boolean
+        get() = requestInFlight || isProbing
+
+    /**
+     * Begin initial full-screen load.
+     *
+     * Returns the new request's token, or null if already busy or a stable
+     * non-reload state already exists. The caller must hand this token to
+     * [onRequestCancelled] if its job is cancelled — see that function.
+     */
+    fun beginInitialLoad(): Long? {
+        if (isBusy) return null
         when (state) {
             is VpnServerUiState.Loading -> Unit
-            else -> return false
+            else -> return null
         }
-        requestInFlight = true
         state = VpnServerUiState.Loading
-        return true
+        return newRequestToken()
     }
 
     /**
      * Begin forced reload (retry, profile change, Clash start while on tab).
-     * Returns false if a request is already in flight.
+     *
+     * Returns the new request's token, or null if already busy. If busy
+     * specifically because a probe is running, queues this reload for
+     * [consumePendingReload] to pick up once that probe finishes, instead of
+     * losing it: the probe may be measuring against inventory this reload is
+     * about to replace.
      */
-    fun beginRefresh(): Boolean {
-        if (requestInFlight) return false
-        requestInFlight = true
+    fun beginRefresh(): Long? {
+        if (isBusy) {
+            if (isProbing) pendingReload = true
+            return null
+        }
         state = VpnServerUiState.Loading
-        return true
+        return newRequestToken()
     }
 
     /**
@@ -115,28 +183,54 @@ class VpnServerStateHolder {
      * while still re-reading Mihomo — external ProxyActivity selection emits no
      * profile/Clash lifecycle event.
      *
-     * Non-Ready states go to Loading. Returns false if a request is already in flight.
+     * Non-Ready states go to Loading. Returns the new request's token, or null
+     * if already busy — see [beginRefresh] for the queueing behavior while a
+     * probe is running.
      */
-    fun beginReconcile(): Boolean {
-        if (requestInFlight) return false
-        requestInFlight = true
+    fun beginReconcile(): Long? {
+        if (isBusy) {
+            if (isProbing) pendingReload = true
+            return null
+        }
         when (state) {
             is VpnServerUiState.Ready -> Unit
             else -> state = VpnServerUiState.Loading
         }
-        return true
+        return newRequestToken()
+    }
+
+    private fun newRequestToken(): Long {
+        val token = ++nextRequestToken
+        activeRequestToken = token
+        return token
+    }
+
+    /**
+     * Consume a reload that arrived while a probe from an earlier request was
+     * still running. Called once that probe finishes.
+     */
+    fun consumePendingReload(): Boolean {
+        val had = pendingReload
+        pendingReload = false
+        return had
     }
 
     /** Drop live latency after the tunnel stops; the inventory stays. */
     fun clearLiveDelays() {
         lastHealthCheckAt = null
+        activeProbeToken = null
+        isProbing = false
+        // The VPN stopping supersedes any reload queued while the now-abandoned
+        // probe was running; the ClashStop/ServiceRecreated handler decides the
+        // reload from scratch.
+        pendingReload = false
         val ready = state as? VpnServerUiState.Ready ?: return
         if (ready.servers.none { it.delayMs != null }) return
         state = ready.copy(servers = ready.servers.map { it.copy(delayMs = null) })
     }
 
     fun applyLoadResult(result: VpnServerLoadResult) {
-        requestInFlight = false
+        activeRequestToken = null
         state = when (result) {
             is VpnServerLoadResult.Success -> {
                 if (result.servers.isEmpty()) {
@@ -216,24 +310,31 @@ class VpnServerStateHolder {
         preferredByGroup[ServerGroupingPolicy.keyOfRawName(rawName)] = rawName
     }
 
-    /** Drop cached list so next ensure-load will fetch again. */
-    fun invalidate() {
-        requestInFlight = false
-        pendingSelection = null
-        state = VpnServerUiState.Loading
-        lastHealthCheckAt = null
+    /**
+     * Force-clear the request guard regardless of ownership.
+     *
+     * For the VPN-stopping paths (ClashStop/ServiceRecreated), which abandon
+     * whatever load is in flight outright rather than superseding it with a
+     * specific newer one — see [onRequestCancelled] (with a token) for that
+     * ownership-checked case.
+     */
+    fun onRequestCancelled() {
+        activeRequestToken = null
     }
 
     /**
-     * Called when an in-flight load job is cancelled.
-     * Unlocks parallel-request guard without inventing a new result.
+     * Called when the load job holding [token] is cancelled.
+     *
+     * Clears the guard only if [token] still owns it — the same ownership
+     * problem [finishHealthCheck] solves for probes, but for the load itself:
+     * a job can cancel *itself* to make way for a reload it had deferred (see
+     * [consumePendingReload]), and by the time its own cleanup runs the new
+     * job may already have claimed the guard with its own token. Never
+     * touches probe state either, for the same reason — see [finishHealthCheck].
      */
-    fun onRequestCancelled() {
-        if (!requestInFlight) return
-        requestInFlight = false
-        if (state is VpnServerUiState.Loading) {
-            // Leave Loading; caller may re-trigger ensure.
-        }
+    fun onRequestCancelled(token: Long) {
+        if (activeRequestToken != token) return
+        activeRequestToken = null
     }
 
     private fun reapplyPendingSelection() {

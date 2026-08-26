@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.widget.TooltipCompat
 import androidx.core.content.ContextCompat
@@ -162,6 +163,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             val currentDisplayName: String,
             val groups: List<ServerGroupRow>,
             val selectable: Boolean,
+            val showLatencyPrerequisite: Boolean = false,
         ) : ServersScreen
 
         data object Empty : ServersScreen
@@ -188,6 +190,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         val selected: Boolean,
         /** Leaf a nested group ("⚡ Авто") currently routes through. */
         val resolvedLabel: String?,
+        val showLatencyProgress: Boolean = false,
         val variants: List<ServerRow>,
     ) {
         val expandable: Boolean
@@ -202,6 +205,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         val protocol: String? = null,
         /** Running via a nested group rather than picked directly. */
         val activeViaGroup: Boolean = false,
+        val showLatencyProgress: Boolean = false,
     )
 
     private val binding = DesignGetLineHomeBinding
@@ -759,6 +763,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         when (screen) {
             is ServersScreen.Loading -> {
                 binding.serversAvailableLabel.visibility = View.GONE
+                binding.serversLatencyPrerequisite.visibility = View.GONE
                 binding.serversList.visibility = View.GONE
                 binding.serversList.removeAllViews()
                 binding.serversStateView.renderMessage(
@@ -771,11 +776,19 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             is ServersScreen.Ready -> {
                 binding.serversStateView.hide()
                 binding.serversAvailableLabel.visibility = View.VISIBLE
+                binding.serversLatencyPrerequisite.visibility = if (
+                    screen.showLatencyPrerequisite
+                ) {
+                    View.VISIBLE
+                } else {
+                    View.GONE
+                }
                 binding.serversList.visibility = View.VISIBLE
                 bindServerGroups(screen.groups, screen.selectable)
             }
             is ServersScreen.Empty -> {
                 binding.serversAvailableLabel.visibility = View.GONE
+                binding.serversLatencyPrerequisite.visibility = View.GONE
                 binding.serversList.visibility = View.GONE
                 binding.serversList.removeAllViews()
                 binding.serversStateView.renderMessage(
@@ -787,6 +800,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             }
             is ServersScreen.Failed -> {
                 binding.serversAvailableLabel.visibility = View.GONE
+                binding.serversLatencyPrerequisite.visibility = View.GONE
                 binding.serversList.visibility = View.GONE
                 binding.serversList.removeAllViews()
                 binding.serversStateView.renderMessage(
@@ -828,9 +842,11 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 card.findViewById(R.id.group_variant),
                 groupSubtitle(group),
             )
-            bindOptionalText(
-                card.findViewById(R.id.group_delay),
-                delayText(group.delayMs),
+            bindLatencySlot(
+                delayView = card.findViewById(R.id.group_delay),
+                progressView = card.findViewById(R.id.group_delay_progress),
+                delayMs = group.delayMs,
+                showProgress = group.showLatencyProgress,
             )
             (card as? MaterialCardView)?.strokeColor =
                 if (group.selected) selectedStroke else idleStroke
@@ -847,6 +863,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 detail = groupSubtitle(group),
                 delayMs = group.delayMs,
                 activeViaGroup = false,
+                latencyProbing = group.showLatencyProgress,
             )
             if (selectable) {
                 selectArea.setOnClickListener {
@@ -929,9 +946,11 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
                 else R.color.getline_text_secondary,
             )
         }
-        bindOptionalText(
-            row.findViewById(R.id.variant_delay),
-            delayText(variant.delayMs),
+        bindLatencySlot(
+            delayView = row.findViewById(R.id.variant_delay),
+            progressView = row.findViewById(R.id.variant_delay_progress),
+            delayMs = variant.delayMs,
+            showProgress = variant.showLatencyProgress,
         )
 
         row.isEnabled = selectable
@@ -942,6 +961,7 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
             detail = null,
             delayMs = variant.delayMs,
             activeViaGroup = variant.activeViaGroup,
+            latencyProbing = variant.showLatencyProgress,
         )
         if (selectable) {
             row.setOnClickListener {
@@ -964,10 +984,13 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         detail: String?,
         delayMs: Int?,
         activeViaGroup: Boolean,
+        latencyProbing: Boolean,
     ): CharSequence {
         val parts = mutableListOf(label)
         detail?.takeIf { it.isNotBlank() && it != label }?.let(parts::add)
-        parts += if (delayMs != null) {
+        parts += if (latencyProbing) {
+            context.getString(R.string.get_line_server_latency_checking)
+        } else if (delayMs != null) {
             context.getString(R.string.get_line_server_delay_format, delayMs)
         } else {
             context.getString(R.string.get_line_server_delay_unknown_talkback)
@@ -1015,6 +1038,21 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
     private fun delayText(delayMs: Int?): String {
         return delayMs?.let { context.getString(R.string.get_line_server_delay_format, it) }
             ?: context.getString(R.string.get_line_server_delay_unknown)
+    }
+
+    private fun bindLatencySlot(
+        delayView: TextView,
+        progressView: ProgressBar,
+        delayMs: Int?,
+        showProgress: Boolean,
+    ) {
+        delayView.text = delayText(delayMs)
+        progressView.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        if (showProgress) {
+            crossFade(show = progressView, hide = delayView)
+        } else {
+            crossFade(show = delayView, hide = progressView)
+        }
     }
 
     private fun bindOptionalText(view: TextView, value: String?) {
