@@ -1,5 +1,6 @@
 package pro.getline.vpn.getline
 
+import android.content.Intent
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -26,6 +27,7 @@ import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.NativeSession
 import pro.getline.vpn.getline.auth.testSessionStore
+import pro.getline.vpn.getline.servers.VpnServerSelectionRepository
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -309,6 +311,184 @@ class ProductImportTest {
         )
 
         assertTrue(sessions.pendingProfileCleanupUuids().isEmpty())
+    }
+
+    @Test
+    fun productImportFlow_success_bindsCandidateAndCleansPrevious() = runBlocking {
+        sessions.rememberManagedProfile("old-managed", source = "https://old.example/sub")
+        val subscriptions = FlowFakeSubscriptions()
+        val stages = mutableListOf<pro.getline.vpn.getlineui.model.GetLineImportStage>()
+        val flow = ProductImportFlow(
+            backend = FlowFakeBackend(subscriptions),
+            sessions = sessions,
+            host = FlowFakeHost(),
+        )
+
+        val outcome = flow.run(flowDraft(), subscriptionIdToRemember = "sub-1") {
+            stages += it
+        }
+
+        assertEquals(
+            ProductImportFlow.Outcome.Imported(GetLineSubscriptionId("candidate")),
+            outcome,
+        )
+        assertEquals("candidate", sessions.managedProfileUuid())
+        assertEquals("https://candidate.example/sub", sessions.managedProfileSource())
+        assertEquals("sub-1", sessions.rememberedSubscriptionId())
+        assertEquals(listOf("old-managed"), subscriptions.deleted)
+        assertEquals(
+            listOf(pro.getline.vpn.getlineui.model.GetLineImportStage.LoadingConfig),
+            stages,
+        )
+    }
+
+    @Test
+    fun productImportFlow_failedActivation_deletesCandidateAndKeepsBinding() = runBlocking {
+        sessions.rememberManagedProfile("old-managed", source = "https://old.example/sub")
+        val subscriptions = FlowFakeSubscriptions().apply {
+            activationResult = GetLineBackendResult.Success(false)
+        }
+        val flow = ProductImportFlow(
+            backend = FlowFakeBackend(subscriptions),
+            sessions = sessions,
+            host = FlowFakeHost(),
+        )
+
+        val outcome = flow.run(flowDraft(), subscriptionIdToRemember = "sub-1") { }
+
+        assertEquals(
+            ProductImportFlow.Outcome.ActivationFailed(
+                unavailable = false,
+                retry = ImportRetryTarget(flowDraft(), "sub-1"),
+            ),
+            outcome,
+        )
+        assertEquals("old-managed", sessions.managedProfileUuid())
+        assertEquals(listOf("candidate"), subscriptions.deleted)
+        assertEquals(1, subscriptions.activationCalls)
+    }
+
+    @Test
+    fun productImportFlow_queuedReplacement_deletesCandidateBeforeActivation() = runBlocking {
+        val subscriptions = FlowFakeSubscriptions()
+        val replacement = flowDraft().copy(source = "https://replacement.example/sub")
+        val flow = ProductImportFlow(
+            backend = FlowFakeBackend(subscriptions),
+            sessions = sessions,
+            host = FlowFakeHost(replacement = replacement),
+        )
+
+        val outcome = flow.run(flowDraft(), subscriptionIdToRemember = null) { }
+
+        assertEquals(ProductImportFlow.Outcome.Superseded(replacement), outcome)
+        assertEquals(listOf("candidate"), subscriptions.deleted)
+        assertEquals(0, subscriptions.activationCalls)
+        assertNull(sessions.managedProfileUuid())
+    }
+
+    @Test
+    fun productImportFlow_cancellationDuringForegroundWait_cleansCandidate() = runBlocking {
+        sessions.rememberManagedProfile("old-managed")
+        val subscriptions = FlowFakeSubscriptions()
+        val flow = ProductImportFlow(
+            backend = FlowFakeBackend(subscriptions),
+            sessions = sessions,
+            host = FlowFakeHost(foreground = false),
+        )
+
+        try {
+            flow.run(flowDraft(), subscriptionIdToRemember = null) { }
+            fail("expected cancellation")
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            // The flow owns candidate deletion when its Activity waiter dies.
+        }
+
+        assertEquals(listOf("candidate"), subscriptions.deleted)
+        assertEquals("old-managed", sessions.managedProfileUuid())
+    }
+
+    private fun flowDraft() = GetLineSubscriptionDraft(
+        type = GetLineSubscriptionType.Url,
+        name = "candidate",
+        source = "https://candidate.example/sub",
+    )
+
+    private class FlowFakeHost(
+        private var replacement: GetLineSubscriptionDraft? = null,
+        private val foreground: Boolean = true,
+    ) : ProductImportFlow.Host {
+        override val isForeground: Boolean
+            get() = foreground
+
+        override suspend fun awaitForeground() {
+            if (!foreground) throw kotlinx.coroutines.CancellationException("screen destroyed")
+        }
+
+        override fun takeQueuedReplacement(): GetLineSubscriptionDraft? =
+            replacement.also { replacement = null }
+    }
+
+    private class FlowFakeBackend(
+        override val subscriptions: FlowFakeSubscriptions,
+    ) : GetLineBackend {
+        override val vpn: GetLineVpnController = object : GetLineVpnController {
+            override val running: Boolean = false
+            override fun start(): Intent? = null
+            override fun stop() = Unit
+            override suspend fun querySession(): GetLineSession? = null
+        }
+        override val servers: VpnServerSelectionRepository
+            get() = error("not used")
+        override val navigation: GetLineNavigation
+            get() = error("not used")
+        override val appRouting: GetLineAppRoutingRepository
+            get() = error("not used")
+    }
+
+    private class FlowFakeSubscriptions : GetLineSubscriptionRepository {
+        var activationResult: GetLineBackendResult<Boolean> =
+            GetLineBackendResult.Success(true)
+        var activationCalls = 0
+        val deleted = mutableListOf<String>()
+
+        override suspend fun importAndCommit(
+            draft: GetLineSubscriptionDraft,
+            onProgress: suspend (pro.getline.vpn.getlineui.model.GetLineImportStage) -> Unit,
+        ): GetLineBackendResult<GetLineSubscriptionId> {
+            onProgress(pro.getline.vpn.getlineui.model.GetLineImportStage.LoadingConfig)
+            return GetLineBackendResult.Success(GetLineSubscriptionId("candidate"))
+        }
+
+        override suspend fun activateIfImported(
+            id: GetLineSubscriptionId,
+        ): GetLineBackendResult<Boolean> {
+            activationCalls++
+            return activationResult
+        }
+
+        override suspend fun deleteManaged(
+            id: GetLineSubscriptionId,
+        ): GetLineBackendResult<ManagedProfileDeleteOutcome> {
+            deleted += id.value
+            return GetLineBackendResult.Success(ManagedProfileDeleteOutcome.Deleted)
+        }
+
+        override suspend fun snapshot() = error("not used")
+        override suspend fun findImported(id: GetLineSubscriptionId) = error("not used")
+        override suspend fun hasImported() = error("not used")
+        override suspend fun hasActiveImported() = error("not used")
+        override suspend fun createPending(draft: GetLineSubscriptionDraft) = error("not used")
+        override suspend fun createOrUpdatePending(
+            draft: GetLineSubscriptionDraft,
+            reuseId: GetLineSubscriptionId?,
+        ) = error("not used")
+        override suspend fun ensureActiveImported(managedUuid: String?) = error("not used")
+        override suspend fun repairLocalActive(managedUuid: String?) = error("not used")
+        override suspend fun reimportAndActivate(
+            draft: GetLineSubscriptionDraft,
+            managedId: GetLineSubscriptionId?,
+        ) = error("not used")
+        override suspend fun requestConfigUpdate(id: GetLineSubscriptionId) = error("not used")
     }
 
     private fun seedSession() {
