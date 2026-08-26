@@ -149,6 +149,22 @@ class GetLineSessionStore internal constructor(
 
     fun hasRefreshToken(): Boolean = !refreshToken.isNullOrBlank()
 
+    /** Read session and binding fields once, then infer their product meaning. */
+    fun managedBindingSnapshot(): ManagedBindingSnapshot {
+        // Binding remains useful for routing/repair when only refresh-token
+        // decryption fails. This matches the old startup isolation of hasSession.
+        val uuid = managedProfileUuid
+        val source = managedProfileSource
+        val subscription = subscriptionId
+        val hasSession = runCatching { hasRefreshToken() }.getOrDefault(false)
+        return ManagedBindingSnapshot.infer(
+            hasSession = hasSession,
+            managedProfileUuid = uuid,
+            managedProfileSource = source,
+            subscriptionId = subscription,
+        )
+    }
+
     fun saveSession(session: NativeSession, nowMs: Long = System.currentTimeMillis()) {
         val expiresAt = nowMs + session.expiresInSeconds.coerceAtLeast(0L) * 1000L
         try {

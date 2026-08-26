@@ -32,7 +32,9 @@ import pro.getline.vpn.getline.share.SubscriptionLinkShare
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.GetLineSessionStorageException
+import pro.getline.vpn.getline.auth.ManagedBindingSnapshot
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
+import pro.getline.vpn.getline.auth.SessionSubscriptionConsistency
 import pro.getline.vpn.getline.auth.SubscriptionAccountCapabilityPolicy
 import pro.getline.vpn.getline.auth.SubscriptionCardFlow
 import pro.getline.vpn.getline.auth.SubscriptionHeaderDisplay
@@ -95,7 +97,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         SubscriptionCardFlow(
             host = object : SubscriptionCardFlow.Host {
                 override fun managedProfileUuid(): String? =
-                    sessionRepository.managedProfileUuid()
+                    sessionRepository.managedBindingSnapshot().managedProfileUuid
 
                 override suspend fun requestConfigUpdate(
                     id: GetLineSubscriptionId,
@@ -112,7 +114,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         ServersRefreshFlow(
             host = object : ServersRefreshFlow.Host {
                 override fun managedProfileUuid(): String? =
-                    sessionRepository.managedProfileUuid()
+                    sessionRepository.managedBindingSnapshot().managedProfileUuid
 
                 override suspend fun requestConfigUpdate(
                     id: GetLineSubscriptionId,
@@ -388,13 +390,14 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         GetLineHomeDesign.Request.SendDiagnostics ->
                             DiagnosticReportShare.present(
                                 activity = this@GetLineHomeActivity,
-                                hasSession = sessionRepository.hasSession(),
+                                hasSession = sessionRepository.managedBindingSnapshot().hasSession,
                             )
                         GetLineHomeDesign.Request.ShareSubscription -> {
+                            val binding = sessionRepository.managedBindingSnapshot()
                             val url = SubscriptionLinkShare.resolve(
                                 state = subscriptionState.state,
-                                managedUuid = sessionRepository.managedProfileUuid(),
-                                managedSource = sessionRepository.managedProfileSource(),
+                                managedUuid = binding.managedProfileUuid,
+                                managedSource = binding.managedProfileSource,
                             )
                             if (url == null) {
                                 design.setSubscriptionShareVisible(false)
@@ -1019,13 +1022,14 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
 
     /** API latency/failure is isolated from card materialization. */
     private fun GetLineHomeDesign.requestSubscriptionAccountSignal() {
-        if (!sessionRepository.hasSession()) return
+        val binding = sessionRepository.managedBindingSnapshot()
+        if (!binding.hasSession) return
         if (subscriptionAccountSignalJob?.isActive == true) return
         subscriptionAccountSignalJob = launch {
             val signal = sessionRepository.loadSubscriptionAccountSignal()
             paintSubscriptionAccountCapabilities()
             if (signal.shouldRefreshManagedProfile(
-                    hasManagedBinding = sessionRepository.managedProfileUuid() != null,
+                    hasManagedBinding = binding.hasManagedBinding,
                 )
             ) {
                 refreshSubscriptionUi(force = true)
@@ -1035,12 +1039,12 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
 
     private fun GetLineHomeDesign.paintSubscriptionState() {
         launch {
+            val binding = sessionRepository.managedBindingSnapshot()
             // Bug 3 diagnostic (once per process): remove after saveSession question is closed.
             if (subscriptionConsistencyLogged.compareAndSet(false, true)) {
-                val hasSession = sessionRepository.hasSession()
                 Log.i(
-                    "subscription_ui has_refresh=$hasSession " +
-                        "verdict=${sessionRepository.consistencyVerdict()} " +
+                    "subscription_ui has_refresh=${binding.hasSession} " +
+                        "verdict=${SessionSubscriptionConsistency.classify(binding)} " +
                         "state=${subscriptionState.state::class.simpleName}",
                 )
             }
@@ -1048,11 +1052,11 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             setSubscriptionShareVisible(
                 SubscriptionLinkShare.resolve(
                     state = subscriptionState.state,
-                    managedUuid = sessionRepository.managedProfileUuid(),
-                    managedSource = sessionRepository.managedProfileSource(),
+                    managedUuid = binding.managedProfileUuid,
+                    managedSource = binding.managedProfileSource,
                 ) != null,
             )
-            applySubscriptionAccountCapabilities()
+            applySubscriptionAccountCapabilities(binding)
         }
     }
 
@@ -1063,9 +1067,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      */
     private fun leaveIfProductShellUnowned(): Boolean {
         if (loggingOut) return false
+        val binding = sessionRepository.managedBindingSnapshot()
         if (ProductNavigationPolicy.canOwnProductShell(
-                hasSession = sessionRepository.hasSession(),
-                hasManagedBinding = sessionRepository.managedProfileUuid() != null,
+                hasSession = binding.hasSession,
+                hasManagedBinding = binding.hasManagedBinding,
             )
         ) {
             return false
@@ -1080,32 +1085,38 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * Sign-in on top of a managed URL binding resumes the existing mismatch flow.
      * The mixed post-login state takes the same route so its working profile stays.
      */
-    private fun shouldResumeManagedSubscriptionSignIn(): Boolean =
+    private fun shouldResumeManagedSubscriptionSignIn(
+        binding: ManagedBindingSnapshot = sessionRepository.managedBindingSnapshot(),
+    ): Boolean =
         SubscriptionAccountCapabilityPolicy.shouldResumeManagedSubscriptionSignIn(
-            hasSession = sessionRepository.hasSession(),
-            hasManagedBinding = sessionRepository.managedProfileUuid() != null,
-            needsPostLoginStep = sessionRepository.needsPostLoginSubscriptionStep(),
+            hasSession = binding.hasSession,
+            hasManagedBinding = binding.hasManagedBinding,
+            needsPostLoginStep = binding.needsPostLoginSubscriptionStep,
         )
 
     /** SignOut is unsafe until the post-login binding mismatch has been resolved. */
-    private fun canSafelySignOut(): Boolean =
+    private fun canSafelySignOut(binding: ManagedBindingSnapshot): Boolean =
         SubscriptionAccountCapabilityPolicy.canSafelySignOut(
-            hasSession = sessionRepository.hasSession(),
-            needsPostLoginStep = sessionRepository.needsPostLoginSubscriptionStep(),
+            hasSession = binding.hasSession,
+            needsPostLoginStep = binding.needsPostLoginSubscriptionStep,
         )
 
-    private fun accountAction(): GetLineHomeDesign.AccountAction = when {
+    private fun accountAction(
+        binding: ManagedBindingSnapshot = sessionRepository.managedBindingSnapshot(),
+    ): GetLineHomeDesign.AccountAction = when {
         // Real account session only. Mixed post-login still has tokens but must
         // show RemoveSubscription — SignOut would clear the managed binding via
         // logout() under the wrong label (and delete the working profile).
-        canSafelySignOut() -> GetLineHomeDesign.AccountAction.SignOut
-        sessionRepository.managedProfileUuid() != null ->
+        canSafelySignOut(binding) -> GetLineHomeDesign.AccountAction.SignOut
+        binding.hasManagedBinding ->
             GetLineHomeDesign.AccountAction.RemoveSubscription
         else -> GetLineHomeDesign.AccountAction.None
     }
 
-    private suspend fun GetLineHomeDesign.applySubscriptionAccountCapabilities() {
-        val action = accountAction()
+    private suspend fun GetLineHomeDesign.applySubscriptionAccountCapabilities(
+        binding: ManagedBindingSnapshot,
+    ) {
+        val action = accountAction(binding)
         setSubscriptionSignInVisible(
             action == GetLineHomeDesign.AccountAction.RemoveSubscription,
         )
@@ -1114,7 +1125,9 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     }
 
     private fun GetLineHomeDesign.paintSubscriptionAccountCapabilities() {
-        launch { applySubscriptionAccountCapabilities() }
+        launch {
+            applySubscriptionAccountCapabilities(sessionRepository.managedBindingSnapshot())
+        }
     }
 
     /**

@@ -46,7 +46,7 @@ internal class LogoutFlow(
         // Always request stop: running may still be false while a start is in flight.
         backend.vpn.stop()
 
-        val managedUuid = sessionRepository.managedProfileUuid()
+        val managedUuid = sessionRepository.managedBindingSnapshot().managedProfileUuid
         return when (action) {
             Action.RemoveSubscription -> removeSubscription(managedUuid)
             Action.SignOut -> signOut(managedUuid)

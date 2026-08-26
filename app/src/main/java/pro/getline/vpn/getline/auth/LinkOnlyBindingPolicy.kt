@@ -12,9 +12,12 @@ object LinkOnlyBindingPolicy {
         managedSource: String?,
         rememberedSubscriptionId: String?,
     ): Boolean =
-        !managedUuid.isNullOrBlank() &&
-            !managedSource.isNullOrBlank() &&
-            rememberedSubscriptionId.isNullOrBlank()
+        ManagedBindingSnapshot.infer(
+            hasSession = false,
+            managedProfileUuid = managedUuid,
+            managedProfileSource = managedSource,
+            subscriptionId = rememberedSubscriptionId,
+        ).provenance == ManagedBindingSnapshot.Provenance.LinkOnly
 
     /**
      * Session exists but the managed binding is still link-only: the post-login
@@ -28,6 +31,10 @@ object LinkOnlyBindingPolicy {
         managedSource: String?,
         rememberedSubscriptionId: String?,
     ): Boolean =
-        hasSession &&
-            isLinkOnlyBinding(managedUuid, managedSource, rememberedSubscriptionId)
+        ManagedBindingSnapshot.infer(
+            hasSession = hasSession,
+            managedProfileUuid = managedUuid,
+            managedProfileSource = managedSource,
+            subscriptionId = rememberedSubscriptionId,
+        ).needsPostLoginSubscriptionStep
 }

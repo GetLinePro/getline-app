@@ -1,6 +1,7 @@
 package pro.getline.vpn.getline
 
 import com.github.kr328.clash.common.log.Log
+import pro.getline.vpn.getline.auth.ManagedBindingSnapshot
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
 
 /**
@@ -39,10 +40,11 @@ internal class VpnRepairFlow(
      * @param allowNetwork cold start / Retry may network; quiet resume stays local.
      */
     suspend fun repairVpnConfiguration(allowNetwork: Boolean): RepairOutcome {
-        val managedUuid = sessionRepository.managedProfileUuid()
-        val hasSession = sessionRepository.hasSession()
-        val hasManaged = !managedUuid.isNullOrBlank()
-        val savedSource = sessionRepository.managedProfileSource()
+        val binding = sessionRepository.managedBindingSnapshot()
+        val managedUuid = binding.managedProfileUuid
+        val hasSession = binding.hasSession
+        val hasManaged = binding.hasManagedBinding
+        val savedSource = binding.managedProfileSource
         val online = host.hasValidatedInternetConnection()
 
         // One GL-19 line for every exit, including startVpn()'s repair path.
@@ -155,7 +157,7 @@ internal class VpnRepairFlow(
             VpnConfigurationRepairPolicy.Step.OfflineForRemote ->
                 finish(RepairOutcome.FailedRestore, stepName)
             VpnConfigurationRepairPolicy.Step.RemoteReprovision ->
-                finish(reProvisionManagedProfile(managedUuid), stepName)
+                finish(reProvisionManagedProfile(managedUuid, binding), stepName)
         }
     }
 
@@ -168,9 +170,12 @@ internal class VpnRepairFlow(
      *
      * Always reuses [managedUuid] when present so Retry does not mint duplicates.
      */
-    private suspend fun reProvisionManagedProfile(managedUuid: String?): RepairOutcome {
+    private suspend fun reProvisionManagedProfile(
+        managedUuid: String?,
+        binding: ManagedBindingSnapshot,
+    ): RepairOutcome {
         val managedId = managedUuid?.let { GetLineSubscriptionId(it) }
-        val boundSource = sessionRepository.managedProfileSource()
+        val boundSource = binding.managedProfileSource
 
         val draft: GetLineSubscriptionDraft
         val subscriptionIdToRemember: String?
@@ -183,7 +188,7 @@ internal class VpnRepairFlow(
             )
             // Keep existing subscription id; do not rewrite from preferred catalog.
             subscriptionIdToRemember = null
-        } else if (sessionRepository.hasSession()) {
+        } else if (binding.hasSession) {
             val subscription = sessionRepository.loadPreferredSubscriptionOrNull()
                 ?: return RepairOutcome.FailedRestore
             val source = subscription.subscriptionLink ?: return RepairOutcome.FailedRestore

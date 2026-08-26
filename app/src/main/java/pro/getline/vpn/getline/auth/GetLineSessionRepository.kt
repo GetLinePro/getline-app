@@ -22,6 +22,8 @@ class GetLineSessionRepository(
 
     fun hasSession(): Boolean = store.hasRefreshToken()
 
+    fun managedBindingSnapshot(): ManagedBindingSnapshot = store.managedBindingSnapshot()
+
     fun logout() {
         abandonSessionWrites { store.clearAccountState() }
         ManagedProfileRefresh.cancel(store.appContext)
@@ -416,9 +418,9 @@ class GetLineSessionRepository(
         store.subscriptionId = id?.takeIf { it.isNotBlank() }
     }
 
-    fun managedProfileUuid(): String? = store.managedProfileUuid
+    fun managedProfileUuid(): String? = managedBindingSnapshot().managedProfileUuid
 
-    fun managedProfileSource(): String? = store.managedProfileSource?.takeIf { it.isNotBlank() }
+    fun managedProfileSource(): String? = managedBindingSnapshot().managedProfileSource
 
     fun rememberPendingProfileCleanup(uuid: String) {
         store.rememberPendingProfileCleanup(uuid)
@@ -430,32 +432,25 @@ class GetLineSessionRepository(
         store.clearPendingProfileCleanup(expectedUuid)
     }
 
-    fun rememberedSubscriptionId(): String? = store.subscriptionId
+    fun rememberedSubscriptionId(): String? = managedBindingSnapshot().subscriptionId
 
     /**
      * Session + still-link-only binding: post-login subscription step incomplete.
      * See [LinkOnlyBindingPolicy.needsPostLoginSubscriptionStep].
      */
     fun needsPostLoginSubscriptionStep(): Boolean =
-        LinkOnlyBindingPolicy.needsPostLoginSubscriptionStep(
-            hasSession = hasSession(),
-            managedUuid = managedProfileUuid(),
-            managedSource = managedProfileSource(),
-            rememberedSubscriptionId = rememberedSubscriptionId(),
-        )
+        managedBindingSnapshot().needsPostLoginSubscriptionStep
 
     /**
      * Local session vs binding classification for logs / e2e (no token values).
      */
     fun consistencyVerdict(): SessionSubscriptionConsistency.Verdict {
-        return SessionSubscriptionConsistency.classify(
-            hasSession = hasSession(),
-            hasManagedBinding = managedProfileUuid() != null,
-        )
+        val snapshot = managedBindingSnapshot()
+        return SessionSubscriptionConsistency.classify(snapshot)
     }
 
     /** True when Retry can attempt remote re-provision after local prove-absent. */
-    fun canRemoteRepair(): Boolean = hasSession() || managedProfileSource() != null
+    fun canRemoteRepair(): Boolean = managedBindingSnapshot().canRemoteRepair
 }
 
 /**
