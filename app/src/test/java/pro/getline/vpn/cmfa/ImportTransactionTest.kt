@@ -257,6 +257,48 @@ class ImportTransactionTest {
         assertEquals(backend.created, backend.deleted)
     }
 
+    @Test
+    fun failedPrimaryActivation_keepsTheOldActiveProfile() = runBlocking {
+        val oldActive = UUID.randomUUID()
+        val backend = FakeProfileManager(
+            onSetActive = { profile ->
+                if (profile.uuid != oldActive) throw IOException("activation rejected")
+            },
+        )
+        backend.seed(oldActive, imported = true)
+        backend.setActive(backend.queryByUUID(oldActive)!!)
+
+        assertFails<IOException> {
+            backend.importPending(draft, null, {}, activate = true, diagnosticOp = null)
+        }
+
+        assertEquals(listOf(oldActive), backend.activated)
+        assertEquals(oldActive, backend.queryActive()?.uuid)
+        assertEquals(backend.created, backend.deleted)
+        assertEquals(1, backend.deleted.size)
+    }
+
+    @Test
+    fun failedRepairActivation_keepsTheReusedProfile() = runBlocking {
+        val managed = UUID.randomUUID()
+        val backend = FakeProfileManager(onSetActive = { throw IOException("activation rejected") })
+        backend.seed(managed, imported = true)
+
+        assertFails<IOException> {
+            backend.importPending(
+                draft,
+                GetLineSubscriptionId(managed.toString()),
+                {},
+                activate = true,
+                diagnosticOp = null,
+            )
+        }
+
+        assertTrue(backend.created.isEmpty())
+        assertTrue(backend.deleted.isEmpty())
+        assertEquals(managed, backend.queryByUUID(managed)?.uuid)
+    }
+
     /**
      * The screen closing or the 60 s envelope firing cancels the caller mid-commit.
      * Cleanup runs under `NonCancellable`; without it the delete is dropped
