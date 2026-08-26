@@ -15,6 +15,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import pro.getline.vpn.getline.ConfigUpdateResult
+import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.auth.AuthMethod
 import pro.getline.vpn.getline.auth.BrowserAuthStartResponse
 import pro.getline.vpn.getline.auth.CurrentUser
@@ -27,7 +29,6 @@ import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.NativeSession
 import pro.getline.vpn.getline.auth.testSessionStore
-import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -48,9 +49,9 @@ class ManagedProfileRefreshTest {
 
     @Test
     fun missingBinding_isNoOp() = runBlocking {
-        val updated = mutableListOf<UUID>()
+        val updated = mutableListOf<GetLineSubscriptionId>()
 
-        val outcome = refreshManagedProfile(null) { updated.add(it) }
+        val outcome = refreshManagedProfile(null) { updated.add(it); ConfigUpdateResult.Updated }
 
         assertEquals(ManagedProfileRefreshOutcome.NoBinding, outcome)
         assertTrue(updated.isEmpty())
@@ -58,27 +59,49 @@ class ManagedProfileRefreshTest {
 
     @Test
     fun blankOrInvalidBinding_isNoOp() = runBlocking {
-        val updated = mutableListOf<UUID>()
+        val updated = mutableListOf<GetLineSubscriptionId>()
 
         assertEquals(
             ManagedProfileRefreshOutcome.NoBinding,
-            refreshManagedProfile("  ") { updated.add(it) },
+            refreshManagedProfile("  ") { updated.add(it); ConfigUpdateResult.Updated },
         )
         assertEquals(
             ManagedProfileRefreshOutcome.NoBinding,
-            refreshManagedProfile("not-a-uuid") { updated.add(it) },
+            refreshManagedProfile("not-a-uuid") { updated.add(it); ConfigUpdateResult.Updated },
         )
         assertTrue(updated.isEmpty())
     }
 
     @Test
     fun presentBinding_updatesExactlyThatUuid() = runBlocking {
-        val updated = mutableListOf<UUID>()
+        val updated = mutableListOf<GetLineSubscriptionId>()
 
-        val outcome = refreshManagedProfile(managedUuid) { updated.add(it) }
+        val outcome = refreshManagedProfile(managedUuid) {
+            updated.add(it)
+            ConfigUpdateResult.Updated
+        }
 
-        assertEquals(ManagedProfileRefreshOutcome.Updated, outcome)
-        assertEquals(listOf(UUID.fromString(managedUuid)), updated)
+        assertEquals(
+            ManagedProfileRefreshOutcome.Terminal(ConfigUpdateResult.Updated),
+            outcome,
+        )
+        assertEquals(listOf(GetLineSubscriptionId(managedUuid)), updated)
+    }
+
+    @Test
+    fun presentBinding_preservesTerminalResult() = runBlocking {
+        val results = listOf(
+            ConfigUpdateResult.NotFound,
+            ConfigUpdateResult.NotRefreshable,
+            ConfigUpdateResult.Unavailable,
+        )
+
+        results.forEach { result ->
+            assertEquals(
+                ManagedProfileRefreshOutcome.Terminal(result),
+                refreshManagedProfile(managedUuid) { result },
+            )
+        }
     }
 
     @Test

@@ -11,7 +11,11 @@ import com.github.kr328.clash.service.remote.IRemoteService
 import com.github.kr328.clash.service.remote.unwrap
 import com.github.kr328.clash.util.unbindServiceSilent
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+import pro.getline.vpn.getline.ConfigUpdateResult
+import pro.getline.vpn.getline.GetLineSubscriptionId
 import java.util.UUID
 
 /** Same budget as product reimport: [ProfileProcessor.update] is in-process fetch. */
@@ -23,9 +27,17 @@ private const val UPDATE_TIMEOUT_MS = 60_000L
  */
 internal suspend fun updateImportedProfileSilently(
     context: Context,
-    uuid: UUID,
+    id: GetLineSubscriptionId,
     timeoutMs: Long = UPDATE_TIMEOUT_MS,
-) {
+    bindService: (Context, ServiceConnection) -> Boolean = { app, connection ->
+        app.bindService(RemoteService::class.intent, connection, Context.BIND_AUTO_CREATE)
+    },
+    unbindService: (Context, ServiceConnection) -> Unit = { app, connection ->
+        app.unbindServiceSilent(connection)
+    },
+): ConfigUpdateResult {
+    val uuid = runCatching { UUID.fromString(id.value) }.getOrNull()
+        ?: return ConfigUpdateResult.Unavailable
     val app = context.applicationContext
     val connected = CompletableDeferred<IRemoteService>()
     val connection = object : ServiceConnection {
@@ -40,23 +52,35 @@ internal suspend fun updateImportedProfileSilently(
         }
     }
     val accepted = try {
-        app.bindService(RemoteService::class.intent, connection, Context.BIND_AUTO_CREATE)
-    } catch (e: Exception) {
-        throw IllegalStateException("bind_exception", e)
+        bindService(app, connection)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        return ConfigUpdateResult.Unavailable
     }
     if (!accepted) {
-        app.unbindServiceSilent(connection)
-        throw IllegalStateException("bind_rejected")
+        unbindService(app, connection)
+        return ConfigUpdateResult.Unavailable
     }
     try {
         val remote = withTimeout(timeoutMs) { connected.await() }
-        withTimeout(timeoutMs) {
+        return withTimeout(timeoutMs) {
             val profiles = remote.profile()
-            val current = profiles.queryByUUID(uuid) ?: return@withTimeout
-            if (!current.imported || current.type == Profile.Type.File) return@withTimeout
+            val current = profiles.queryByUUID(uuid)
+                ?: return@withTimeout ConfigUpdateResult.NotFound
+            if (!current.imported || current.type == Profile.Type.File) {
+                return@withTimeout ConfigUpdateResult.NotRefreshable
+            }
             profiles.updateSilently(uuid)
+            ConfigUpdateResult.Updated
         }
+    } catch (_: TimeoutCancellationException) {
+        return ConfigUpdateResult.Unavailable
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        return ConfigUpdateResult.Unavailable
     } finally {
-        app.unbindServiceSilent(connection)
+        unbindService(app, connection)
     }
 }
