@@ -197,16 +197,16 @@ class MainActivity : BaseActivity<MainDesign>() {
         withContext(Dispatchers.IO) {
             runCatching {
                 val store = GetLineSessionStore(this@MainActivity)
+                val binding = store.managedBindingSnapshot()
                 // Routing fields first. hasSession is log-only on this path — isolate so a
                 // failed refresh_token decrypt cannot collapse managed.
-                val managedProfileUuid = store.managedProfileUuid
-                val hasManagedProfile = !managedProfileUuid.isNullOrBlank()
-                runCatching { ManagedProfileRefresh.sync(this@MainActivity, managedProfileUuid) }
-                val hasSession = runCatching { store.hasRefreshToken() }.getOrDefault(false)
+                runCatching {
+                    ManagedProfileRefresh.sync(this@MainActivity, binding.managedProfileUuid)
+                }
                 SessionRoutingSnapshot(
                     storeOk = true,
-                    hasSession = hasSession,
-                    hasManagedProfile = hasManagedProfile,
+                    hasSession = binding.hasSession,
+                    hasManagedProfile = binding.hasManagedBinding,
                     sessionStorageRecovered = store.recoveredFromStorageFailure,
                     prefsBackend = store.backendName,
                     prefsOther = runCatching { flag01(store.otherPrefsFileExists()) }

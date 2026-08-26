@@ -252,6 +252,21 @@ class LogoutFlowTest {
         assertTrue(sessions.pendingProfileCleanupUuids().isEmpty())
     }
 
+    @Test
+    fun perform_readsBindingAtExecutionTime() = runBlocking {
+        seedSession()
+        sessions.rememberManagedProfile("before-confirmation")
+        val logout = flow()
+
+        // Models a late import/refresh while Home's confirmation dialog is open.
+        sessions.rememberManagedProfile("current-at-confirmation")
+
+        val outcome = logout.perform(Action.RemoveSubscription)
+
+        assertEquals(Outcome.Completed, outcome)
+        assertEquals(listOf("current-at-confirmation"), subscriptions.deleted)
+    }
+
     private fun flow(): LogoutFlow = LogoutFlow(
         backend = LogoutFakeBackend(subscriptions, events),
         sessionRepository = sessions,

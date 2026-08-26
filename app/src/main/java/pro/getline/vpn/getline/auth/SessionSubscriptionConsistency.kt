@@ -28,4 +28,10 @@ object SessionSubscriptionConsistency {
             else -> Verdict.Empty
         }
     }
+
+    fun classify(snapshot: ManagedBindingSnapshot): Verdict =
+        classify(
+            hasSession = snapshot.hasSession,
+            hasManagedBinding = snapshot.hasManagedBinding,
+        )
 }

@@ -41,7 +41,7 @@ import pro.getline.vpn.diagnostics.DiagnosticReportShare
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import pro.getline.vpn.getline.auth.GetLineSessionStorageException
-import pro.getline.vpn.getline.auth.LinkOnlyBindingPolicy
+import pro.getline.vpn.getline.auth.ManagedBindingSnapshot
 import pro.getline.vpn.getline.auth.PendingNativeAuthStore
 import pro.getline.vpn.getline.auth.RwpGetLineAuthApi
 import pro.getline.vpn.getline.auth.SubscriptionLinkMatcher
@@ -123,12 +123,13 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         design.setLinkOnlySignIn(linkOnlySignIn)
         // Resumed post-login step (mismatch dialog / import) starts with a live
         // session — login controls must stay hidden on its error states too.
-        val initialHasSession = try {
-            sessionRepository.hasSession()
+        val initialBinding = try {
+            sessionRepository.managedBindingSnapshot()
         } catch (_: GetLineSessionStorageException) {
             waitForSecureSessionStorage(design)
             return
         }
+        val initialHasSession = initialBinding.hasSession
         design.setSessionEstablished(initialHasSession)
 
         val initialImport = intent.importRequest
@@ -154,7 +155,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             initialImport != null -> importSubscription(design, initialImport)
             // Session + link-only binding: mismatch dialog / import never finished.
             // Do not leave the user on providers with a live mixed state.
-            sessionRepository.needsPostLoginSubscriptionStep() ->
+            initialBinding.needsPostLoginSubscriptionStep ->
                 resumePreferredSubscription(design)
             else -> refreshEntryState(design)
         }
@@ -875,16 +876,13 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         load: GetLineSessionRepository.PreferredSubscriptionLoad,
     ) {
         // Capture prior selection before loading; load does not overwrite store.
-        val previousSubscriptionId = sessionRepository.rememberedSubscriptionId()
-        val managedUuid = sessionRepository.managedProfileUuid()
-        val managedSource = sessionRepository.managedProfileSource()
+        val binding = sessionRepository.managedBindingSnapshot()
+        val previousSubscriptionId = binding.subscriptionId
+        val managedUuid = binding.managedProfileUuid
+        val managedSource = binding.managedProfileSource
         val all = load.all
 
-        val linkOnly = LinkOnlyBindingPolicy.isLinkOnlyBinding(
-            managedUuid = managedUuid,
-            managedSource = managedSource,
-            rememberedSubscriptionId = previousSubscriptionId,
-        )
+        val linkOnly = binding.provenance == ManagedBindingSnapshot.Provenance.LinkOnly
         // Match the concrete list item (may be non-preferred). Import that item
         // so a secondary-link profile is not silently rewritten to preferred.
         val matchedItem = if (linkOnly) {
