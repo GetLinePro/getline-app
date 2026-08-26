@@ -2,6 +2,7 @@ package com.github.kr328.clash.service.remote
 
 import com.github.kr328.clash.service.model.Profile
 import com.github.kr328.clash.service.model.ProfileSelectionSnapshot
+import com.github.kr328.clash.service.model.ProfileStateSnapshot
 import com.github.kr328.kaidl.BinderInterface
 import java.util.*
 
@@ -27,6 +28,11 @@ interface IProfileManager {
     suspend fun queryByUUID(uuid: UUID): Profile?
     suspend fun queryAll(): List<Profile>
     suspend fun queryActive(): Profile?
+    /**
+     * Imported inventory, active identity and candidate storage health from one
+     * service-side profile-lock boundary.
+     */
+    suspend fun queryProfileStateSnapshot(managedUuid: UUID? = null): ProfileStateSnapshot
     suspend fun setActive(profile: Profile)
     /**
      * Active imported UUID plus every persisted selector for that UUID.

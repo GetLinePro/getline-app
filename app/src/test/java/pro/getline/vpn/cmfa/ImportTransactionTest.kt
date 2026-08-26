@@ -3,6 +3,9 @@ package pro.getline.vpn.cmfa
 import com.github.kr328.clash.core.model.FetchStatus
 import com.github.kr328.clash.service.model.Profile
 import com.github.kr328.clash.service.model.ProfileSelectionSnapshot
+import com.github.kr328.clash.service.model.ProfileStateSnapshot
+import com.github.kr328.clash.service.model.ProfileStorageHealth
+import com.github.kr328.clash.service.model.ProfileStorageSnapshot
 import com.github.kr328.clash.service.remote.IFetchObserver
 import com.github.kr328.clash.service.remote.IProfileManager
 import kotlinx.coroutines.CompletableDeferred
@@ -357,6 +360,7 @@ class ImportTransactionTest {
         val broken = UUID.randomUUID()
         val backend = FakeProfileManager()
         backend.seed(broken, imported = true)
+        backend.storageHealth[broken] = ProfileStorageHealth.MissingDirectory
 
         val imported = backend.importPending(
             draft,
@@ -364,7 +368,6 @@ class ImportTransactionTest {
             {},
             activate = false,
             diagnosticOp = null,
-            importedRoot = tmp.root,
         )
 
         assertEquals(listOf(broken), backend.deleted)
@@ -386,7 +389,6 @@ class ImportTransactionTest {
             {},
             activate = false,
             diagnosticOp = null,
-            importedRoot = tmp.root,
         )
 
         assertTrue(backend.deleted.isEmpty())
@@ -571,6 +573,7 @@ private class FakeProfileManager(
     private val onSetActive: (Profile) -> Unit = {},
 ) : IProfileManager {
     private val profiles = linkedMapOf<UUID, Profile>()
+    val storageHealth = mutableMapOf<UUID, ProfileStorageHealth>()
 
     val created = mutableListOf<UUID>()
     val patched = mutableListOf<UUID>()
@@ -643,6 +646,25 @@ private class FakeProfileManager(
 
     override suspend fun queryActive(): Profile? =
         activated.lastOrNull()?.let { profiles[it] }
+
+    override suspend fun queryProfileStateSnapshot(managedUuid: UUID?): ProfileStateSnapshot {
+        val imported = profiles.values.filter { it.imported }.map { it.uuid }
+        val active = activated.lastOrNull()
+        val checked = listOfNotNull(active, managedUuid)
+            .distinct()
+            .filter { it in imported }
+            .map { uuid ->
+                ProfileStorageSnapshot(
+                    uuid = uuid,
+                    health = storageHealth[uuid] ?: ProfileStorageHealth.Intact,
+                )
+            }
+        return ProfileStateSnapshot(
+            activeUuid = active,
+            importedUuids = imported,
+            checked = checked,
+        )
+    }
 
     override suspend fun clone(uuid: UUID): UUID {
         error("not used by import")
