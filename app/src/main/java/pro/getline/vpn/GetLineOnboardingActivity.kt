@@ -9,7 +9,6 @@ import com.github.kr328.clash.HelpActivity
 import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.design.R as DesignR
-import com.github.kr328.clash.util.BinderDiedException
 import pro.getline.vpn.getlineui.GetLineOnboardingDesign
 import pro.getline.vpn.getlineui.R as GetLineUiR
 import pro.getline.vpn.getlineui.ToastDuration
@@ -17,19 +16,12 @@ import pro.getline.vpn.getlineui.model.GetLineImportStage
 import pro.getline.vpn.getlineui.model.GetLineProductState
 import pro.getline.vpn.getline.GetLineBackendProvider
 import pro.getline.vpn.product.GetLineActivity
-import pro.getline.vpn.getline.GetLineBackendResult
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
-import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.GetLineSubscriptionType
 import pro.getline.vpn.getline.ImportAttempt
 import pro.getline.vpn.getline.ImportWaitOutcome
+import pro.getline.vpn.getline.ProductImportFlow
 import pro.getline.vpn.getline.abandonPostLoginImportSession
-import pro.getline.vpn.getline.activateImportedProfileWhenForeground
-import pro.getline.vpn.getline.commitActivatedProductImport
-import pro.getline.vpn.getline.importRetryAfterFailedActivation
-import pro.getline.vpn.getline.productImportShouldBind
-import pro.getline.vpn.getline.rememberUnboundCandidateIfDeleteIncomplete
-import pro.getline.vpn.getline.runPendingManagedProfileCleanup
 import pro.getline.vpn.getline.auth.AuthTabRedirectMode
 import pro.getline.vpn.getline.auth.BrowserAuthFlow
 import pro.getline.vpn.getline.auth.BrowserAuthLauncher
@@ -73,6 +65,13 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         GetLineSessionRepository(
             api = authApi,
             store = sessionStore,
+        )
+    }
+    private val productImportFlow by lazy {
+        ProductImportFlow(
+            backend = backend,
+            sessions = sessionRepository,
+            host = ProductImportHost(),
         )
     }
     private val browserAuthLauncher = BrowserAuthLauncher()
@@ -962,31 +961,18 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         setImportWaitCancelable(design, cancelable = true)
         design.setProductState(GetLineProductState.Loading)
 
-        var unboundCandidate: GetLineSubscriptionId? = null
         try {
-            val terminal = try {
-                when (
-                    val outcome = raceImportAttempt(
-                        onLost = { lost ->
-                            if (lost is ProductImportResult.Imported) {
-                                deleteUnboundCandidate(lost.id)
-                            }
-                        },
-                    ) {
-                        runProductImport(design, request)
-                    }
-                ) {
-                    ImportWaitOutcome.Cancelled -> ProductImportResult.Cancelled
-                    is ImportWaitOutcome.Completed -> outcome.value
-                }
-            } catch (e: CancellationException) {
-                currentCoroutineContext().ensureActive()
-                ProductImportResult.Cancelled
-            }
-            setImportWaitCancelable(design, false)
+            val terminal = productImportFlow.run(
+                request = request,
+                subscriptionIdToRemember = subscriptionIdToRemember,
+                onImportWaitFinished = {
+                    setImportWaitCancelable(design, cancelable = false)
+                },
+                onProgress = { stage -> design.setImportStage(stage) },
+            )
 
             when (terminal) {
-                ProductImportResult.Cancelled -> {
+                ProductImportFlow.Outcome.Cancelled -> {
                     if (!isFinishing && drainAndContinueImport(design)) {
                         return
                     }
@@ -1000,30 +986,30 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                         refreshEntryState(design)
                     }
                 }
-                is ProductImportResult.Imported -> {
-                    unboundCandidate = terminal.id
-                    val replacement = takeQueuedImport()
-                    if (replacement != null) {
-                        deleteUnboundCandidate(terminal.id)
-                        unboundCandidate = null
-                        startQueuedImport(design, replacement)
-                        return
-                    }
+                is ProductImportFlow.Outcome.Superseded -> {
+                    startQueuedImport(design, terminal.replacement)
+                    return
+                }
+                is ProductImportFlow.Outcome.Imported -> {
                     pendingEmailAuth = null
-                    if (activateImportedProfile(
-                            design = design,
-                            id = terminal.id,
-                            request = request,
-                            subscriptionIdToRemember = subscriptionIdToRemember,
+                    finishImportToHome(design)
+                }
+                is ProductImportFlow.Outcome.ActivationFailed -> {
+                    terminal.retry?.let { retry ->
+                        retryTarget = RetryTarget.ImportSubscription(
+                            request = retry.request,
+                            subscriptionIdToRemember = retry.subscriptionIdToRemember,
                         )
-                    ) {
-                        unboundCandidate = null
-                        finishImportToHome(design)
+                    }
+                    if (terminal.unavailable) {
+                        Log.w("import_terminal activate_unavailable")
+                        design.setProductState(GetLineProductState.BackendUnavailable)
                     } else {
-                        unboundCandidate = null
+                        Log.w("import_terminal activate_failed")
+                        design.setProductState(GetLineProductState.ImportFailed)
                     }
                 }
-                is ProductImportResult.Failed -> {
+                is ProductImportFlow.Outcome.Failed -> {
                     if (drainAndContinueImport(design)) {
                         return
                     }
@@ -1040,10 +1026,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     }
                 }
             }
-        } catch (e: CancellationException) {
-            unboundCandidate?.let { deleteUnboundCandidate(it) }
-            Log.i("import_waiter_cancelled")
-            throw e
         } finally {
             setImportWaitCancelable(design, false)
             if (!alreadyBusy) {
@@ -1052,11 +1034,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         }
     }
 
-    /**
-     * Producer and Cancel race [ImportAttempt.tryComplete] / [ImportAttempt.tryCancel].
-     * IO is a sibling of this waiter so a winning Cancel does not join
-     * HttpURLConnection. A losing producer is [onLost], not a second terminal.
-     */
+    /** Producer/cancel race for preferred-subscription loading. */
     private suspend fun <T> raceImportAttempt(
         onLost: suspend (T) -> Unit = {},
         produce: suspend () -> T,
@@ -1095,36 +1073,9 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         }
     }
 
-    /** True only when Cancel won the terminal. Success already owns otherwise. */
-    private fun cancelActiveImport(): Boolean = importTerminal?.tryCancel() == true
-
-    private suspend fun runProductImport(
-        design: GetLineOnboardingDesign,
-        request: GetLineSubscriptionDraft,
-    ): ProductImportResult {
-        val terminal = try {
-            when (
-                val result = backend.subscriptions.importAndCommit(request) { stage ->
-                    runCatching { design.setImportStage(stage) }
-                }
-            ) {
-                is GetLineBackendResult.Success ->
-                    ProductImportResult.Imported(result.value)
-                GetLineBackendResult.Unavailable ->
-                    ProductImportResult.Failed(reason = "kind=backend")
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: BinderDiedException) {
-            ProductImportResult.Failed(reason = "kind=binder_died")
-        } catch (t: Throwable) {
-            ProductImportResult.Failed(reason = importUnavailableReason(t))
-        }
-        if (terminal is ProductImportResult.Failed) {
-            Log.w("import_terminal unavailable ${terminal.reason}")
-        }
-        return terminal
-    }
+    /** True when either the preferred load or product import owns Cancel. */
+    private fun cancelActiveImport(): Boolean =
+        productImportFlow.cancelActiveImport() || importTerminal?.tryCancel() == true
 
     /**
      * Drain channel + [pendingExternalImport]. Starts the newest draft if any.
@@ -1249,17 +1200,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                     request = target.request,
                     subscriptionIdToRemember = target.subscriptionIdToRemember,
                 )
-            is RetryTarget.Activate -> {
-                if (activateImportedProfile(
-                        design,
-                        target.id,
-                        target.request,
-                        target.subscriptionIdToRemember,
-                    )
-                ) {
-                    finishImportToHome(design)
-                }
-            }
         }
     }
 
@@ -1347,87 +1287,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             GetLineProductState.NoProfile
         } else {
             GetLineProductState.Offline
-        }
-    }
-
-    /**
-     * Activate [id] while foreground, then bind. Returns true only after the
-     * candidate is the managed profile. Failure leaves the old binding and
-     * best-effort deletes the unbound candidate.
-     */
-    private suspend fun activateImportedProfile(
-        design: GetLineOnboardingDesign,
-        id: GetLineSubscriptionId,
-        request: GetLineSubscriptionDraft?,
-        subscriptionIdToRemember: String? = null,
-    ): Boolean {
-        retryTarget = RetryTarget.Activate(id, request, subscriptionIdToRemember)
-        design.setProductState(GetLineProductState.Loading)
-
-        val activated = activateImportedProfileWhenForeground(
-            isForeground = { activityStarted },
-            awaitForeground = ::awaitActivityStarted,
-            activate = { backend.subscriptions.activateIfImported(id) },
-        )
-
-        if (!productImportShouldBind(activated)) {
-            deleteUnboundCandidate(id)
-            importRetryAfterFailedActivation(request, subscriptionIdToRemember)?.let { retry ->
-                retryTarget = RetryTarget.ImportSubscription(
-                    request = retry.request,
-                    subscriptionIdToRemember = retry.subscriptionIdToRemember,
-                )
-            }
-            if (activated is GetLineBackendResult.Success) {
-                Log.w("import_terminal activate_failed")
-                design.setProductState(GetLineProductState.ImportFailed)
-            } else {
-                Log.w("import_terminal activate_unavailable")
-                design.setProductState(GetLineProductState.BackendUnavailable)
-            }
-            return false
-        }
-        bindActivatedCandidate(
-            id = id,
-            source = request?.source,
-            subscriptionIdToRemember = subscriptionIdToRemember,
-        )
-        return true
-    }
-
-    private suspend fun bindActivatedCandidate(
-        id: GetLineSubscriptionId,
-        source: String?,
-        subscriptionIdToRemember: String?,
-    ) {
-        val previous = commitActivatedProductImport(
-            sessions = sessionRepository,
-            candidate = id,
-            source = source,
-            subscriptionIdToRemember = subscriptionIdToRemember,
-        )
-        sessionRepository.pendingProfileCleanupUuids().forEach { pending ->
-            runPendingManagedProfileCleanup(
-                pendingUuid = pending,
-                managedUuid = id.value,
-                canDelete = true,
-                stopBeforeDelete = pending == previous,
-                stopVpn = backend.vpn::stop,
-                deleteManaged = backend.subscriptions::deleteManaged,
-                clearPending = sessionRepository::clearPendingProfileCleanup,
-            )
-        }
-        Log.i(
-            "import_terminal success " +
-                "verdict=${sessionRepository.consistencyVerdict()}",
-        )
-    }
-
-    private suspend fun deleteUnboundCandidate(id: GetLineSubscriptionId) {
-        if (id.value == sessionRepository.managedProfileUuid()) return
-        withContext(NonCancellable) {
-            val result = runCatching { backend.subscriptions.deleteManaged(id) }.getOrNull()
-            rememberUnboundCandidateIfDeleteIncomplete(sessionRepository, id, result)
         }
     }
 
@@ -1537,6 +1396,18 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         }
     }
 
+    private inner class ProductImportHost : ProductImportFlow.Host {
+        override val isForeground: Boolean
+            get() = activityStarted
+
+        override suspend fun awaitForeground() {
+            awaitActivityStarted()
+        }
+
+        override fun takeQueuedReplacement(): GetLineSubscriptionDraft? =
+            takeQueuedImport()
+    }
+
     /**
      * Activity side of [BrowserAuthFlow]: the screen-wide busy guard, the retry
      * target shared with the email/import flows, the design surface, and the two
@@ -1622,12 +1493,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         val otpSent: Boolean,
     )
 
-    private sealed class ProductImportResult {
-        data class Imported(val id: GetLineSubscriptionId) : ProductImportResult()
-        data class Failed(val reason: String) : ProductImportResult()
-        data object Cancelled : ProductImportResult()
-    }
-
     private sealed class RetryTarget {
         object Refresh : RetryTarget()
         /** Telegram / Google only — never Email. */
@@ -1662,11 +1527,6 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
         object ActivateTrial : RetryTarget()
         data class ImportSubscription(
             val request: GetLineSubscriptionDraft,
-            val subscriptionIdToRemember: String? = null,
-        ) : RetryTarget()
-        data class Activate(
-            val id: GetLineSubscriptionId,
-            val request: GetLineSubscriptionDraft?,
             val subscriptionIdToRemember: String? = null,
         ) : RetryTarget()
     }
@@ -1740,20 +1600,4 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
                 )
             }
     }
-}
-
-/** Exception class + optional HTTP status — never [Throwable.message]. */
-private fun importUnavailableReason(error: Throwable): String {
-    val kind = error.javaClass.simpleName.ifBlank { "Throwable" }
-    var current: Throwable? = error
-    var depth = 0
-    while (current != null && depth < 6) {
-        val failure = current as? GetLineAuthException.HttpFailure
-        if (failure != null) {
-            return "kind=$kind code=${failure.code}"
-        }
-        current = current.cause
-        depth++
-    }
-    return "kind=$kind"
 }

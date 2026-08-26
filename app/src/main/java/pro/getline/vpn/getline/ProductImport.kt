@@ -138,3 +138,19 @@ internal fun abandonPostLoginImportSession(
         sessions.logout()
     }
 }
+
+/** Exception class + optional HTTP status — never [Throwable.message]. */
+internal fun importUnavailableReason(error: Throwable): String {
+    val kind = error.javaClass.simpleName.ifBlank { "Throwable" }
+    var current: Throwable? = error
+    var depth = 0
+    while (current != null && depth < 6) {
+        val failure = current as? pro.getline.vpn.getline.auth.GetLineAuthException.HttpFailure
+        if (failure != null) {
+            return "kind=$kind code=${failure.code}"
+        }
+        current = current.cause
+        depth++
+    }
+    return "kind=$kind"
+}
