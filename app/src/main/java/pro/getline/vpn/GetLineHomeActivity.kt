@@ -14,6 +14,7 @@ import pro.getline.vpn.getlineui.model.GetLineTraffic
 import pro.getline.vpn.getlineui.ToastDuration
 import pro.getline.vpn.getline.GetLineBackendProvider
 import pro.getline.vpn.product.GetLineActivity
+import pro.getline.vpn.getline.GetLineAppRoutingMode
 import pro.getline.vpn.getline.ConfigUpdateResult
 import pro.getline.vpn.getline.GetLineBackendResult
 import pro.getline.vpn.getline.GetLineSubscriptionId
@@ -43,8 +44,6 @@ import pro.getline.vpn.getline.GetLineSubscriptionSummary
 import com.github.kr328.clash.AccessControlActivity
 import com.github.kr328.clash.HelpActivity
 import com.github.kr328.clash.common.log.Log
-import com.github.kr328.clash.service.model.AccessControlMode
-import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.common.util.intent
 import com.github.kr328.clash.common.util.ticker
 import java.util.concurrent.atomic.AtomicBoolean
@@ -59,7 +58,6 @@ import pro.getline.vpn.getline.servers.VpnServerUiState
 import pro.getline.vpn.util.hasValidatedInternetConnection
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -122,8 +120,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             },
         )
     }
-    /** Split tunnelling state for the Home routing row; owned by the service. */
-    private val serviceStore by lazy { ServiceStore(this) }
     /** Survives tab switches; cleared only when Activity is destroyed. */
     private val subscriptionState = SubscriptionStateHolder()
     private val serverState = VpnServerStateHolder()
@@ -434,16 +430,17 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * last showed is not authoritative after any trip off this screen.
      */
     private suspend fun GetLineHomeDesign.refreshAppRouting() {
-        val (mode, count) = withContext(Dispatchers.IO) {
-            serviceStore.accessControlMode to serviceStore.accessControlPackages.size
-        }
+        val snapshot = backend.appRouting.snapshot()
         setAppRouting(
-            mode = when (mode) {
-                AccessControlMode.AcceptAll -> GetLineHomeDesign.AppRoutingMode.All
-                AccessControlMode.AcceptSelected -> GetLineHomeDesign.AppRoutingMode.OnlySelected
-                AccessControlMode.DenySelected -> GetLineHomeDesign.AppRoutingMode.ExceptSelected
+            mode = when (snapshot.mode) {
+                GetLineAppRoutingMode.All ->
+                    GetLineHomeDesign.AppRoutingMode.All
+                GetLineAppRoutingMode.OnlySelected ->
+                    GetLineHomeDesign.AppRoutingMode.OnlySelected
+                GetLineAppRoutingMode.ExceptSelected ->
+                    GetLineHomeDesign.AppRoutingMode.ExceptSelected
             },
-            selectedCount = count,
+            selectedCount = snapshot.selectedCount,
         )
     }
 

@@ -6,6 +6,7 @@ import androidx.work.WorkerParameters
 import com.github.kr328.clash.common.log.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
+import pro.getline.vpn.cmfa.updateImportedProfileSilently
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 
 class ProfileRefreshWorker(

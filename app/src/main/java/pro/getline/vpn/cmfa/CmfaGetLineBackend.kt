@@ -1,6 +1,7 @@
 package pro.getline.vpn.cmfa
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import pro.getline.vpn.GetLineHomeActivity
@@ -13,6 +14,9 @@ import pro.getline.vpn.getlineui.model.GetLineImportStage
 import pro.getline.vpn.getline.ConfigUpdateResult
 import pro.getline.vpn.getline.GetLineBackend
 import pro.getline.vpn.getline.GetLineBackendResult
+import pro.getline.vpn.getline.GetLineAppRoutingRepository
+import pro.getline.vpn.getline.GetLineAppRoutingSnapshot
+import pro.getline.vpn.getline.GetLineAppRoutingMode
 import pro.getline.vpn.getline.GetLineNavigation
 import pro.getline.vpn.getline.GetLineSession
 import pro.getline.vpn.getline.GetLineSubscriptionDraft
@@ -29,7 +33,9 @@ import pro.getline.vpn.getline.ManagedProfileDeleteOutcome
 import pro.getline.vpn.getline.servers.VpnServerSelectionRepository
 import com.github.kr328.clash.remote.Remote
 import com.github.kr328.clash.service.model.Profile
+import com.github.kr328.clash.service.model.AccessControlMode
 import com.github.kr328.clash.service.remote.IProfileManager
+import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.util.startClashService
 import com.github.kr328.clash.util.stopClashService
 import com.github.kr328.clash.util.withClash
@@ -38,6 +44,7 @@ import com.github.kr328.clash.service.util.importedDir
 import com.github.kr328.clash.util.withProfile
 import com.github.kr328.clash.util.withProfileOnce
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
@@ -63,6 +70,27 @@ class CmfaGetLineBackend(
             vpnRunning = { vpn.running },
         )
     override val navigation: GetLineNavigation = CmfaGetLineNavigation(activity)
+    override val appRouting: GetLineAppRoutingRepository by lazy {
+        CmfaGetLineAppRoutingRepository(activity.applicationContext)
+    }
+}
+
+private class CmfaGetLineAppRoutingRepository(
+    context: Context,
+) : GetLineAppRoutingRepository {
+    private val serviceStore = ServiceStore(context)
+
+    override suspend fun snapshot(): GetLineAppRoutingSnapshot =
+        withContext(Dispatchers.IO) {
+            GetLineAppRoutingSnapshot(
+                mode = when (serviceStore.accessControlMode) {
+                    AccessControlMode.AcceptAll -> GetLineAppRoutingMode.All
+                    AccessControlMode.AcceptSelected -> GetLineAppRoutingMode.OnlySelected
+                    AccessControlMode.DenySelected -> GetLineAppRoutingMode.ExceptSelected
+                },
+                selectedCount = serviceStore.accessControlPackages.size,
+            )
+        }
 }
 
 private class CmfaGetLineSubscriptionRepository(

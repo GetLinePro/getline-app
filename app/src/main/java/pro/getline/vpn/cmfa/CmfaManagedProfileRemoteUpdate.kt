@@ -1,4 +1,4 @@
-package pro.getline.vpn.getline.refresh
+package pro.getline.vpn.cmfa
 
 import android.content.ComponentName
 import android.content.Context

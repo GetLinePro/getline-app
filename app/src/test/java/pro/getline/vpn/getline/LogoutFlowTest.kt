@@ -298,6 +298,8 @@ private class LogoutFakeBackend(
         get() = error("not used")
     override val navigation: GetLineNavigation
         get() = error("not used")
+    override val appRouting: GetLineAppRoutingRepository
+        get() = error("not used")
 }
 
 private class LogoutFakeSubscriptionRepository(
