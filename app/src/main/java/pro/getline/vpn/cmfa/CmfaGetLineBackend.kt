@@ -34,6 +34,7 @@ import pro.getline.vpn.getline.servers.VpnServerSelectionRepository
 import com.github.kr328.clash.remote.Remote
 import com.github.kr328.clash.service.model.Profile
 import com.github.kr328.clash.service.model.AccessControlMode
+import com.github.kr328.clash.service.model.ProfileStorageHealth
 import com.github.kr328.clash.service.remote.IProfileManager
 import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.util.startClashService
@@ -52,16 +53,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import java.io.File
 import java.util.UUID
 
 class CmfaGetLineBackend(
     activity: Activity,
 ) : GetLineBackend {
     override val subscriptions: GetLineSubscriptionRepository =
-        CmfaGetLineSubscriptionRepository(
-            importedRoot = activity.applicationContext.importedDir,
-        )
+        CmfaGetLineSubscriptionRepository()
     override val vpn: GetLineVpnController = CmfaGetLineVpnController(activity)
     override val servers: VpnServerSelectionRepository =
         CmfaVpnServerSelectionRepository(
@@ -93,9 +91,7 @@ private class CmfaGetLineAppRoutingRepository(
         }
 }
 
-private class CmfaGetLineSubscriptionRepository(
-    private val importedRoot: File,
-) : GetLineSubscriptionRepository {
+private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository {
     override suspend fun snapshot(): GetLineBackendResult<GetLineSubscriptionSnapshot> {
         return callProfileBackend(op = "snapshot") {
             withProfile {
@@ -153,7 +149,6 @@ private class CmfaGetLineSubscriptionRepository(
                     reuseId = reuseId,
                     type = draft.type.toCmfaType(),
                     name = draft.name,
-                    importedRoot = importedRoot,
                 ).first
                 if (draft.source != null) {
                     patch(
@@ -174,14 +169,13 @@ private class CmfaGetLineSubscriptionRepository(
     ): GetLineBackendResult<Boolean> {
         return callProfileBackend(op = "activate") {
             withProfile {
-                queryByUUID(id.toUuid())
-                    ?.takeIf { it.imported }
-                    ?.takeIf { profile ->
-                        ImportedProfileIntegrity.inspect(
-                            importedRoot.resolve(profile.uuid.toString()),
-                        ) == ImportedProfileIntegrity.Verdict.Intact
-                    }
-                    ?.also { setActive(it) } != null
+                val profile = queryByUUID(id.toUuid())?.takeIf { it.imported }
+                    ?: return@withProfile false
+                val snapshot = queryProfileStateSnapshot(profile.uuid)
+                val intact = snapshot.checked.firstOrNull { it.uuid == profile.uuid }
+                    ?.health == ProfileStorageHealth.Intact
+                if (intact) setActive(profile)
+                intact
             }
         }
     }
@@ -202,25 +196,28 @@ private class CmfaGetLineSubscriptionRepository(
         return callProfileBackend(op = "repair_local_active") {
             withProfile {
                 val managed = managedUuid?.takeIf { it.isNotBlank() }
-                val imported = queryAll().filter { it.imported }
-                val active = queryActive()?.takeIf { it.imported }
+                val managedUuidValue = managed?.let {
+                    runCatching { UUID.fromString(it) }.getOrNull()
+                }
+                val snapshot = queryProfileStateSnapshot(managedUuidValue)
                 val decided = LocalActiveRepairDecision.decide(
                     managedUuid = managed,
-                    importedUuids = imported.map { it.uuid.toString() },
-                    activeUuid = active?.uuid?.toString(),
-                    profileDirectory = { importedRoot.resolve(it) },
-                    debounceMs = INTEGRITY_DEBOUNCE_MS,
+                    importedUuids = snapshot.importedUuids.map { it.toString() },
+                    activeUuid = snapshot.activeUuid?.toString(),
+                    profileHealth = snapshot.checked.associate { checked ->
+                        checked.uuid.toString() to checked.health.toImportedProfileVerdict()
+                    },
                 )
                 val result = if (decided is LocalActiveRepair.Ready &&
-                    active?.uuid?.toString() != decided.activeUuid
+                    snapshot.activeUuid?.toString() != decided.activeUuid
                 ) {
                     val profile = queryByUUID(UUID.fromString(decided.activeUuid))
                         ?.takeIf { it.imported }
                     if (profile == null) {
                         LocalActiveRepair.ManagedAbsent(
                             managedUuid = managed,
-                            managedIsImported = imported.any {
-                                it.uuid.toString() == decided.activeUuid
+                            managedIsImported = snapshot.importedUuids.any {
+                                it.toString() == decided.activeUuid
                             },
                         )
                     } else {
@@ -250,7 +247,6 @@ private class CmfaGetLineSubscriptionRepository(
                         onProgress = {},
                         activate = true,
                         diagnosticOp = null,
-                        importedRoot = importedRoot,
                     )
                 }
             }
@@ -282,7 +278,6 @@ private class CmfaGetLineSubscriptionRepository(
                         onProgress = onProgress,
                         activate = false,
                         diagnosticOp = op,
-                        importedRoot = importedRoot,
                     )
                 }
             }
@@ -365,8 +360,6 @@ private fun logProfileIntegrity(repair: LocalActiveRepair) {
 }
 
 private const val PROFILE_OPERATION_TIMEOUT_MS = 8_000L
-/** Best-effort debounce before treating a missing/empty dir as corrupt. */
-private const val INTEGRITY_DEBOUNCE_MS = 80L
 /** Subscription fetch + commit can exceed local profile IPC latency. */
 private const val REIMPORT_TIMEOUT_MS = 60_000L
 /** Bounded non-cancellable orphan delete after failed re-provision. */
@@ -512,15 +505,18 @@ internal suspend fun IProfileManager.resolveReusableImportUuid(
     reuseId: GetLineSubscriptionId?,
     type: Profile.Type,
     name: String,
-    importedRoot: File?,
 ): Pair<UUID, UUID?> {
     val existing = reuseId?.toUuid()?.let { queryByUUID(it) }
     if (existing != null) {
-        val importedDirGone = existing.imported &&
-            importedRoot != null &&
-            ImportedProfileIntegrity.inspect(
-                importedRoot.resolve(existing.uuid.toString()),
-            ) == ImportedProfileIntegrity.Verdict.MissingDirectory
+        val importedDirGone = if (!existing.imported) {
+            false
+        } else {
+            val health = queryProfileStateSnapshot(existing.uuid).checked
+                .firstOrNull { it.uuid == existing.uuid }
+                ?.health
+                ?: ProfileStorageHealth.MissingDirectory
+            health == ProfileStorageHealth.MissingDirectory
+        }
         if (!importedDirGone) {
             return existing.uuid to null
         }
@@ -541,7 +537,6 @@ internal suspend fun IProfileManager.importPending(
     onProgress: suspend (GetLineImportStage) -> Unit,
     activate: Boolean,
     diagnosticOp: String?,
-    importedRoot: File? = null,
 ): GetLineSubscriptionId {
     // File profiles ship an empty config.yaml; ProfileProcessor uses force=false
     // so commit never fetches draft.source and always fails. Advanced BrowseFiles
@@ -553,7 +548,6 @@ internal suspend fun IProfileManager.importPending(
         reuseId = reuseId,
         type = importType.toCmfaType(),
         name = draft.name,
-        importedRoot = importedRoot,
     )
     // Only delete on failure when we minted a brand-new UUID this call.
     var createdOrphan: UUID? = createdOrphanSeed
@@ -664,6 +658,15 @@ private fun GetLineSubscriptionType.toCmfaType(): Profile.Type {
     return when (this) {
         GetLineSubscriptionType.File -> Profile.Type.File
         GetLineSubscriptionType.Url -> Profile.Type.Url
+    }
+}
+
+private fun ProfileStorageHealth.toImportedProfileVerdict(): ImportedProfileIntegrity.Verdict {
+    return when (this) {
+        ProfileStorageHealth.Intact -> ImportedProfileIntegrity.Verdict.Intact
+        ProfileStorageHealth.MissingDirectory -> ImportedProfileIntegrity.Verdict.MissingDirectory
+        ProfileStorageHealth.MissingConfig -> ImportedProfileIntegrity.Verdict.MissingConfig
+        ProfileStorageHealth.EmptyConfig -> ImportedProfileIntegrity.Verdict.EmptyConfig
     }
 }
 

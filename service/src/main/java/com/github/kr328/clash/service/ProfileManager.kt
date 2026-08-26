@@ -9,6 +9,7 @@ import com.github.kr328.clash.service.data.Selection
 import com.github.kr328.clash.service.data.SelectionDao
 import com.github.kr328.clash.service.model.Profile
 import com.github.kr328.clash.service.model.ProfileSelectionSnapshot
+import com.github.kr328.clash.service.model.ProfileStateSnapshot
 import com.github.kr328.clash.service.model.ProfileSelectorChoice
 import com.github.kr328.clash.service.remote.IFetchObserver
 import com.github.kr328.clash.service.remote.IProfileManager
@@ -170,6 +171,10 @@ class ProfileManager(private val context: Context) : IProfileManager,
         } else {
             null
         }
+    }
+
+    override suspend fun queryProfileStateSnapshot(managedUuid: UUID?): ProfileStateSnapshot {
+        return ProfileProcessor.queryProfileStateSnapshot(context, managedUuid)
     }
 
     override suspend fun setActive(profile: Profile) {

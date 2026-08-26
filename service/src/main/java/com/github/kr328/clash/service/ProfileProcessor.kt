@@ -10,6 +10,8 @@ import com.github.kr328.clash.service.data.ImportedDao
 import com.github.kr328.clash.service.data.Pending
 import com.github.kr328.clash.service.data.PendingDao
 import com.github.kr328.clash.service.model.Profile
+import com.github.kr328.clash.service.model.ProfileStateSnapshot
+import com.github.kr328.clash.service.model.ProfileStorageSnapshot
 import com.github.kr328.clash.service.remote.IFetchObserver
 import com.github.kr328.clash.service.store.ServiceStore
 import com.github.kr328.clash.service.util.importedDir
@@ -47,6 +49,33 @@ object ProfileProcessor {
             ).await()
         },
     )
+
+    suspend fun queryProfileStateSnapshot(
+        context: Context,
+        managedUuid: UUID?,
+    ): ProfileStateSnapshot {
+        return profileLock.withLock {
+            val importedUuids = ImportedDao().queryAllUUIDs()
+            val imported = importedUuids.toSet()
+            val activeUuid = ServiceStore(context).activeProfile
+            val candidates = listOfNotNull(activeUuid, managedUuid)
+                .distinct()
+                .filter { it in imported }
+
+            ProfileStateSnapshot(
+                activeUuid = activeUuid,
+                importedUuids = importedUuids,
+                checked = candidates.map { uuid ->
+                    ProfileStorageSnapshot(
+                        uuid = uuid,
+                        health = ProfileStorageInspector.inspect(
+                            context.importedDir.resolve(uuid.toString()),
+                        ),
+                    )
+                },
+            )
+        }
+    }
 
     suspend fun apply(context: Context, uuid: UUID, callback: IFetchObserver? = null) {
         withContext(NonCancellable) {

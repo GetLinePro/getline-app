@@ -107,24 +107,21 @@ class LocalActiveRepairDecisionTest {
     }
 
     @Test
-    fun inspectsOnlyActiveAndManaged() {
+    fun usesHealthOnlyForActiveAndManagedCandidates() {
         writeProfile("other", config = "proxies: []\n")
         writeProfile("managed", config = "proxies: []\n")
-        val seen = mutableListOf<String>()
 
         runBlocking {
             LocalActiveRepairDecision.decide(
                 managedUuid = "managed",
                 importedUuids = listOf("stale", "other", "managed"),
                 activeUuid = "other",
-                profileDirectory = { uuid ->
-                    seen += uuid
-                    tmp.root.resolve(uuid)
-                },
+                profileHealth = mapOf(
+                    "other" to ImportedProfileIntegrity.Verdict.Intact,
+                    "managed" to ImportedProfileIntegrity.Verdict.Intact,
+                ),
             )
         }
-
-        assertEquals(listOf("other", "managed"), seen)
     }
 
     @Test
@@ -151,7 +148,9 @@ class LocalActiveRepairDecisionTest {
                 managedUuid = managed,
                 importedUuids = imported,
                 activeUuid = active,
-                profileDirectory = { tmp.root.resolve(it) },
+                profileHealth = imported.associateWith { uuid ->
+                    ImportedProfileIntegrity.inspect(tmp.root.resolve(uuid))
+                },
             )
         }
     }
