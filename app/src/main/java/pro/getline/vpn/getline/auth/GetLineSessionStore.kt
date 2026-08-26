@@ -151,12 +151,13 @@ class GetLineSessionStore internal constructor(
 
     /** Read session and binding fields once, then infer their product meaning. */
     fun managedBindingSnapshot(): ManagedBindingSnapshot {
-        // Binding remains useful for routing/repair when only refresh-token
-        // decryption fails. This matches the old startup isolation of hasSession.
-        val uuid = managedProfileUuid
-        val source = managedProfileSource
-        val subscription = subscriptionId
-        val hasSession = runCatching { hasRefreshToken() }.getOrDefault(false)
+        // SharedPreferences.getAll() takes one synchronized in-memory snapshot.
+        // Binding remains useful when only refresh-token decryption fails.
+        val values = prefs.all
+        val uuid = values[KEY_PROFILE_UUID] as? String
+        val source = values[KEY_PROFILE_SOURCE] as? String
+        val subscription = values[KEY_SUBSCRIPTION_ID] as? String
+        val hasSession = !((values[KEY_REFRESH_TOKEN] as? String).isNullOrBlank())
         return ManagedBindingSnapshot.infer(
             hasSession = hasSession,
             managedProfileUuid = uuid,

@@ -1314,7 +1314,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private fun tryCancelImportWait(): Boolean {
         if (!importWaitCancelable) return false
         val design = design ?: return false
-        val postLogin = sessionRepository.managedBindingSnapshot().hasSession &&
+        val postLogin = sessionRepository.hasSession() &&
             (
                 retryTarget == RetryTarget.ImportPreferredSubscription ||
                     (retryTarget as? RetryTarget.ImportSubscription)
@@ -1424,7 +1424,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     }
 
     private suspend fun deleteUnboundCandidate(id: GetLineSubscriptionId) {
-        if (id.value == sessionRepository.managedBindingSnapshot().managedProfileUuid) return
+        if (id.value == sessionRepository.managedProfileUuid()) return
         withContext(NonCancellable) {
             val result = runCatching { backend.subscriptions.deleteManaged(id) }.getOrNull()
             rememberUnboundCandidateIfDeleteIncomplete(sessionRepository, id, result)

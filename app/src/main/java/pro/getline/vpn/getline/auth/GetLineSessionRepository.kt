@@ -418,9 +418,9 @@ class GetLineSessionRepository(
         store.subscriptionId = id?.takeIf { it.isNotBlank() }
     }
 
-    fun managedProfileUuid(): String? = managedBindingSnapshot().managedProfileUuid
+    fun managedProfileUuid(): String? = store.managedProfileUuid
 
-    fun managedProfileSource(): String? = managedBindingSnapshot().managedProfileSource
+    fun managedProfileSource(): String? = store.managedProfileSource?.takeIf { it.isNotBlank() }
 
     fun rememberPendingProfileCleanup(uuid: String) {
         store.rememberPendingProfileCleanup(uuid)
@@ -432,11 +432,11 @@ class GetLineSessionRepository(
         store.clearPendingProfileCleanup(expectedUuid)
     }
 
-    fun rememberedSubscriptionId(): String? = managedBindingSnapshot().subscriptionId
+    fun rememberedSubscriptionId(): String? = store.subscriptionId
 
     /**
      * Session + still-link-only binding: post-login subscription step incomplete.
-     * See [LinkOnlyBindingPolicy.needsPostLoginSubscriptionStep].
+     * See [ManagedBindingSnapshot.needsPostLoginSubscriptionStep].
      */
     fun needsPostLoginSubscriptionStep(): Boolean =
         managedBindingSnapshot().needsPostLoginSubscriptionStep

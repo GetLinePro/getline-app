@@ -1,6 +1,7 @@
 package pro.getline.vpn.getline.auth
 
 import android.content.Context
+import android.content.SharedPreferences
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,6 +16,40 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class GetLineSessionStoreBindingTest {
+    @Test
+    fun managedBindingSnapshot_readsStateFromOnePreferencesMap() {
+        val app = RuntimeEnvironment.getApplication()
+        val name = "test_snapshot_atomic"
+        app.deleteSharedPreferences(name)
+        app.getSharedPreferences(name, Context.MODE_PRIVATE)
+            .edit()
+            .putString("refresh_token", "refresh")
+            .putString("profile_uuid", "profile-uuid")
+            .putString("profile_source", "https://sub.example.com/link")
+            .putString("subscription_id", "subscription-id")
+            .commit()
+        val counting = CountingPreferences(
+            app.getSharedPreferences(name, Context.MODE_PRIVATE),
+        )
+        val store = GetLineSessionStore(
+            context = app,
+            encryptedPrefsFactory = { counting },
+            encryptedStorageResetter = { app.deleteSharedPreferences(name) },
+        )
+        counting.allReads = 0
+        counting.getStringReads = 0
+
+        val snapshot = store.managedBindingSnapshot()
+
+        assertEquals(1, counting.allReads)
+        assertEquals(0, counting.getStringReads)
+        assertTrue(snapshot.hasSession)
+        assertEquals("profile-uuid", snapshot.managedProfileUuid)
+        assertEquals("https://sub.example.com/link", snapshot.managedProfileSource)
+        assertEquals("subscription-id", snapshot.subscriptionId)
+        assertEquals(ManagedBindingSnapshot.Provenance.AccountBound, snapshot.provenance)
+    }
+
     @Test
     fun clearSessionKeepingBinding_dropsTokensKeepsManagedBinding() {
         val store = testSessionStore(RuntimeEnvironment.getApplication())
@@ -69,12 +104,9 @@ class GetLineSessionStoreBindingTest {
         assertEquals("subscription-id", store.subscriptionId)
         assertEquals("profile-uuid", store.managedProfileUuid)
         assertNull(store.managedProfileSource)
-        assertFalse(
-            LinkOnlyBindingPolicy.isLinkOnlyBinding(
-                store.managedProfileUuid,
-                store.managedProfileSource,
-                store.subscriptionId,
-            ),
+        assertEquals(
+            ManagedBindingSnapshot.Provenance.AccountBound,
+            store.managedBindingSnapshot().provenance,
         )
     }
 
@@ -98,12 +130,9 @@ class GetLineSessionStoreBindingTest {
         assertNull(store.subscriptionId)
         assertEquals("profile-uuid", store.managedProfileUuid)
         assertEquals("https://link.example.com/sub", store.managedProfileSource)
-        assertTrue(
-            LinkOnlyBindingPolicy.isLinkOnlyBinding(
-                store.managedProfileUuid,
-                store.managedProfileSource,
-                store.subscriptionId,
-            ),
+        assertEquals(
+            ManagedBindingSnapshot.Provenance.LinkOnly,
+            store.managedBindingSnapshot().provenance,
         )
     }
 
@@ -232,5 +261,22 @@ class GetLineSessionStoreBindingTest {
         store.subscriptionId = "s"
 
         assertEquals(2, store.rawEntryCount())
+    }
+
+    private class CountingPreferences(
+        private val delegate: SharedPreferences,
+    ) : SharedPreferences by delegate {
+        var allReads = 0
+        var getStringReads = 0
+
+        override fun getAll(): MutableMap<String, *> {
+            allReads++
+            return delegate.all
+        }
+
+        override fun getString(key: String?, defValue: String?): String? {
+            getStringReads++
+            return delegate.getString(key, defValue)
+        }
     }
 }
