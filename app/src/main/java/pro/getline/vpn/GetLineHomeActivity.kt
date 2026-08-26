@@ -192,9 +192,6 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         }
         design.setTab(readPersistedTab())
         design.setVpnStatus(resolveStatus())
-        if (backend.vpn.running) {
-            serverState.onVpnStarted()
-        }
         design.refreshAppRouting()
         if (intent.getBooleanExtra(EXTRA_BACKEND_UNAVAILABLE, false)) {
             backendUnavailable = true
@@ -246,7 +243,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                             }
                             // Selector may change in legacy ProxyActivity without lifecycle events.
                             // Always re-query Mihomo; do not trust Ready cache after resume.
-                            design.reconcileServersOnResume()
+                            design.reconcileServers()
                             // Return from the app list: show what is now stored, not
                             // what Home was opened with.
                             design.refreshAppRouting()
@@ -254,25 +251,39 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         Event.ActivityStop -> {
                             accountPortalVisit.onHostStopped()
                         }
-                        Event.ProfileLoaded,
                         Event.ProfileChanged -> {
                             design.fetch(showLoading = false)
-                            // Proxy groups may change with profile; drop cached server list.
-                            serverState.invalidateInventory()
-                            if (design.selectedTab == GetLineHomeDesign.Tab.Servers) {
-                                design.refreshServersUi(force = true)
+                            // While the VPN is running, the core has not reloaded the new
+                            // config yet — ProfileLoaded is the actual reload signal there,
+                            // and reloading now would race it (two Loading flips for one
+                            // refresh). Off VPN, ConfigurationModule never runs, so this is
+                            // the only signal that the catalog changed.
+                            if (!backend.vpn.running) {
+                                design.reconcileServers()
                             }
+                        }
+                        Event.ProfileLoaded -> {
+                            design.fetch(showLoading = false)
+                            // The core just reloaded, which drops its own delay history
+                            // (same as a VPN restart) — a stale cooldown must not block
+                            // the fresh probe this reconcile is about to need.
+                            serverState.invalidateHealthCheck()
+                            design.reconcileServers()
                         }
                         Event.ClashStart -> {
                             // Observed state (may be external start), not always from our click.
                             Log.i("vpn_state value=started")
                             connectionTimeout?.cancel()
                             connecting = false
-                            serverState.invalidateForVpnRestart()
-                            serverState.onVpnStarted()
+                            // A (re)start may put the tunnel on a different path; force one
+                            // fresh health check regardless of which branch below reloads
+                            // the inventory.
+                            serverState.invalidateHealthCheck()
                             design.fetch(showLoading = false)
                             if (design.selectedTab == GetLineHomeDesign.Tab.Servers) {
                                 design.refreshServersUi(force = true)
+                            } else {
+                                serverState.invalidateInventory()
                             }
                         }
                         Event.ClashStop,
@@ -634,11 +645,16 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     }
 
     /**
-     * Re-read main-group selection from Mihomo after Activity becomes visible.
-     * Required because ProxyActivity patchSelector does not emit Profile/Clash events.
+     * Soft re-query of the server inventory: keeps a [VpnServerUiState.Ready]
+     * list visible (no full-screen loading flash) while re-reading Mihomo.
+     *
+     * Shared by two triggers that both want fresh data without resetting a
+     * working list to Loading: Activity resume (selector may change in legacy
+     * ProxyActivity without a Profile/Clash event) and profile-change
+     * reconciliation (ProfileChanged/ProfileLoaded — see the event handler).
      */
-    private fun GetLineHomeDesign.reconcileServersOnResume() {
-        if (!serverState.beginReconcile()) {
+    private fun GetLineHomeDesign.reconcileServers() {
+        val token = serverState.beginReconcile() ?: run {
             // Load already in flight — its result will be current enough.
             return
         }
@@ -648,7 +664,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             paintServersState()
         }
 
-        startServerLoadJob()
+        startServerLoadJob(token)
     }
 
     /**
@@ -656,18 +672,18 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * Does not run health checks, open ProxyActivity, or restart VPN.
      */
     private fun GetLineHomeDesign.refreshServersUi(force: Boolean) {
-        val started = if (force) {
+        val token = if (force) {
             serverState.beginRefresh()
         } else {
             serverState.beginInitialLoad()
         }
-        if (!started) {
+        if (token == null) {
             paintServersState()
             return
         }
 
         paintServersState()
-        startServerLoadJob()
+        startServerLoadJob(token)
     }
 
     /**
@@ -705,13 +721,21 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
     }
 
     private suspend fun GetLineHomeDesign.paintServersRefreshIndicator() {
-        setServersRefreshing(
-            serverProviderRefreshing ||
-                serverState.latencyProbeState == VpnServerStateHolder.LatencyProbeState.Probing,
-        )
+        setServersRefreshing(serverProviderRefreshing || serverState.isProbing)
     }
 
-    private fun GetLineHomeDesign.startServerLoadJob() {
+    /**
+     * Cancelling the previous job here does not wait for it to unwind — its own
+     * `finally` runs concurrently with this new job. That old job's cleanup can
+     * even land *after* this one already reassigned [serverLoadJob]: this job
+     * itself can trigger that by cancelling itself to run a deferred reload
+     * (see [measureServerDelays]'s `consumePendingReload` check), which means
+     * the "job cleaning up now" and "the job currently active" are provably not
+     * the same one in that case. [token] is [VpnServerStateHolder
+     * .onRequestCancelled]'s way of telling them apart — it only clears the
+     * guard if this job's own token still owns it.
+     */
+    private fun GetLineHomeDesign.startServerLoadJob(token: Long) {
         serverLoadJob?.cancel()
         serverLoadJob = launch {
             try {
@@ -725,7 +749,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 measureServerDelays()
             } finally {
                 if (!isActive) {
-                    serverState.onRequestCancelled()
+                    serverState.onRequestCancelled(token)
                 }
             }
         }
@@ -737,16 +761,14 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
      * exactly as loaded, just without delays.
      */
     private suspend fun GetLineHomeDesign.measureServerDelays() {
-        if (!backend.vpn.running) {
-            serverState.onVpnStopped()
-            paintServersRefreshIndicator()
-            return
-        }
+        if (!backend.vpn.running) return
         if (serverState.state !is VpnServerUiState.Ready) return
 
         val now = SystemClock.elapsedRealtime()
         val probe = serverState.beginHealthCheck(now) ?: return
-        paintServersRefreshIndicator()
+        // Paints both the screen (progress spinners) and the refresh indicator
+        // together; a standalone indicator-only paint here would just be a
+        // redundant extra frame before this one.
         paintServersState()
 
         try {
@@ -773,8 +795,14 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
         } finally {
             serverState.finishHealthCheck(probe)
             if (isActive) {
-                paintServersRefreshIndicator()
                 paintServersState()
+                // A profile change or VPN restart that arrived while this probe was
+                // running was queued rather than dropped (see beginRefresh/
+                // beginReconcile) — run it now instead of leaving the screen on
+                // inventory it already knows is stale.
+                if (serverState.consumePendingReload()) {
+                    reconcileServers()
+                }
             }
         }
     }
@@ -859,8 +887,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             is VpnServerUiState.Loading ->
                 GetLineHomeDesign.ServersScreen.Loading
             is VpnServerUiState.Ready -> {
-                val latencyProbing =
-                    serverState.latencyProbeState == VpnServerStateHolder.LatencyProbeState.Probing
+                val latencyProbing = serverState.isProbing
                 val current = servers.firstOrNull { it.name == selectedName }?.displayName
                     ?: selectedName
                 val groups = ServerGroupingPolicy.group(
