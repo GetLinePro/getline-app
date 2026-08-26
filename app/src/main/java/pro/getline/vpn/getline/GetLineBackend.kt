@@ -12,6 +12,7 @@ interface GetLineBackend {
     val vpn: GetLineVpnController
     val servers: VpnServerSelectionRepository
     val navigation: GetLineNavigation
+    val appRouting: GetLineAppRoutingRepository
 }
 
 object GetLineBackendProvider {
@@ -111,6 +112,22 @@ interface GetLineSubscriptionRepository {
     suspend fun deleteManaged(
         id: GetLineSubscriptionId,
     ): GetLineBackendResult<ManagedProfileDeleteOutcome>
+}
+
+interface GetLineAppRoutingRepository {
+    /** Current service-owned app routing mode and stored package selection count. */
+    suspend fun snapshot(): GetLineAppRoutingSnapshot
+}
+
+data class GetLineAppRoutingSnapshot(
+    val mode: GetLineAppRoutingMode,
+    val selectedCount: Int,
+)
+
+enum class GetLineAppRoutingMode {
+    All,
+    OnlySelected,
+    ExceptSelected,
 }
 
 sealed class ManagedProfileDeleteOutcome {
