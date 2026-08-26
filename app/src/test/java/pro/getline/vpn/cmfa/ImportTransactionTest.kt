@@ -1,5 +1,7 @@
 package pro.getline.vpn.cmfa
 
+import android.content.Context
+import android.content.ServiceConnection
 import com.github.kr328.clash.core.model.FetchStatus
 import com.github.kr328.clash.service.model.Profile
 import com.github.kr328.clash.service.model.ProfileSelectionSnapshot
@@ -8,7 +10,10 @@ import com.github.kr328.clash.service.model.ProfileStorageHealth
 import com.github.kr328.clash.service.model.ProfileStorageSnapshot
 import com.github.kr328.clash.service.remote.IFetchObserver
 import com.github.kr328.clash.service.remote.IProfileManager
+import com.github.kr328.clash.service.remote.IRemoteService
+import com.github.kr328.clash.service.remote.wrap
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
@@ -28,6 +33,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import com.github.kr328.clash.util.BinderDiedException
 import com.github.kr328.clash.util.runProfileRemoteBlock
@@ -69,9 +75,11 @@ class ImportTransactionTest {
         val backend = FakeProfileManager()
         backend.seed(uuid, imported = true)
 
-        val outcome = runConfigUpdate {
-            backend.updateManagedProfileConfig(GetLineSubscriptionId(uuid.toString()))
-        }
+        val outcome = updateImportedProfileSilently(
+            context = RuntimeEnvironment.getApplication(),
+            id = GetLineSubscriptionId(uuid.toString()),
+            bindService = bindTo(backend),
+        )
 
         assertEquals(ConfigUpdateResult.Updated, outcome)
         assertEquals(listOf(uuid), backend.updated)
@@ -81,11 +89,11 @@ class ImportTransactionTest {
     fun configUpdate_missingProfile_reportsNotFound() = runBlocking {
         val backend = FakeProfileManager()
 
-        val outcome = runConfigUpdate {
-            backend.updateManagedProfileConfig(
-                GetLineSubscriptionId(UUID.randomUUID().toString()),
-            )
-        }
+        val outcome = updateImportedProfileSilently(
+            context = RuntimeEnvironment.getApplication(),
+            id = GetLineSubscriptionId(UUID.randomUUID().toString()),
+            bindService = bindTo(backend),
+        )
 
         assertEquals(ConfigUpdateResult.NotFound, outcome)
         assertTrue(backend.updated.isEmpty())
@@ -97,9 +105,11 @@ class ImportTransactionTest {
         val backend = FakeProfileManager()
         backend.seed(uuid, imported = true, type = Profile.Type.File)
 
-        val outcome = runConfigUpdate {
-            backend.updateManagedProfileConfig(GetLineSubscriptionId(uuid.toString()))
-        }
+        val outcome = updateImportedProfileSilently(
+            context = RuntimeEnvironment.getApplication(),
+            id = GetLineSubscriptionId(uuid.toString()),
+            bindService = bindTo(backend),
+        )
 
         assertEquals(ConfigUpdateResult.NotRefreshable, outcome)
         assertTrue(backend.updated.isEmpty())
@@ -111,22 +121,118 @@ class ImportTransactionTest {
         val backend = FakeProfileManager()
         backend.seed(uuid, imported = false)
 
-        val outcome = runConfigUpdate {
-            backend.updateManagedProfileConfig(GetLineSubscriptionId(uuid.toString()))
-        }
+        val outcome = updateImportedProfileSilently(
+            context = RuntimeEnvironment.getApplication(),
+            id = GetLineSubscriptionId(uuid.toString()),
+            bindService = bindTo(backend),
+        )
 
         assertEquals(ConfigUpdateResult.NotRefreshable, outcome)
         assertTrue(backend.updated.isEmpty())
     }
 
     @Test
-    fun configUpdate_backendFailure_reportsUnavailable() = runBlocking {
-        val outcome = runConfigUpdate {
-            throw IOException("binder died")
-        }
+    fun configUpdate_bindException_reportsUnavailable() = runBlocking {
+        val outcome = updateImportedProfileSilently(
+            context = RuntimeEnvironment.getApplication(),
+            id = GetLineSubscriptionId(UUID.randomUUID().toString()),
+            bindService = { _, _ -> throw IOException("bind failed") },
+        )
 
         assertEquals(ConfigUpdateResult.Unavailable, outcome)
     }
+
+    @Test
+    fun configUpdate_bindRejected_reportsUnavailable_andUnbinds() = runBlocking {
+        var unbinds = 0
+
+        val outcome = updateImportedProfileSilently(
+            context = RuntimeEnvironment.getApplication(),
+            id = GetLineSubscriptionId(UUID.randomUUID().toString()),
+            bindService = { _, _ -> false },
+            unbindService = { _, _ -> unbinds++ },
+        )
+
+        assertEquals(ConfigUpdateResult.Unavailable, outcome)
+        assertEquals(1, unbinds)
+    }
+
+    @Test
+    fun configUpdate_timeout_reportsUnavailable_andUnbinds() = runBlocking {
+        var unbinds = 0
+
+        val outcome = updateImportedProfileSilently(
+            context = RuntimeEnvironment.getApplication(),
+            id = GetLineSubscriptionId(UUID.randomUUID().toString()),
+            timeoutMs = 100,
+            bindService = { _, _ -> true },
+            unbindService = { _, _ -> unbinds++ },
+        )
+
+        assertEquals(ConfigUpdateResult.Unavailable, outcome)
+        assertEquals(1, unbinds)
+    }
+
+    @Test
+    fun configUpdate_disconnect_reportsUnavailable_andUnbinds() = runBlocking {
+        var unbinds = 0
+
+        val outcome = updateImportedProfileSilently(
+            context = RuntimeEnvironment.getApplication(),
+            id = GetLineSubscriptionId(UUID.randomUUID().toString()),
+            bindService = { _, connection ->
+                connection.onServiceDisconnected(null)
+                true
+            },
+            unbindService = { _, _ -> unbinds++ },
+        )
+
+        assertEquals(ConfigUpdateResult.Unavailable, outcome)
+        assertEquals(1, unbinds)
+    }
+
+    @Test
+    fun configUpdate_cancellation_rethrows_andUnbinds() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        var unbinds = 0
+        var cancelled = false
+
+        coroutineScope {
+            val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    updateImportedProfileSilently(
+                        context = RuntimeEnvironment.getApplication(),
+                        id = GetLineSubscriptionId(UUID.randomUUID().toString()),
+                        timeoutMs = 10_000,
+                        bindService = { _, _ ->
+                            entered.complete(Unit)
+                            true
+                        },
+                        unbindService = { _, _ -> unbinds++ },
+                    )
+                    fail("cancellation must not become a terminal result")
+                } catch (_: CancellationException) {
+                    cancelled = true
+                }
+            }
+            entered.await()
+            job.cancelAndJoin()
+        }
+
+        assertTrue(cancelled)
+        assertEquals(1, unbinds)
+    }
+
+    private fun bindTo(profileManager: IProfileManager): (Context, ServiceConnection) -> Boolean =
+        { _, connection ->
+            val remote = object : IRemoteService {
+                override fun clash() = error("not used")
+
+                override fun profile(): IProfileManager = profileManager
+            }
+            connection.onServiceConnected(null, remote.wrap())
+            true
+        }
 
     @Test
     fun managedDelete_existingProfile_reportsDeleted() = runBlocking {

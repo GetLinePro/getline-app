@@ -8,6 +8,8 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.UUID
+import pro.getline.vpn.getline.ConfigUpdateResult
+import pro.getline.vpn.getline.GetLineSubscriptionId
 import java.util.concurrent.TimeUnit
 
 /**
@@ -72,9 +74,12 @@ object ManagedProfileRefresh {
     }
 }
 
-internal enum class ManagedProfileRefreshOutcome {
-    NoBinding,
-    Updated,
+internal sealed class ManagedProfileRefreshOutcome {
+    object NoBinding : ManagedProfileRefreshOutcome()
+
+    data class Terminal(
+        val result: ConfigUpdateResult,
+    ) : ManagedProfileRefreshOutcome()
 }
 
 /**
@@ -83,12 +88,13 @@ internal enum class ManagedProfileRefreshOutcome {
  */
 internal suspend fun refreshManagedProfile(
     managedUuid: String?,
-    update: suspend (UUID) -> Unit,
+    update: suspend (GetLineSubscriptionId) -> ConfigUpdateResult,
 ): ManagedProfileRefreshOutcome {
     val raw = managedUuid?.takeIf { it.isNotBlank() }
         ?: return ManagedProfileRefreshOutcome.NoBinding
     val uuid = runCatching { UUID.fromString(raw) }.getOrNull()
         ?: return ManagedProfileRefreshOutcome.NoBinding
-    update(uuid)
-    return ManagedProfileRefreshOutcome.Updated
+    return ManagedProfileRefreshOutcome.Terminal(
+        update(GetLineSubscriptionId(uuid.toString())),
+    )
 }

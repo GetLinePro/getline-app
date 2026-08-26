@@ -59,7 +59,7 @@ class CmfaGetLineBackend(
     activity: Activity,
 ) : GetLineBackend {
     override val subscriptions: GetLineSubscriptionRepository =
-        CmfaGetLineSubscriptionRepository()
+        CmfaGetLineSubscriptionRepository(activity.applicationContext)
     override val vpn: GetLineVpnController = CmfaGetLineVpnController(activity)
     override val servers: VpnServerSelectionRepository =
         CmfaVpnServerSelectionRepository(
@@ -91,7 +91,9 @@ private class CmfaGetLineAppRoutingRepository(
         }
 }
 
-private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository {
+private class CmfaGetLineSubscriptionRepository(
+    private val context: Context,
+) : GetLineSubscriptionRepository {
     override suspend fun snapshot(): GetLineBackendResult<GetLineSubscriptionSnapshot> {
         return callProfileBackend(op = "snapshot") {
             withProfile {
@@ -307,11 +309,7 @@ private class CmfaGetLineSubscriptionRepository : GetLineSubscriptionRepository 
     override suspend fun requestConfigUpdate(
         id: GetLineSubscriptionId,
     ): ConfigUpdateResult {
-        return runConfigUpdate {
-            withProfile {
-                updateManagedProfileConfig(id)
-            }
-        }
+        return updateImportedProfileSilently(context, id)
     }
 
     override suspend fun deleteManaged(
@@ -407,26 +405,6 @@ internal suspend fun <T> callProfileBackend(
     }
 }
 
-/** Same network budget as reimport: the silent path runs ProfileProcessor inline. */
-internal suspend fun runConfigUpdate(
-    block: suspend () -> ConfigUpdateResult,
-): ConfigUpdateResult {
-    return when (
-        val result = callProfileBackend(
-            op = "config_update",
-            timeoutMs = REIMPORT_TIMEOUT_MS,
-            block = block,
-        )
-    ) {
-        GetLineBackendResult.Unavailable -> ConfigUpdateResult.Unavailable
-        is GetLineBackendResult.Success -> result.value.also { outcome ->
-            if (outcome == ConfigUpdateResult.NotFound) {
-                Log.w("profile_backend op=config_update outcome=not_found")
-            }
-        }
-    }
-}
-
 /**
  * A bare class name (`IllegalArgumentException`) does not say which value was
  * rejected, and the import path is the only report of a failed fetch we get.
@@ -458,19 +436,6 @@ internal suspend fun IProfileManager.deleteManagedProfile(
     }
     delete(uuid)
     return ManagedProfileDeleteOutcome.Deleted
-}
-
-/** Refresh exactly [id], keeping missing and non-refreshable rows observable. */
-internal suspend fun IProfileManager.updateManagedProfileConfig(
-    id: GetLineSubscriptionId,
-): ConfigUpdateResult {
-    val profile = queryByUUID(id.toUuid()) ?: return ConfigUpdateResult.NotFound
-    // File rows have no remote source; pending rows have no committed config to update.
-    if (!profile.imported || profile.type == Profile.Type.File) {
-        return ConfigUpdateResult.NotRefreshable
-    }
-    updateSilently(profile.uuid)
-    return ConfigUpdateResult.Updated
 }
 
 /**

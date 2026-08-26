@@ -2,6 +2,8 @@ package pro.getline.vpn.getline.servers
 
 import pro.getline.vpn.getline.ConfigUpdateResult
 import pro.getline.vpn.getline.GetLineSubscriptionId
+import pro.getline.vpn.getline.refresh.ManagedProfileRefreshOutcome
+import pro.getline.vpn.getline.refresh.refreshManagedProfile
 
 /**
  * The single data path for the Servers header "Refresh" action. Force-fetches
@@ -34,13 +36,17 @@ class ServersRefreshFlow(
     }
 
     suspend fun refresh(): Outcome {
-        val managed = host.managedProfileUuid() ?: return Outcome.NoManagedProfile
-        val id = GetLineSubscriptionId(managed)
-        return when (host.requestConfigUpdate(id)) {
-            ConfigUpdateResult.Updated -> Outcome.Updated
-            ConfigUpdateResult.NotFound -> Outcome.NotFound
-            ConfigUpdateResult.NotRefreshable -> Outcome.NotRefreshable
-            ConfigUpdateResult.Unavailable -> Outcome.Failed
+        return when (val outcome = refreshManagedProfile(
+            host.managedProfileUuid(),
+            host::requestConfigUpdate,
+        )) {
+            ManagedProfileRefreshOutcome.NoBinding -> Outcome.NoManagedProfile
+            is ManagedProfileRefreshOutcome.Terminal -> when (outcome.result) {
+                ConfigUpdateResult.Updated -> Outcome.Updated
+                ConfigUpdateResult.NotFound -> Outcome.NotFound
+                ConfigUpdateResult.NotRefreshable -> Outcome.NotRefreshable
+                ConfigUpdateResult.Unavailable -> Outcome.Failed
+            }
         }
     }
 }
