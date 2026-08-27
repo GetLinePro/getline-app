@@ -149,20 +149,21 @@ class LocalLanProxyRuntimeCoordinator(
             clearSessionOverride()
 
             val reloadResult = runCatching { reloadPort.reloadAndAwait() }
-            if (reloadResult.isFailure) {
-                Log.w("LocalLanProxy disable reload failed: ${reloadResult.exceptionOrNull()?.message}")
+            val reloadLoaded = reloadResult.getOrNull() is ConfigurationReloadResult.Loaded
+            if (!reloadLoaded) {
+                Log.w("LocalLanProxy disable reload unconfirmed: ${describeReloadFailure(reloadResult)}")
             }
 
-            // The result of this live probe is the source of truth, not the
-            // reload outcome above (see plan Decisions): a config load
-            // failure can leave the core on its last-good config, which may
-            // still be the one with GetLine's listener bound.
-            when (confirmGoneOrFailStop(transaction)) {
-                true -> {
+            when (decideTeardown(reloadLoaded, transaction)) {
+                LocalLanProxyTeardownOutcome.ConfirmedGone -> {
                     state = RuntimeState.Inactive
                     LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
                 }
-                false -> LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.SafetyStop)
+                LocalLanProxyTeardownOutcome.FailStop -> {
+                    Log.w("LocalLanProxy could not confirm teardown; fail-stopping TunService")
+                    service.sendClashRequestStop()
+                    LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.SafetyStop)
+                }
             }
         }
     }
@@ -179,47 +180,48 @@ class LocalLanProxyRuntimeCoordinator(
         clearSessionOverride()
 
         val cleanupReload = runCatching { reloadPort.reloadAndAwait() }
-        if (cleanupReload.isFailure) {
-            Log.w("LocalLanProxy rollback reload failed: ${cleanupReload.exceptionOrNull()?.message}")
+        val cleanupLoaded = cleanupReload.getOrNull() is ConfigurationReloadResult.Loaded
+        if (!cleanupLoaded) {
+            Log.w("LocalLanProxy rollback reload unconfirmed: ${describeReloadFailure(cleanupReload)}")
         }
 
-        return if (confirmGoneOrFailStop(transaction)) {
-            state = RuntimeState.Inactive
-            LocalLanProxyRuntimeResult(
-                LocalLanProxyRuntimeResult.Status.ApplyFailed,
-                message = reloadFailedMessage ?: "local proxy did not become reachable",
-            )
-        } else {
-            LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.SafetyStop)
+        return when (decideTeardown(cleanupLoaded, transaction)) {
+            LocalLanProxyTeardownOutcome.ConfirmedGone -> {
+                state = RuntimeState.Inactive
+                LocalLanProxyRuntimeResult(
+                    LocalLanProxyRuntimeResult.Status.ApplyFailed,
+                    message = reloadFailedMessage ?: "local proxy did not become reachable",
+                )
+            }
+            LocalLanProxyTeardownOutcome.FailStop -> {
+                Log.w("LocalLanProxy could not confirm teardown; fail-stopping TunService")
+                service.sendClashRequestStop()
+                LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.SafetyStop)
+            }
         }
     }
 
     /**
-     * Confirms the transaction's credentials no longer authenticate against
-     * its endpoint, or fail-stops `TunService` and returns false. Successful
-     * auth means GetLine's own listener is still reachable — teardown
-     * failed. A different service occupying the port is not attributed to
-     * GetLine. An ambiguous result cannot positively prove the listener is
-     * gone, so it fails closed the same as a confirmed-live listener (see
-     * plan Decisions) — the coordinator-level address-loss exception to this
-     * is future endpoint-monitor work, not manual enable/disable.
+     * [LocalLanProxyTeardownPolicy.decide] wired to this coordinator's real
+     * probe. [reloadLoaded] must reflect only a *confirmed*
+     * [ConfigurationReloadResult.Loaded] — see the policy's kdoc for why an
+     * unconfirmed reload fails closed unconditionally, without even running
+     * the probe (a still in-flight, orphaned apply from an earlier request
+     * can complete later and reopen the listener after this call returns).
      */
-    private fun confirmGoneOrFailStop(transaction: Transaction): Boolean {
-        val outcome = LocalLanProxyProbe.classifyAuth(
-            connect = { connectProtected(transaction.endpoint, transaction.port, PROBE_TIMEOUT_MS) },
-            username = transaction.username,
-            password = transaction.password,
-        )
-
-        return when (outcome) {
-            LocalLanProxyProbeOutcome.Refused, LocalLanProxyProbeOutcome.OccupiedByOther -> true
-            LocalLanProxyProbeOutcome.Authenticated, LocalLanProxyProbeOutcome.Ambiguous -> {
-                Log.w("LocalLanProxy could not confirm teardown ($outcome); fail-stopping TunService")
-                service.sendClashRequestStop()
-                false
-            }
+    private fun decideTeardown(reloadLoaded: Boolean, transaction: Transaction): LocalLanProxyTeardownOutcome {
+        return LocalLanProxyTeardownPolicy.decide(reloadLoaded) {
+            LocalLanProxyProbe.classifyAuth(
+                connect = { connectProtected(transaction.endpoint, transaction.port, PROBE_TIMEOUT_MS) },
+                username = transaction.username,
+                password = transaction.password,
+            )
         }
     }
+
+    private fun describeReloadFailure(reloadResult: Result<ConfigurationReloadResult>): String? =
+        (reloadResult.getOrNull() as? ConfigurationReloadResult.Failed)?.message
+            ?: reloadResult.exceptionOrNull()?.message
 
     private fun connectProtected(
         endpoint: LocalLanProxyEndpoint,
@@ -227,17 +229,22 @@ class LocalLanProxyRuntimeCoordinator(
         timeoutMs: Int,
     ): LocalLanProxyConnectionOutcome {
         val socket = Socket()
+        var setUp = false
         try {
             endpoint.network.bindSocket(socket)
-        } catch (e: IOException) {
-            socket.close()
+            if (!protect(socket)) {
+                return LocalLanProxyConnectionOutcome.Ambiguous
+            }
+            socket.soTimeout = timeoutMs
+            setUp = true
+        } catch (e: Exception) {
             return LocalLanProxyConnectionOutcome.Ambiguous
+        } finally {
+            // Any failure above (bindSocket, protect() itself throwing rather
+            // than returning false, or the soTimeout setter) must not leak
+            // the fd — close on every path that doesn't reach setUp = true.
+            if (!setUp) socket.close()
         }
-        if (!protect(socket)) {
-            socket.close()
-            return LocalLanProxyConnectionOutcome.Ambiguous
-        }
-        socket.soTimeout = timeoutMs
 
         return try {
             socket.connect(InetSocketAddress(endpoint.address, port), timeoutMs)
