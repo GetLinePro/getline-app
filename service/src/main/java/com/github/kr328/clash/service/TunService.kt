@@ -12,6 +12,9 @@ import com.github.kr328.clash.common.constants.Components
 import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.service.clash.clashRuntime
 import com.github.kr328.clash.service.clash.module.*
+import com.github.kr328.clash.service.localproxy.LocalLanProxyEndpointSource
+import com.github.kr328.clash.service.localproxy.LocalLanProxyRuntimeCoordinator
+import com.github.kr328.clash.service.localproxy.LocalLanProxyRuntimeHolder
 import com.github.kr328.clash.service.model.AccessControlPlan
 import com.github.kr328.clash.service.model.AndroidPolicy
 import com.github.kr328.clash.service.store.ServiceStore
@@ -36,6 +39,16 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
         val tun = install(TunModule(self))
         val config = install(ConfigurationModule(self))
         val network = install(NetworkObserveModule(self))
+
+        // Real Wi-Fi/hotspot endpoint observation is a later step (see plan
+        // Steps 6+); until then there is no eligible endpoint, so enable
+        // always reports NoEligibleEndpoint rather than guessing one.
+        LocalLanProxyRuntimeHolder.coordinator = LocalLanProxyRuntimeCoordinator(
+            service = self,
+            reloadPort = config,
+            endpointSource = LocalLanProxyEndpointSource { null },
+            protect = self::protect,
+        )
 
         if (store.dynamicNotification)
             install(DynamicNotificationModule(self))
@@ -105,6 +118,8 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
             reason = e.message
         } finally {
             withContext(NonCancellable) {
+                LocalLanProxyRuntimeHolder.coordinator = null
+
                 tun.close()
 
                 stopSelf()

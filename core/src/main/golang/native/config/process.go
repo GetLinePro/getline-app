@@ -27,6 +27,10 @@ var processors = []processor{
 	// full RawConfig).
 	patchExternalController,
 	patchInbound,
+	// Both read only the typed Session override, never the RawConfig fields
+	// patchInbound just cleared, and never OverrideSlotPersist.
+	patchLocalProxyListener,
+	patchLocalProxyRule,
 	patchGeneral,
 	patchProfile,
 	patchDns,

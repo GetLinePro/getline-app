@@ -79,7 +79,29 @@ data class ConfigurationOverride(
 
     @SerialName("geox-url")
     val geoxurl: GeoXUrl = GeoXUrl(),
+
+    // Session-only: the Go side (native/config/local_proxy.go) reads this key
+    // exclusively from the Session override slot and ignores it in Persist,
+    // regardless of what a caller puts there. Null means no local LAN proxy
+    // listener at all — there is no separate on/off flag.
+    @SerialName("local-proxy")
+    var localProxy: LocalProxy? = null,
 ) : Parcelable {
+    @Serializable
+    data class LocalProxy(
+        @SerialName("listen")
+        val listen: String,
+
+        @SerialName("port")
+        val port: Int,
+
+        @SerialName("username")
+        val username: String,
+
+        @SerialName("password")
+        val password: String,
+    )
+
     @Serializable
     data class Dns(
         @SerialName("enable")
