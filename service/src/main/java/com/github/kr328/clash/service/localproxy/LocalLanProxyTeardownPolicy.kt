@@ -27,16 +27,41 @@ internal sealed interface LocalLanProxyTeardownOutcome {
  * Only once the reload is confirmed applied does the live probe become
  * trustworthy: [probe] is the source of truth for whether the configured
  * credentials still authenticate.
+ *
+ * [addressStillLocal] resolves the one case the probe cannot decide on its
+ * own. An address the phone no longer holds can never answer
+ * `ECONNREFUSED` — the connect fails with `EADDRNOTAVAIL`, `ENETUNREACH` or a
+ * timeout, all of which classify as
+ * [Ambiguous][LocalLanProxyProbeOutcome.Ambiguous]. Once the correlated
+ * removal reload has succeeded, that is enough to call the endpoint gone: it
+ * is no longer exposed, and losing Wi-Fi must not stop the VPN merely because
+ * refusal became unobservable. While the address *is* still assigned, the same
+ * ambiguity keeps its original meaning and fails closed.
+ *
+ * Successful authentication is never excused by address loss: if the
+ * transaction's credentials still work, GetLine's listener is demonstrably
+ * reachable and reporting it gone would be a lie regardless of what the
+ * interface list says.
  */
 internal object LocalLanProxyTeardownPolicy {
-    fun decide(reloadLoaded: Boolean, probe: () -> LocalLanProxyProbeOutcome): LocalLanProxyTeardownOutcome {
+    fun decide(
+        reloadLoaded: Boolean,
+        addressStillLocal: Boolean,
+        probe: () -> LocalLanProxyProbeOutcome,
+    ): LocalLanProxyTeardownOutcome {
         if (!reloadLoaded) return LocalLanProxyTeardownOutcome.FailStop
 
         return when (probe()) {
             LocalLanProxyProbeOutcome.Refused, LocalLanProxyProbeOutcome.OccupiedByOther ->
                 LocalLanProxyTeardownOutcome.ConfirmedGone
-            LocalLanProxyProbeOutcome.Authenticated, LocalLanProxyProbeOutcome.Ambiguous ->
+            LocalLanProxyProbeOutcome.Authenticated ->
                 LocalLanProxyTeardownOutcome.FailStop
+            LocalLanProxyProbeOutcome.Ambiguous ->
+                if (addressStillLocal) {
+                    LocalLanProxyTeardownOutcome.FailStop
+                } else {
+                    LocalLanProxyTeardownOutcome.ConfirmedGone
+                }
         }
     }
 }

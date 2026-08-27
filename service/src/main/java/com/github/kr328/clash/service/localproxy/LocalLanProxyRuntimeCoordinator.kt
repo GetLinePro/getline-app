@@ -11,9 +11,14 @@ import com.github.kr328.clash.service.clash.module.ConfigurationReloadResult
 import com.github.kr328.clash.service.remote.LocalLanProxyRuntimeConfig
 import com.github.kr328.clash.service.remote.LocalLanProxyRuntimeResult
 import com.github.kr328.clash.service.util.sendClashRequestStop
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -30,6 +35,12 @@ import java.net.Socket
  * [reloadPort], [endpointSource] and [protect] — but never decides its
  * policy, and neither `ConfigurationModule` nor any Activity participates in
  * the transaction below.
+ *
+ * It also owns the endpoint *policy*: [start] subscribes to
+ * [LocalLanProxyEndpointSource.changes], and losing or changing the approved
+ * address runs the very same disable transaction a user-requested disable
+ * runs. The source only observes; nothing outside this class decides what an
+ * endpoint change means.
  *
  * One coordinator instance lives for the lifetime of one running VPN/service
  * session; state is never persisted and resets when the instance is
@@ -55,6 +66,84 @@ class LocalLanProxyRuntimeCoordinator(
 
     private val mutex = Mutex()
     private var state: RuntimeState = RuntimeState.Inactive
+
+    // Bounded by close(), which TunService calls from its runtime teardown.
+    // The transaction bodies below are NonCancellable, so cancelling this
+    // scope can never interrupt a cleanup half-way.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var closed = false
+
+    /** Begins reacting to endpoint changes. Call once, before any enable. */
+    fun start() {
+        scope.launch {
+            endpointSource.changes.collect {
+                try {
+                    onEndpointChanged()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // Last resort, and the reason it exists: an exception
+                    // escaping here would both kill the only observer — leaving
+                    // a possibly-live listener with nothing watching its
+                    // address — and surface as an uncaught failure in the
+                    // :background process. Neither is an acceptable way to
+                    // learn that teardown could not be accounted for.
+                    Log.e("LocalLanProxy endpoint observer failed unexpectedly", e)
+                    failStopIfActive()
+                }
+            }
+        }
+    }
+
+    /**
+     * Stops reacting to endpoint changes and makes a *bounded, best-effort*
+     * attempt to let an in-flight automatic transaction finish first. Does not
+     * disable an active proxy: the runtime is going away with the whole Clash
+     * session, which drops the Session override and its listener along with it.
+     *
+     * The wait exists because [disableActive] runs `NonCancellable`, so
+     * cancelling the scope does not stop an in-flight reload or probe;
+     * returning immediately would leave one running against a
+     * `ConfigurationModule` and Clash runtime that `TunService` is already
+     * tearing down. In practice the reload port completes pending requests
+     * exceptionally on shutdown, so this returns in milliseconds.
+     *
+     * It is not a guarantee. On timeout this logs and returns, and the
+     * transaction may still be running while teardown proceeds — the race it
+     * normally closes reopens. Making that airtight would mean giving teardown
+     * a real completion handshake with the reload port rather than a deadline;
+     * that is deliberately not done here.
+     */
+    suspend fun close() {
+        closed = true
+
+        val job = scope.coroutineContext[Job] ?: return
+        job.cancel()
+
+        if (withTimeoutOrNull(CLOSE_TIMEOUT_MS) { job.join() } == null) {
+            Log.w("LocalLanProxy observer did not settle within ${CLOSE_TIMEOUT_MS}ms of close")
+        }
+    }
+
+    /**
+     * Fail-stop requested from a path that has no result to return. Never
+     * throws: it is called from failure handling, where a second exception
+     * would defeat the purpose.
+     */
+    private fun requestFailStop() {
+        runCatching { service.sendClashRequestStop() }
+            .onFailure { Log.e("LocalLanProxy fail-stop request failed", it) }
+    }
+
+    private suspend fun failStopIfActive() {
+        val active = mutex.withLock { state is RuntimeState.Active }
+        if (!active) return
+
+        Log.w("LocalLanProxy cannot account for an active listener; fail-stopping TunService")
+        requestFailStop()
+    }
 
     suspend fun enable(config: LocalLanProxyRuntimeConfig): LocalLanProxyRuntimeResult = mutex.withLock {
         if (state is RuntimeState.Active) {
@@ -117,7 +206,11 @@ class LocalLanProxyRuntimeCoordinator(
                 }
             }
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable, not Exception: setSessionOverride and the reload go
+            // through JNI, and an Error (UnsatisfiedLinkError, and friends)
+            // escaping here with mutationStarted = true would skip rollback
+            // entirely and leave a bound listener behind.
             return@withLock if (mutationStarted) {
                 withContext(NonCancellable + Dispatchers.IO) {
                     rollbackFailedEnable(transaction, e.message)
@@ -145,13 +238,26 @@ class LocalLanProxyRuntimeCoordinator(
         val transaction = (state as? RuntimeState.Active)?.transaction
             ?: return@withLock LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
 
-        withContext(NonCancellable + Dispatchers.IO) {
+        disableActive(transaction, reason = "request")
+    }
+
+    /**
+     * The disable transaction itself. Must be called with [mutex] held and an
+     * [RuntimeState.Active] [transaction]. Both the user-requested disable and
+     * the endpoint-change disable go through here, so there is exactly one
+     * teardown path to reason about.
+     */
+    private suspend fun disableActive(
+        transaction: Transaction,
+        reason: String,
+    ): LocalLanProxyRuntimeResult = withContext(NonCancellable + Dispatchers.IO) {
+        try {
             clearSessionOverride()
 
             val reloadResult = runCatching { reloadPort.reloadAndAwait() }
             val reloadLoaded = reloadResult.getOrNull() is ConfigurationReloadResult.Loaded
             if (!reloadLoaded) {
-                Log.w("LocalLanProxy disable reload unconfirmed: ${describeReloadFailure(reloadResult)}")
+                Log.w("LocalLanProxy disable ($reason) reload unconfirmed: ${describeReloadFailure(reloadResult)}")
             }
 
             when (decideTeardown(reloadLoaded, transaction)) {
@@ -160,11 +266,76 @@ class LocalLanProxyRuntimeCoordinator(
                     LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
                 }
                 LocalLanProxyTeardownOutcome.FailStop -> {
-                    Log.w("LocalLanProxy could not confirm teardown; fail-stopping TunService")
-                    service.sendClashRequestStop()
+                    Log.w("LocalLanProxy could not confirm teardown ($reason); fail-stopping TunService")
+                    requestFailStop()
                     LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.SafetyStop)
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // clearSessionOverride, the native override calls and the probe can
+            // all throw. A teardown that ends in an exception has confirmed
+            // nothing, so it takes the same route an unconfirmed reload takes
+            // instead of escaping — to a binder caller on the requested path,
+            // or to a coroutine with nobody to catch it on the automatic one.
+            Log.e("LocalLanProxy disable ($reason) failed unexpectedly; fail-stopping TunService", e)
+            requestFailStop()
+            LocalLanProxyRuntimeResult(
+                LocalLanProxyRuntimeResult.Status.SafetyStop,
+                message = e.message,
+            )
+        }
+    }
+
+    /**
+     * Endpoint policy. Runs on every change signal while a transaction is
+     * active.
+     *
+     * The distinction that matters is address versus `Network`. Mihomo's
+     * listener is bound to the *address*, so a Wi-Fi reconnect that keeps the
+     * same DHCP lease leaves it serving normally even though Android has
+     * handed out a fresh [android.net.Network]. Tearing down there would
+     * disable the proxy on every brief Wi-Fi blip; worse, probing through the
+     * dead old `Network` fails with an ambiguous error against an address that
+     * is still local, which is a fail-stop of the entire VPN. So an unchanged
+     * address only refreshes the probe route.
+     *
+     * A changed or vanished address is the real trigger, and it runs the same
+     * transaction [disable] runs.
+     */
+    private suspend fun onEndpointChanged() {
+        mutex.withLock {
+            if (closed) return@withLock
+
+            val transaction = (state as? RuntimeState.Active)?.transaction ?: return@withLock
+
+            val current = try {
+                endpointSource.currentEndpoint()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // Cannot tell whether the approved address is still ours while
+                // a credentialed listener is bound to it. Treating that as
+                // "nothing changed" would leave it serving unwatched.
+                Log.e("LocalLanProxy endpoint query failed while active", e)
+                requestFailStop()
+                return@withLock
+            }
+
+            if (current != null && current.address == transaction.endpoint.address) {
+                if (current.network != transaction.endpoint.network) {
+                    state = RuntimeState.Active(transaction.copy(endpoint = current))
+                    Log.i("LocalLanProxy endpoint kept address, refreshed probe network")
+                }
+
+                return@withLock
+            }
+
+            Log.i("LocalLanProxy approved endpoint no longer eligible; disabling")
+
+            val result = disableActive(transaction, reason = "endpoint-change")
+            Log.i("LocalLanProxy automatic disable result: ${result.status}")
         }
     }
 
@@ -173,31 +344,49 @@ class LocalLanProxyRuntimeCoordinator(
         transaction: Transaction,
         reloadFailedMessage: String?,
     ): LocalLanProxyRuntimeResult {
-        // Clearing the field only stops a *future* reload from reopening the
-        // listener; it does not close one that already bound. Force a second
-        // reload regardless of the first attempt's outcome, then confirm via
-        // the disable-probe before reporting failure (see plan Decisions).
-        clearSessionOverride()
+        return try {
+            // Clearing the field only stops a *future* reload from reopening
+            // the listener; it does not close one that already bound. Force a
+            // second reload regardless of the first attempt's outcome, then
+            // confirm via the disable-probe before reporting failure (see plan
+            // Decisions).
+            clearSessionOverride()
 
-        val cleanupReload = runCatching { reloadPort.reloadAndAwait() }
-        val cleanupLoaded = cleanupReload.getOrNull() is ConfigurationReloadResult.Loaded
-        if (!cleanupLoaded) {
-            Log.w("LocalLanProxy rollback reload unconfirmed: ${describeReloadFailure(cleanupReload)}")
-        }
+            val cleanupReload = runCatching { reloadPort.reloadAndAwait() }
+            val cleanupLoaded = cleanupReload.getOrNull() is ConfigurationReloadResult.Loaded
+            if (!cleanupLoaded) {
+                Log.w("LocalLanProxy rollback reload unconfirmed: ${describeReloadFailure(cleanupReload)}")
+            }
 
-        return when (decideTeardown(cleanupLoaded, transaction)) {
-            LocalLanProxyTeardownOutcome.ConfirmedGone -> {
-                state = RuntimeState.Inactive
-                LocalLanProxyRuntimeResult(
-                    LocalLanProxyRuntimeResult.Status.ApplyFailed,
-                    message = reloadFailedMessage ?: "local proxy did not become reachable",
-                )
+            when (decideTeardown(cleanupLoaded, transaction)) {
+                LocalLanProxyTeardownOutcome.ConfirmedGone -> {
+                    state = RuntimeState.Inactive
+                    LocalLanProxyRuntimeResult(
+                        LocalLanProxyRuntimeResult.Status.ApplyFailed,
+                        message = reloadFailedMessage ?: "local proxy did not become reachable",
+                    )
+                }
+                LocalLanProxyTeardownOutcome.FailStop -> {
+                    Log.w("LocalLanProxy could not confirm teardown; fail-stopping TunService")
+                    requestFailStop()
+                    LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.SafetyStop)
+                }
             }
-            LocalLanProxyTeardownOutcome.FailStop -> {
-                Log.w("LocalLanProxy could not confirm teardown; fail-stopping TunService")
-                service.sendClashRequestStop()
-                LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.SafetyStop)
-            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // The same boundary disableActive() has, and for a sharper reason.
+            // A throw from clearSessionOverride() or the teardown probe would
+            // escape enable() while `state` is still Inactive — it is only set
+            // to Active on a *successful* enable — so nothing here would fail
+            // -stop, and a later disable() would short-circuit to Disabled
+            // against a listener that may well have bound before the failure.
+            Log.e("LocalLanProxy rollback failed unexpectedly; fail-stopping TunService", e)
+            requestFailStop()
+            LocalLanProxyRuntimeResult(
+                LocalLanProxyRuntimeResult.Status.SafetyStop,
+                message = e.message,
+            )
         }
     }
 
@@ -207,10 +396,16 @@ class LocalLanProxyRuntimeCoordinator(
      * [ConfigurationReloadResult.Loaded] — see the policy's kdoc for why an
      * unconfirmed reload fails closed unconditionally, without even running
      * the probe (a still in-flight, orphaned apply from an earlier request
-     * can complete later and reopen the listener after this call returns).
+     * can complete later and reopen the listener after this call returns),
+     * and why an address the phone no longer holds lets an otherwise ambiguous
+     * probe still count as gone.
      */
     private fun decideTeardown(reloadLoaded: Boolean, transaction: Transaction): LocalLanProxyTeardownOutcome {
-        return LocalLanProxyTeardownPolicy.decide(reloadLoaded) {
+        // Read locality at decision time, alongside the probe, so the two
+        // describe the same instant.
+        val addressStillLocal = LocalLanProxyAddressLocality.isAssignedLocally(transaction.endpoint.address)
+
+        return LocalLanProxyTeardownPolicy.decide(reloadLoaded, addressStillLocal) {
             LocalLanProxyProbe.classifyAuth(
                 connect = { connectProtected(transaction.endpoint, transaction.port, PROBE_TIMEOUT_MS) },
                 username = transaction.username,
@@ -294,6 +489,7 @@ class LocalLanProxyRuntimeCoordinator(
     companion object {
         private const val PREFLIGHT_TIMEOUT_MS = 1_000
         private const val PROBE_TIMEOUT_MS = 2_000
+        private const val CLOSE_TIMEOUT_MS = 5_000L
     }
 
     private data class ApplyAttempt(
