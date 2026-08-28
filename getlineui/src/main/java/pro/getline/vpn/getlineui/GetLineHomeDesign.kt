@@ -71,6 +71,11 @@ class GetLineHomeDesign(context: Context) : GetLineScreen<GetLineHomeDesign.Requ
         OpenHelp,
         /** Home row → app list and routing mode (legacy AccessControlActivity). */
         OpenAppRouting,
+        /**
+         * Home header gear → GetLine Settings. Home opens the screen and
+         * nothing else: it holds no settings state of its own.
+         */
+        OpenSettings,
         /** GL-19: local safe diagnostic report → preview → share. */
         SendDiagnostics,
     }

@@ -404,6 +404,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         // on the way back (Event.ActivityStart).
                         GetLineHomeDesign.Request.OpenAppRouting ->
                             startActivity(AccessControlActivity::class.intent)
+                        // Opening the screen is all Home does with settings: it
+                        // observes no proxy state and reads no status transport.
+                        GetLineHomeDesign.Request.OpenSettings ->
+                            startActivity(GetLineSettingsActivity::class.intent)
                         GetLineHomeDesign.Request.SendDiagnostics ->
                             DiagnosticReportShare.present(
                                 activity = this@GetLineHomeActivity,
