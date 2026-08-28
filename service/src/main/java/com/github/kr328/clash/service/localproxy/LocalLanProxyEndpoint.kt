@@ -14,10 +14,19 @@ import java.net.Inet4Address
  * instead of through GetLine's TUN. The two have different lifetimes: a Wi-Fi
  * reconnect that keeps the same DHCP lease produces a *new* [Network] for the
  * *same* [address], and the listener — being address-bound — survives it.
+ *
+ * [epoch] is what separates that case from an address that genuinely went away
+ * and came back. It counts how many times the source has observed [address]
+ * disappear, so a listener bound before the loss can be told apart from one
+ * bound after it. Without it the two are indistinguishable at read time: the
+ * change signal is conflated, so a fast enough stop/start — a hotspot restart
+ * reuses its address — can leave only the final, apparently-unchanged state to
+ * observe, and a dead listener would be treated as still serving.
  */
 data class LocalLanProxyEndpoint(
     val address: Inet4Address,
     val network: Network,
+    val epoch: Long = 0L,
 )
 
 /**

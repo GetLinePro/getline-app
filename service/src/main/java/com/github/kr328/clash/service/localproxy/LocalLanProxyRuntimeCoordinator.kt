@@ -303,6 +303,16 @@ class LocalLanProxyRuntimeCoordinator(
      *
      * A changed or vanished address is the real trigger, and it runs the same
      * transaction [disable] runs.
+     *
+     * An address that *returned* is the third case, and it cannot be told from
+     * the first by inspection: a hotspot restart reuses its address, so all
+     * that is left to see is a new `Network` — exactly what a harmless
+     * reconnect looks like. [LocalLanProxyEndpoint.epoch] carries the fact
+     * that the source watched it disappear. When it moves, the listener died
+     * with the address and this disables, but it adopts the *current* route
+     * first: probing a returned address through the dead `Network` it was
+     * approved on is precisely the ambiguous-against-still-local combination
+     * that fail-stops the VPN, and here the live route is already known.
      */
     private suspend fun onEndpointChanged() {
         mutex.withLock {
@@ -324,10 +334,22 @@ class LocalLanProxyRuntimeCoordinator(
             }
 
             if (current != null && current.address == transaction.endpoint.address) {
-                if (current.network != transaction.endpoint.network) {
-                    state = RuntimeState.Active(transaction.copy(endpoint = current))
-                    Log.i("LocalLanProxy endpoint kept address, refreshed probe network")
+                if (current.epoch == transaction.endpoint.epoch) {
+                    if (current.network != transaction.endpoint.network) {
+                        state = RuntimeState.Active(transaction.copy(endpoint = current))
+                        Log.i("LocalLanProxy endpoint kept address, refreshed probe network")
+                    }
+
+                    return@withLock
                 }
+
+                Log.i("LocalLanProxy approved address returned after a loss; disabling")
+
+                val returned = transaction.copy(endpoint = current)
+                state = RuntimeState.Active(returned)
+
+                val loss = disableActive(returned, reason = "endpoint-loss")
+                Log.i("LocalLanProxy automatic disable result: ${loss.status}")
 
                 return@withLock
             }
