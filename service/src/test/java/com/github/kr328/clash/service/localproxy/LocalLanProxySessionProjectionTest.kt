@@ -105,6 +105,14 @@ class LocalLanProxySessionProjectionTest {
             Thread.sleep(1)
         }
 
+        // Without this the deadline could expire on a slow closer and release
+        // the publish before close() was ever reached, which would pass
+        // sequentially and prove nothing about the race.
+        assertTrue(
+            "closer never reached close(): ${closer.state}",
+            closer.state == Thread.State.BLOCKED || closer.state == Thread.State.TERMINATED,
+        )
+
         releasePublish.countDown()
         publisher.join(5_000)
         closer.join(5_000)
