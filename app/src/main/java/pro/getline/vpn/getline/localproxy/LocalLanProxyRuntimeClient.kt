@@ -21,11 +21,29 @@ import kotlinx.coroutines.withTimeoutOrNull
  * vocabulary; product code above [LocalLanProxyFacade] never sees these types.
  */
 internal interface LocalLanProxyRuntimeClient {
-    suspend fun enable(config: LocalLanProxyUserConfig): LocalLanProxyRuntimeResult
-    suspend fun disable(): LocalLanProxyRuntimeResult
+    suspend fun enable(config: LocalLanProxyUserConfig): LocalLanProxyRuntimeOutcome
+    suspend fun disable(): LocalLanProxyRuntimeOutcome
 
     /** The running session's projection, or inactive when there is no session. */
     suspend fun state(): LocalLanProxyRuntimeState
+}
+
+/**
+ * What a command attempt produced. The distinction is not cosmetic: a runtime
+ * that *answered* `VpnUnavailable` has told us there is no session and so no
+ * listener, while a call that never arrived has told us nothing at all. Both
+ * look the same to the user — Enable is not available — but only the first is
+ * evidence that a departed owner's listener is gone, which is what
+ * `reconcileOwner()` needs before discarding their credentials.
+ *
+ * It stays internal: the product API keeps one `VpnUnavailable`.
+ */
+internal sealed interface LocalLanProxyRuntimeOutcome {
+    /** The runtime ran the command and this is what it said. */
+    data class Answered(val result: LocalLanProxyRuntimeResult) : LocalLanProxyRuntimeOutcome
+
+    /** The command could not be delivered: not bound, bind rejected, or the service died mid-call. */
+    object TransportUnavailable : LocalLanProxyRuntimeOutcome
 }
 
 /**
@@ -34,16 +52,17 @@ internal interface LocalLanProxyRuntimeClient {
  *
  * A dead binder is not retried. Enable and disable are transactions with real
  * consequences on the far side; a caller that repeats one blindly may run it
- * twice. The service having died mid-call is reported as a failed apply, and
- * the next state read — the process is gone, so the projection is inactive —
- * tells the truth about what survived.
+ * twice. Every way of failing to talk to the runtime is reported as
+ * [LocalLanProxyRuntimeOutcome.TransportUnavailable] rather than being dressed
+ * up as an answer, and the next state read tells the truth about what
+ * survived.
  */
 internal class BinderLocalLanProxyRuntimeClient(
     context: Context,
 ) : LocalLanProxyRuntimeClient {
     private val statusClient = StatusClient(context.applicationContext)
 
-    override suspend fun enable(config: LocalLanProxyUserConfig): LocalLanProxyRuntimeResult =
+    override suspend fun enable(config: LocalLanProxyUserConfig): LocalLanProxyRuntimeOutcome =
         call {
             it.enable(
                 LocalLanProxyRuntimeConfig(
@@ -54,7 +73,7 @@ internal class BinderLocalLanProxyRuntimeClient(
             )
         }
 
-    override suspend fun disable(): LocalLanProxyRuntimeResult = call { it.disable() }
+    override suspend fun disable(): LocalLanProxyRuntimeOutcome = call { it.disable() }
 
     override suspend fun state(): LocalLanProxyRuntimeState = withContext(Dispatchers.IO) {
         statusClient.localLanProxyState()
@@ -62,7 +81,7 @@ internal class BinderLocalLanProxyRuntimeClient(
 
     private suspend fun call(
         block: suspend (com.github.kr328.clash.service.remote.ILocalLanProxyRuntime) -> LocalLanProxyRuntimeResult,
-    ): LocalLanProxyRuntimeResult {
+    ): LocalLanProxyRuntimeOutcome {
         return try {
             // Bounded: Resource.get() parks until the service connects, and an
             // app that is bound normally resolves it immediately. Waiting
@@ -70,20 +89,23 @@ internal class BinderLocalLanProxyRuntimeClient(
             // coming, which reads as a hung transaction rather than as the
             // "no session" it actually is.
             val remote = withTimeoutOrNull(BIND_TIMEOUT_MS) { Remote.service.remote.get() }
-                ?: return LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.VpnUnavailable)
+                ?: return LocalLanProxyRuntimeOutcome.TransportUnavailable
 
-            withContext(Dispatchers.IO) { block(remote.localLanProxy()) }
+            LocalLanProxyRuntimeOutcome.Answered(
+                withContext(Dispatchers.IO) { block(remote.localLanProxy()) }
+            )
         } catch (e: DeadObjectException) {
             Log.w("Local proxy runtime call lost the service", e)
 
             Remote.service.remote.peek()?.let { Remote.service.remote.reset(it) }
 
-            LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.ApplyFailed)
+            LocalLanProxyRuntimeOutcome.TransportUnavailable
         } catch (e: IllegalStateException) {
-            // bind rejected / not bound: there is no session to talk to.
-            Log.w("Local proxy runtime unavailable: ${e.message}")
+            // bind rejected / not bound: the command did not reach a runtime,
+            // which is not the same as a runtime saying it has no session.
+            Log.w("Local proxy runtime unreachable: ${e.message}")
 
-            LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.VpnUnavailable)
+            LocalLanProxyRuntimeOutcome.TransportUnavailable
         }
     }
 

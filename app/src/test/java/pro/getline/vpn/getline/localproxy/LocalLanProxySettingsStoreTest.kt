@@ -106,13 +106,19 @@ class LocalLanProxySettingsStoreTest {
 
     @Test
     fun aStoredRecordThatNoLongerValidatesIsReplaced() {
-        store().loadOrCreate()
-        prefs().edit { putInt("port", 80) }
+        val stored = store().loadOrCreate()!!
+
+        // The current owner's own key, so this really does corrupt the record
+        // being read back — a bare "port" would just be junk from another
+        // format and leave the record intact.
+        prefs().edit { putInt("owner-a/port", 80) }
+        assertEquals(80, prefs().getInt("owner-a/port", 0))
 
         val recovered = store().loadOrCreate()!!
 
         assertNull(LocalLanProxyConfigValidator.validate(recovered))
         assertNotEquals(80, recovered.port)
+        assertNotEquals(stored.password, recovered.password)
     }
 
     @Test

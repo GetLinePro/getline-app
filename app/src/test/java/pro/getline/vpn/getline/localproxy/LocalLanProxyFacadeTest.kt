@@ -73,8 +73,10 @@ class LocalLanProxyFacadeTest {
 
     private class FakeRuntime : LocalLanProxyRuntimeClient {
         var runtimeState: LocalLanProxyRuntimeState = LocalLanProxyRuntimeState.Inactive
-        var enableResult = LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Enabled)
-        var disableResult = LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
+        var enableResult: LocalLanProxyRuntimeOutcome =
+            LocalLanProxyRuntimeOutcome.Answered(LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Enabled))
+        var disableResult: LocalLanProxyRuntimeOutcome =
+            LocalLanProxyRuntimeOutcome.Answered(LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled))
 
         var enableCalls = 0
         var lastConfig: LocalLanProxyUserConfig? = null
@@ -82,27 +84,30 @@ class LocalLanProxyFacadeTest {
         /** Completed by the test to hold a transaction open mid-flight. */
         var gate: CompletableDeferred<Unit>? = null
 
-        override suspend fun enable(config: LocalLanProxyUserConfig): LocalLanProxyRuntimeResult {
+        override suspend fun enable(config: LocalLanProxyUserConfig): LocalLanProxyRuntimeOutcome {
             enableCalls++
             lastConfig = config
             gate?.await()
 
-            if (enableResult.status == LocalLanProxyRuntimeResult.Status.Enabled) {
+            if (enableResult.statusOrNull() == LocalLanProxyRuntimeResult.Status.Enabled) {
                 runtimeState = LocalLanProxyRuntimeState.Active("10.135.213.166", config.port)
             }
 
             return enableResult
         }
 
-        override suspend fun disable(): LocalLanProxyRuntimeResult {
+        override suspend fun disable(): LocalLanProxyRuntimeOutcome {
             gate?.await()
 
-            if (disableResult.status == LocalLanProxyRuntimeResult.Status.Disabled) {
+            if (disableResult.statusOrNull() == LocalLanProxyRuntimeResult.Status.Disabled) {
                 runtimeState = LocalLanProxyRuntimeState.Inactive
             }
 
             return disableResult
         }
+
+        private fun LocalLanProxyRuntimeOutcome.statusOrNull() =
+            (this as? LocalLanProxyRuntimeOutcome.Answered)?.result?.status
 
         override suspend fun state(): LocalLanProxyRuntimeState = runtimeState
     }
@@ -112,6 +117,9 @@ class LocalLanProxyFacadeTest {
     private var vpnRunning = true
 
     private val settings = FakeSettings()
+
+    private fun answered(status: LocalLanProxyRuntimeResult.Status): LocalLanProxyRuntimeOutcome =
+        LocalLanProxyRuntimeOutcome.Answered(LocalLanProxyRuntimeResult(status))
 
     private fun facade(store: LocalLanProxySettings = settings) = LocalLanProxyFacade(
         store = store,
@@ -187,7 +195,7 @@ class LocalLanProxyFacadeTest {
         val facade = facade()
 
         for ((status, expected) in cases) {
-            runtime.enableResult = LocalLanProxyRuntimeResult(status)
+            runtime.enableResult = answered(status)
 
             assertEquals(expected, facade.enable())
             // A failed enable never leaves the screen claiming an endpoint.
@@ -197,9 +205,11 @@ class LocalLanProxyFacadeTest {
 
     @Test
     fun aFailedEnableDoesNotLeakItsMessageIntoTheProductResult() = runBlocking {
-        runtime.enableResult = LocalLanProxyRuntimeResult(
-            LocalLanProxyRuntimeResult.Status.ApplyFailed,
-            message = "listen tcp 10.0.0.1:4321: bind: address already in use",
+        runtime.enableResult = LocalLanProxyRuntimeOutcome.Answered(
+            LocalLanProxyRuntimeResult(
+                LocalLanProxyRuntimeResult.Status.ApplyFailed,
+                message = "listen tcp 10.0.0.1:4321: bind: address already in use",
+            )
         )
 
         assertEquals(LocalLanProxyResult.ApplyFailed, facade().enable())
@@ -303,7 +313,7 @@ class LocalLanProxyFacadeTest {
         // A safety stop has confirmed nothing: the listener may still be
         // authenticating with those very credentials, and the record is the
         // only description of it left.
-        runtime.disableResult = LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.SafetyStop)
+        runtime.disableResult = answered(LocalLanProxyRuntimeResult.Status.SafetyStop)
         settings.owner = "owner-b"
         facade.reconcileOwner()
 
@@ -311,10 +321,33 @@ class LocalLanProxyFacadeTest {
         assertTrue(settings.recordOwners().contains("owner-a"))
 
         // The next reconcile, once teardown can be confirmed, finishes the job.
-        runtime.disableResult = LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
+        runtime.disableResult = answered(LocalLanProxyRuntimeResult.Status.Disabled)
         facade.reconcileOwner()
 
         assertEquals(setOf("owner-b"), settings.recordOwners())
+    }
+
+    @Test
+    fun reconcileOwnerKeepsTheRecordWhenTheCommandNeverReachedTheRuntime() = runBlocking {
+        val facade = facade()
+        facade.enable()
+
+        // Unbound, bind rejected, or the service died mid-call. On screen this
+        // is the same sentence as "no VPN", but it is not evidence that the
+        // departed owner's listener is gone.
+        runtime.disableResult = LocalLanProxyRuntimeOutcome.TransportUnavailable
+        settings.owner = "owner-b"
+        facade.reconcileOwner()
+
+        assertEquals(0, settings.discardCalls)
+        assertTrue(settings.recordOwners().contains("owner-a"))
+    }
+
+    @Test
+    fun aCommandThatNeverArrivedStillReadsAsVpnUnavailableOnScreen() = runBlocking {
+        runtime.enableResult = LocalLanProxyRuntimeOutcome.TransportUnavailable
+
+        assertEquals(LocalLanProxyResult.VpnUnavailable, facade().enable())
     }
 
     @Test
@@ -322,7 +355,7 @@ class LocalLanProxyFacadeTest {
         val facade = facade()
         facade.refresh()
 
-        runtime.disableResult = LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.VpnUnavailable)
+        runtime.disableResult = answered(LocalLanProxyRuntimeResult.Status.VpnUnavailable)
         settings.owner = "owner-b"
         facade.reconcileOwner()
 
@@ -370,8 +403,14 @@ class LocalLanProxyFacadeTest {
 
         assertEquals(LocalLanProxyResult.ActiveNotEditable, result)
         assertEquals(before, settings.loadOrCreate())
-        // And the refusal leaves the screen showing the truth it just learned.
-        assertEquals(LocalLanProxyStatus.Active("10.135.213.166", 4321), facade.state.value.status)
+
+        // And the refusal leaves a coherent snapshot, not just a corrected
+        // status: an Active proxy with no config would render as "settings
+        // unavailable" about settings that are right there.
+        val snapshot = facade.state.value
+        assertEquals(LocalLanProxyStatus.Active("10.135.213.166", 4321), snapshot.status)
+        assertEquals(before, snapshot.config)
+        assertEquals(LocalLanProxyAvailability.Ready, snapshot.availability)
     }
 
     @Test

@@ -92,7 +92,15 @@ class LocalLanProxyFacade internal constructor(
             // to overwrite its credentials.
             val runtimeState = runtime.state()
             if (runtimeState is LocalLanProxyRuntimeState.Active) {
-                publish(_state.value.config, runtimeState)
+                // The refusal corrects the screen, so it publishes a whole
+                // snapshot: before the first refresh there is no config in
+                // hand, and reporting Active beside a null config would say
+                // "settings unavailable" about a proxy that is running on
+                // exactly the settings this store holds.
+                val current = _state.value.config
+                    ?: withContext(Dispatchers.IO) { store.loadOrCreate() }
+
+                publish(current, runtimeState)
 
                 return@withLock LocalLanProxyResult.ActiveNotEditable
             }
@@ -139,20 +147,27 @@ class LocalLanProxyFacade internal constructor(
         if (!withContext(Dispatchers.IO) { store.belongsToAnotherOwner() }) return
 
         mutex.withLock {
-            val teardown = runtime.disable().status
+            val outcome = runtime.disable()
 
-            // Discard only once the listener is accounted for. "Disabled" is a
-            // confirmed teardown; "VpnUnavailable" means there is no session,
-            // so there is no listener either. A safety stop or a failed apply
-            // has confirmed nothing — the credentials may still authenticate —
-            // and deleting the record there would destroy the only description
-            // of an endpoint that is still up. The record stays, and the next
-            // reconcile checks again.
-            val accountedFor = teardown == LocalLanProxyRuntimeResult.Status.Disabled ||
-                teardown == LocalLanProxyRuntimeResult.Status.VpnUnavailable
+            // Discard only once the listener is accounted for, and only on
+            // evidence the runtime itself produced: "Disabled" is a confirmed
+            // teardown, and an answered "VpnUnavailable" means there is no
+            // session and therefore no listener. A safety stop or a failed
+            // apply has confirmed nothing, and a command that never arrived —
+            // unbound, bind rejected, service died — has confirmed even less,
+            // however much it looks like "no VPN" on screen. Deleting the
+            // record in those cases would destroy the only description of an
+            // endpoint that may still be up, so it stays for the next
+            // reconcile.
+            val accountedFor = when (outcome) {
+                LocalLanProxyRuntimeOutcome.TransportUnavailable -> false
+                is LocalLanProxyRuntimeOutcome.Answered ->
+                    outcome.result.status == LocalLanProxyRuntimeResult.Status.Disabled ||
+                        outcome.result.status == LocalLanProxyRuntimeResult.Status.VpnUnavailable
+            }
 
             if (!accountedFor) {
-                Log.w("Local proxy owner reconcile kept a previous owner's settings: $teardown")
+                Log.w("Local proxy owner reconcile kept a previous owner's settings")
             } else if (!withContext(Dispatchers.IO) { store.discardForeignRecord() }) {
                 Log.w("Local proxy settings of a previous owner could not be discarded")
             }
@@ -204,6 +219,17 @@ class LocalLanProxyFacade internal constructor(
             },
             config = config,
         )
+    }
+
+    /**
+     * A command that never reached the runtime reads as [LocalLanProxyResult.VpnUnavailable]:
+     * from the screen's point of view there is nothing to attach a listener
+     * to, which is the same sentence either way. What must not follow it is a
+     * conclusion about what the session holds — see [reconcileOwner].
+     */
+    private fun LocalLanProxyRuntimeOutcome.toProductResult(): LocalLanProxyResult = when (this) {
+        LocalLanProxyRuntimeOutcome.TransportUnavailable -> LocalLanProxyResult.VpnUnavailable
+        is LocalLanProxyRuntimeOutcome.Answered -> result.toProductResult()
     }
 
     private fun LocalLanProxyRuntimeResult.toProductResult(): LocalLanProxyResult = when (status) {

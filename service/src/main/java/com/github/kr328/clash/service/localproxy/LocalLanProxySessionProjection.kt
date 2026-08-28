@@ -19,6 +19,17 @@ package com.github.kr328.clash.service.localproxy
 internal class LocalLanProxySessionProjection(
     private val sink: (LocalLanProxyRuntimeState) -> Unit,
 ) {
+    /**
+     * Guards the flag *and* the publish it decides, as one step. Checking a
+     * volatile flag and then publishing is not enough: a publish that read
+     * `closed == false` can still be overtaken by [close] and land its Active
+     * after the session's Inactive, which is exactly the stale-listener
+     * report this class exists to prevent. Reads of [isClosed] outside the
+     * lock stay honest — a transaction refused a moment early is correct, and
+     * one that slips through is caught here.
+     */
+    private val lock = Any()
+
     @Volatile
     private var closed = false
 
@@ -28,21 +39,27 @@ internal class LocalLanProxySessionProjection(
 
     /** Session start: a fresh session inherits nothing from the one before it. */
     fun open() {
-        sink(LocalLanProxyRuntimeState.Inactive)
+        synchronized(lock) {
+            sink(LocalLanProxyRuntimeState.Inactive)
+        }
     }
 
     fun publish(state: LocalLanProxyRuntimeState) {
-        if (closed) return
+        synchronized(lock) {
+            if (closed) return
 
-        sink(state)
+            sink(state)
+        }
     }
 
     /** Session end. Idempotent, and the last publish that has any effect. */
     fun close() {
-        if (closed) return
+        synchronized(lock) {
+            if (closed) return
 
-        closed = true
+            closed = true
 
-        sink(LocalLanProxyRuntimeState.Inactive)
+            sink(LocalLanProxyRuntimeState.Inactive)
+        }
     }
 }
