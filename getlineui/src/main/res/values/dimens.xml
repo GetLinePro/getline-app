@@ -40,4 +40,7 @@
     <dimen name="get_line_shell_bar_height">72dp</dimen>
     <dimen name="get_line_shell_tab_icon">22dp</dimen>
     <dimen name="get_line_shell_content_bottom">108dp</dimen>
+    <!-- Settings has no shell bar, so its content stops at the inset plus a
+         comfortable gap rather than clearing a bar that is not there. -->
+    <dimen name="get_line_settings_content_bottom">32dp</dimen>
 </resources>
