@@ -56,6 +56,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
+import pro.getline.vpn.getline.localproxy.LocalLanProxyFacade
 
 class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
     private val backend by lazy { GetLineBackendProvider.create(this) }
@@ -72,6 +73,7 @@ class GetLineOnboardingActivity : GetLineActivity<GetLineOnboardingDesign>() {
             backend = backend,
             sessions = sessionRepository,
             host = ProductImportHost(),
+            localProxyOwner = LocalLanProxyFacade.get(this),
         )
     }
     private val browserAuthLauncher = BrowserAuthLauncher()

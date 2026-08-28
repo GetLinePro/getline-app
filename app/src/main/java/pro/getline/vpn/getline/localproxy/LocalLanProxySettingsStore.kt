@@ -23,6 +23,20 @@ interface LocalLanProxySettings {
 
     /** Persists [config] for the current owner. False when the store is unusable. */
     fun save(config: LocalLanProxyUserConfig): Boolean
+
+    /**
+     * True when a record exists and it was written by a different owner. False
+     * for "no record" and for "the current owner's record" alike: neither is
+     * something to clean up.
+     */
+    fun belongsToAnotherOwner(): Boolean
+
+    /**
+     * Best effort removal of a record belonging to a different owner. Returns
+     * false when one is still there afterwards — including when the store
+     * itself is unusable, since an unreadable store is also an unerasable one.
+     */
+    fun discardForeignRecord(): Boolean
 }
 
 /**
@@ -98,6 +112,38 @@ class LocalLanProxySettingsStore internal constructor(
 
         synchronized(lock) {
             return write(prefs, config)
+        }
+    }
+
+    override fun belongsToAnotherOwner(): Boolean {
+        val prefs = prefs ?: return false
+
+        synchronized(lock) {
+            val storedOwner = prefs.all[KEY_OWNER] as? String ?: return false
+
+            return storedOwner != ownerKey()
+        }
+    }
+
+    override fun discardForeignRecord(): Boolean {
+        val prefs = prefs ?: return false
+
+        synchronized(lock) {
+            // Re-checked under the lock: this must never delete the current
+            // owner's settings because ownership moved back between the two
+            // calls. A logout that did not go through leaves the record alone.
+            val storedOwner = prefs.all[KEY_OWNER] as? String ?: return true
+            if (storedOwner == ownerKey()) return true
+
+            return try {
+                prefs.edit(commit = true) { clear() }
+
+                true
+            } catch (e: Exception) {
+                Log.w("Local proxy settings discard failed: ${e.javaClass.simpleName}", e)
+
+                false
+            }
         }
     }
 

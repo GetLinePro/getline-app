@@ -33,6 +33,11 @@ class LocalLanProxyFacadeTest {
 
         var generated = 0
 
+        /** Set to make a discard fail the way an unwritable store would. */
+        var discardable = true
+
+        var discardCalls = 0
+
         override fun loadOrCreate(): LocalLanProxyUserConfig? {
             if (!usable) return null
 
@@ -49,6 +54,21 @@ class LocalLanProxyFacadeTest {
 
             return true
         }
+
+        override fun belongsToAnotherOwner(): Boolean =
+            usable && records.isNotEmpty() && !records.containsKey(owner ?: "none")
+
+        override fun discardForeignRecord(): Boolean {
+            discardCalls++
+
+            if (!discardable) return false
+
+            records.keys.retainAll(setOf(owner ?: "none"))
+
+            return true
+        }
+
+        fun recordOwners(): Set<String> = records.keys.toSet()
     }
 
     private class FakeRuntime : LocalLanProxyRuntimeClient {
@@ -260,6 +280,46 @@ class LocalLanProxyFacadeTest {
         assertEquals(LocalLanProxyAvailability.SettingsUnavailable, facade.state.value.availability)
         assertEquals(LocalLanProxyResult.SettingsUnavailable, facade.enable())
         assertEquals(0, runtime.enableCalls)
+    }
+
+    @Test
+    fun reconcileOwnerDiscardsADepartedOwnersRecordAndClosesTheirListener() = runBlocking {
+        val facade = facade()
+        facade.enable()
+        assertTrue(facade.state.value.status is LocalLanProxyStatus.Active)
+
+        settings.owner = "owner-b"
+        facade.reconcileOwner()
+
+        assertEquals(LocalLanProxyRuntimeState.Inactive, runtime.runtimeState)
+        assertEquals(setOf("owner-b"), settings.recordOwners())
+    }
+
+    @Test
+    fun reconcileOwnerLeavesStillOwnedSettingsAlone() = runBlocking {
+        val facade = facade()
+        facade.refresh()
+        val mine = facade.state.value.config!!
+
+        // A removal that failed: the account, and therefore the owner, is
+        // exactly where it was.
+        facade.reconcileOwner()
+
+        assertEquals(0, settings.discardCalls)
+        assertEquals(mine, settings.loadOrCreate())
+    }
+
+    @Test
+    fun reconcileOwnerStillClosesTheListenerWhenTheRecordCannotBeRemoved() = runBlocking {
+        val facade = facade()
+        facade.enable()
+
+        settings.owner = "owner-b"
+        settings.discardable = false
+        facade.reconcileOwner()
+
+        assertEquals(LocalLanProxyRuntimeState.Inactive, runtime.runtimeState)
+        assertEquals(LocalLanProxyStatus.Disabled, facade.state.value.status)
     }
 
     @Test

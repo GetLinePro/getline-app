@@ -38,6 +38,7 @@ class LogoutFlowTest {
     private lateinit var subscriptions: LogoutFakeSubscriptionRepository
     private lateinit var events: MutableList<String>
     private lateinit var host: LogoutFakeHost
+    private lateinit var localProxyOwner: RecordingOwnerIntegration
 
     @Before
     fun setUp() {
@@ -47,6 +48,7 @@ class LogoutFlowTest {
         events = mutableListOf()
         subscriptions = LogoutFakeSubscriptionRepository(events)
         host = LogoutFakeHost(events)
+        localProxyOwner = RecordingOwnerIntegration()
     }
 
     @Test
@@ -271,7 +273,29 @@ class LogoutFlowTest {
         backend = LogoutFakeBackend(subscriptions, events),
         sessionRepository = sessions,
         host = host,
+        localProxyOwner = localProxyOwner,
     )
+
+    /**
+     * The local proxy is told about *every* confirmed teardown, successful or
+     * not: it decides for itself whether ownership actually moved, and a
+     * failed removal is precisely the case where it must not act.
+     */
+    @Test
+    fun localProxyOwnerIsReconciledOnEveryOutcome() = runBlocking {
+        seedSession()
+        sessions.rememberManagedProfile("managed", source = "https://subscription.example")
+
+        assertEquals(Outcome.Completed, flow().perform(Action.SignOut))
+        assertEquals(1, localProxyOwner.calls)
+
+        seedSession()
+        sessions.rememberManagedProfile("managed", source = "https://subscription.example")
+        subscriptions.delete = { GetLineBackendResult.Unavailable }
+
+        assertEquals(Outcome.RemoveSubscriptionFailed, flow().perform(Action.RemoveSubscription))
+        assertEquals(2, localProxyOwner.calls)
+    }
 
     private fun seedSession() {
         store.saveSession(
@@ -281,6 +305,14 @@ class LogoutFlowTest {
                 expiresInSeconds = 86_400,
             ),
         )
+    }
+}
+
+private class RecordingOwnerIntegration : pro.getline.vpn.getline.localproxy.LocalLanProxyOwnerIntegration {
+    var calls = 0
+
+    override suspend fun reconcileOwner() {
+        calls++
     }
 }
 

@@ -104,6 +104,31 @@ class LocalLanProxySettingsStoreTest {
     }
 
     @Test
+    fun ownershipQuestionsAreAnsweredByTheStore() {
+        assertFalse("no record is nothing to clean up", store().belongsToAnotherOwner())
+
+        store().loadOrCreate()
+        assertFalse("the current owner's own record", store().belongsToAnotherOwner())
+
+        owner = "owner-b"
+        assertTrue(store().belongsToAnotherOwner())
+    }
+
+    @Test
+    fun discardRemovesOnlyAForeignRecord() {
+        val mine = store().loadOrCreate()!!
+
+        // Still the same owner: a failed logout must not destroy these.
+        assertTrue(store().discardForeignRecord())
+        assertEquals(mine, store().loadOrCreate())
+
+        owner = "owner-b"
+        assertTrue(store().discardForeignRecord())
+        assertFalse(store().belongsToAnotherOwner())
+        assertNotEquals(mine.password, store().loadOrCreate()!!.password)
+    }
+
+    @Test
     fun unusableStorageIsReportedRatherThanDegraded() {
         val broken = LocalLanProxySettingsStore(context, { owner }) {
             throw IllegalStateException("keystore unavailable")
@@ -112,5 +137,8 @@ class LocalLanProxySettingsStoreTest {
         assertFalse(broken.available)
         assertNull(broken.loadOrCreate())
         assertFalse(broken.save(LocalLanProxyUserConfig(4321, "someone", "another-secret")))
+        // An unreadable store is also an unerasable one, and says so.
+        assertFalse(broken.belongsToAnotherOwner())
+        assertFalse(broken.discardForeignRecord())
     }
 }

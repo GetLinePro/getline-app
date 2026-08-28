@@ -3,6 +3,7 @@ package pro.getline.vpn.getline
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
+import pro.getline.vpn.getline.localproxy.LocalLanProxyOwnerIntegration
 
 /**
  * Owns confirmed product logout after the Activity has stopped its local start UI.
@@ -15,6 +16,7 @@ internal class LogoutFlow(
     private val backend: GetLineBackend,
     private val sessionRepository: GetLineSessionRepository,
     private val host: Host,
+    private val localProxyOwner: LocalLanProxyOwnerIntegration = LocalLanProxyOwnerIntegration.None,
 ) {
     interface Host {
         /** Cancel/clear Activity-owned account work after persisted session state changes. */
@@ -47,10 +49,19 @@ internal class LogoutFlow(
         backend.vpn.stop()
 
         val managedUuid = sessionRepository.managedBindingSnapshot().managedProfileUuid
-        return when (action) {
+        val outcome = when (action) {
             Action.RemoveSubscription -> removeSubscription(managedUuid)
             Action.SignOut -> signOut(managedUuid)
         }
+
+        // Every outcome, not only Completed: the hook reads current ownership
+        // itself, so a teardown that failed half-way leaves settings that are
+        // still owned exactly where they are.
+        withContext(NonCancellable) {
+            localProxyOwner.reconcileOwner()
+        }
+
+        return outcome
     }
 
     private suspend fun removeSubscription(managedUuid: String?): Outcome {

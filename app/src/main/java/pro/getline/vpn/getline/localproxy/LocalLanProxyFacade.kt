@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import com.github.kr328.clash.common.Global
+import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.common.compat.registerReceiverCompat
 import com.github.kr328.clash.common.constants.Intents
 import com.github.kr328.clash.common.constants.Permissions
@@ -45,7 +46,7 @@ class LocalLanProxyFacade internal constructor(
     private val runtime: LocalLanProxyRuntimeClient,
     private val vpnRunning: () -> Boolean,
     private val scope: CoroutineScope,
-) : LocalLanProxy {
+) : LocalLanProxy, LocalLanProxyOwnerIntegration {
     private val _state = MutableStateFlow(LocalLanProxySnapshot())
 
     override val state: StateFlow<LocalLanProxySnapshot> = _state.asStateFlow()
@@ -110,6 +111,40 @@ class LocalLanProxyFacade internal constructor(
 
     override suspend fun disable(): LocalLanProxyResult = transaction(LocalLanProxyStatus.Disabling) {
         runtime.disable().toProductResult()
+    }
+
+    /**
+     * Confirmed account change (see [LocalLanProxyOwnerIntegration]).
+     *
+     * Fail closed, in this order: a listener bound under the departed owner is
+     * torn down first, then their record is discarded. Doing it the other way
+     * round would delete the only description of an endpoint that is still
+     * accepting connections.
+     *
+     * Ownership that did not actually change is the common case — a removal
+     * that failed, a sign-out that could not clear its binding — and it is
+     * exactly the case that must not destroy still-owned settings, so it
+     * returns without touching anything.
+     */
+    override suspend fun reconcileOwner() {
+        if (!withContext(Dispatchers.IO) { store.belongsToAnotherOwner() }) return
+
+        mutex.withLock {
+            val result = runtime.disable()
+            if (result.status != LocalLanProxyRuntimeResult.Status.Disabled) {
+                // Not fatal here: the session either had no listener to close
+                // (no VPN, nothing bound) or could not confirm closing one, and
+                // in the second case it fail-stops itself rather than leaving
+                // it reachable.
+                Log.w("Local proxy owner reconcile could not confirm disable: ${result.status}")
+            }
+
+            if (!withContext(Dispatchers.IO) { store.discardForeignRecord() }) {
+                Log.w("Local proxy settings of a previous owner could not be discarded")
+            }
+
+            refreshLocked()
+        }
     }
 
     /**
