@@ -12,6 +12,9 @@ import com.github.kr328.clash.common.constants.Components
 import com.github.kr328.clash.common.log.Log
 import com.github.kr328.clash.service.clash.clashRuntime
 import com.github.kr328.clash.service.clash.module.*
+import com.github.kr328.clash.service.localproxy.LocalLanProxyEndpointMonitor
+import com.github.kr328.clash.service.localproxy.LocalLanProxyRuntimeCoordinator
+import com.github.kr328.clash.service.localproxy.LocalLanProxyRuntimeHolder
 import com.github.kr328.clash.service.model.AccessControlPlan
 import com.github.kr328.clash.service.model.AndroidPolicy
 import com.github.kr328.clash.service.store.ServiceStore
@@ -36,6 +39,20 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
         val tun = install(TunModule(self))
         val config = install(ConfigurationModule(self))
         val network = install(NetworkObserveModule(self))
+
+        // Installed and connected here, but its policy lives entirely in the
+        // coordinator: this observes Wi-Fi endpoints, the coordinator decides
+        // what an endpoint change means. Deliberately not a branch inside
+        // NetworkObserveModule (see plan Decisions).
+        val endpointMonitor = LocalLanProxyEndpointMonitor(self).apply { start() }
+        val localLanProxy = LocalLanProxyRuntimeCoordinator(
+            service = self,
+            reloadPort = config,
+            endpointSource = endpointMonitor,
+            protect = self::protect,
+        ).apply { start() }
+
+        LocalLanProxyRuntimeHolder.coordinator = localLanProxy
 
         if (store.dynamicNotification)
             install(DynamicNotificationModule(self))
@@ -105,6 +122,12 @@ class TunService : VpnService(), CoroutineScope by CoroutineScope(Dispatchers.De
             reason = e.message
         } finally {
             withContext(NonCancellable) {
+                // Clear the handle first so no new AIDL call can reach a
+                // coordinator that is about to stop observing.
+                LocalLanProxyRuntimeHolder.coordinator = null
+                localLanProxy.close()
+                endpointMonitor.close()
+
                 tun.close()
 
                 stopSelf()

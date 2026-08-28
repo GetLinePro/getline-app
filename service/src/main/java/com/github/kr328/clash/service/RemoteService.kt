@@ -3,6 +3,7 @@ package com.github.kr328.clash.service
 import android.content.Intent
 import android.os.IBinder
 import com.github.kr328.clash.service.remote.IClashManager
+import com.github.kr328.clash.service.remote.ILocalLanProxyRuntime
 import com.github.kr328.clash.service.remote.IRemoteService
 import com.github.kr328.clash.service.remote.IProfileManager
 import com.github.kr328.clash.service.remote.wrap
@@ -13,16 +14,20 @@ class RemoteService : BaseService(), IRemoteService {
 
     private var clash: ClashManager? = null
     private var profile: ProfileManager? = null
+    private var localLanProxy: LocalLanProxyRuntimeManager? = null
     private var clashBinder: IClashManager? = null
     private var profileBinder: IProfileManager? = null
+    private var localLanProxyBinder: ILocalLanProxyRuntime? = null
 
     override fun onCreate() {
         super.onCreate()
 
         clash = ClashManager(this)
         profile = ProfileManager(this)
+        localLanProxy = LocalLanProxyRuntimeManager()
         clashBinder = clash?.wrap() as IClashManager?
         profileBinder = profile?.wrap() as IProfileManager?
+        localLanProxyBinder = localLanProxy?.wrap() as ILocalLanProxyRuntime?
     }
 
     override fun onDestroy() {
@@ -42,5 +47,9 @@ class RemoteService : BaseService(), IRemoteService {
 
     override fun profile(): IProfileManager {
         return profileBinder!!
+    }
+
+    override fun localLanProxy(): ILocalLanProxyRuntime {
+        return localLanProxyBinder!!
     }
 }

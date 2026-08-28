@@ -9,6 +9,7 @@ import com.github.kr328.clash.service.model.ProfileStateSnapshot
 import com.github.kr328.clash.service.model.ProfileStorageHealth
 import com.github.kr328.clash.service.model.ProfileStorageSnapshot
 import com.github.kr328.clash.service.remote.IFetchObserver
+import com.github.kr328.clash.service.remote.ILocalLanProxyRuntime
 import com.github.kr328.clash.service.remote.IProfileManager
 import com.github.kr328.clash.service.remote.IRemoteService
 import com.github.kr328.clash.service.remote.wrap
@@ -229,6 +230,8 @@ class ImportTransactionTest {
                 override fun clash() = error("not used")
 
                 override fun profile(): IProfileManager = profileManager
+
+                override fun localLanProxy(): ILocalLanProxyRuntime = error("not used")
             }
             connection.onServiceConnected(null, remote.wrap())
             true
