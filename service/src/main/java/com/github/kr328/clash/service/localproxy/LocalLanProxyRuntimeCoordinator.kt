@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.net.ConnectException
+import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -77,6 +78,12 @@ class LocalLanProxyRuntimeCoordinator(
 
     /** Begins reacting to endpoint changes. Call once, before any enable. */
     fun start() {
+        // Session boundary. The :background process outlives a single VPN
+        // session, so a fresh coordinator must not inherit whatever the
+        // previous one published — normally already Inactive, but not after a
+        // session that ended while a listener could not be accounted for.
+        LocalLanProxyRuntimeRegistry.reset(service)
+
         scope.launch {
             endpointSource.changes.collect {
                 try {
@@ -119,11 +126,24 @@ class LocalLanProxyRuntimeCoordinator(
     suspend fun close() {
         closed = true
 
-        val job = scope.coroutineContext[Job] ?: return
-        job.cancel()
+        try {
+            val job = scope.coroutineContext[Job] ?: return
+            job.cancel()
 
-        if (withTimeoutOrNull(CLOSE_TIMEOUT_MS) { job.join() } == null) {
-            Log.w("LocalLanProxy observer did not settle within ${CLOSE_TIMEOUT_MS}ms of close")
+            if (withTimeoutOrNull(CLOSE_TIMEOUT_MS) { job.join() } == null) {
+                Log.w("LocalLanProxy observer did not settle within ${CLOSE_TIMEOUT_MS}ms of close")
+            }
+        } finally {
+            // The other session boundary, and the last write this instance
+            // makes. Reported state is about a running session; the Clash
+            // runtime going away takes the Session override and its listener
+            // with it, including in the fail-stop case where this instance
+            // never confirmed teardown itself.
+            //
+            // After the wait, not before: a transaction still finishing inside
+            // it would otherwise publish Active over the reset and leave the
+            // session's last word saying a listener is bound.
+            LocalLanProxyRuntimeRegistry.reset(service)
         }
     }
 
@@ -143,6 +163,32 @@ class LocalLanProxyRuntimeCoordinator(
 
         Log.w("LocalLanProxy cannot account for an active listener; fail-stopping TunService")
         requestFailStop()
+    }
+
+    /**
+     * The only writer of [state], so the registry cannot drift from the
+     * transaction it is supposed to mirror. Every caller already holds
+     * [mutex]; publishing under it keeps the published order equal to the
+     * transaction order, and the broadcast it triggers is asynchronous, so
+     * nothing waits on a reader while the lock is held.
+     */
+    private fun transitionTo(next: RuntimeState) {
+        state = next
+
+        LocalLanProxyRuntimeRegistry.publish(service, next.projection())
+    }
+
+    /**
+     * What leaves the process. The `Network` and the credentials stay behind:
+     * a reader gets the address a LAN client dials and nothing it has no use
+     * for.
+     */
+    private fun RuntimeState.projection(): LocalLanProxyRuntimeState = when (this) {
+        RuntimeState.Inactive -> LocalLanProxyRuntimeState.Inactive
+        is RuntimeState.Active -> LocalLanProxyRuntimeState.Active(
+            address = transaction.endpoint.address.literal(),
+            port = transaction.port,
+        )
     }
 
     suspend fun enable(config: LocalLanProxyRuntimeConfig): LocalLanProxyRuntimeResult = mutex.withLock {
@@ -221,7 +267,7 @@ class LocalLanProxyRuntimeCoordinator(
         }
 
         if (apply.loaded && apply.authOutcome == LocalLanProxyProbeOutcome.Authenticated) {
-            state = RuntimeState.Active(transaction)
+            transitionTo(RuntimeState.Active(transaction))
             LocalLanProxyRuntimeResult(
                 status = LocalLanProxyRuntimeResult.Status.Enabled,
                 endpointAddress = endpoint.address.hostAddress,
@@ -262,7 +308,7 @@ class LocalLanProxyRuntimeCoordinator(
 
             when (decideTeardown(reloadLoaded, transaction)) {
                 LocalLanProxyTeardownOutcome.ConfirmedGone -> {
-                    state = RuntimeState.Inactive
+                    transitionTo(RuntimeState.Inactive)
                     LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
                 }
                 LocalLanProxyTeardownOutcome.FailStop -> {
@@ -336,7 +382,7 @@ class LocalLanProxyRuntimeCoordinator(
             if (current != null && current.address == transaction.endpoint.address) {
                 if (current.epoch == transaction.endpoint.epoch) {
                     if (current.network != transaction.endpoint.network) {
-                        state = RuntimeState.Active(transaction.copy(endpoint = current))
+                        transitionTo(RuntimeState.Active(transaction.copy(endpoint = current)))
                         Log.i("LocalLanProxy endpoint kept address, refreshed probe network")
                     }
 
@@ -346,7 +392,7 @@ class LocalLanProxyRuntimeCoordinator(
                 Log.i("LocalLanProxy approved address returned after a loss; disabling")
 
                 val returned = transaction.copy(endpoint = current)
-                state = RuntimeState.Active(returned)
+                transitionTo(RuntimeState.Active(returned))
 
                 val loss = disableActive(returned, reason = "endpoint-loss")
                 Log.i("LocalLanProxy automatic disable result: ${loss.status}")
@@ -382,7 +428,7 @@ class LocalLanProxyRuntimeCoordinator(
 
             when (decideTeardown(cleanupLoaded, transaction)) {
                 LocalLanProxyTeardownOutcome.ConfirmedGone -> {
-                    state = RuntimeState.Inactive
+                    transitionTo(RuntimeState.Inactive)
                     LocalLanProxyRuntimeResult(
                         LocalLanProxyRuntimeResult.Status.ApplyFailed,
                         message = reloadFailedMessage ?: "local proxy did not become reachable",
@@ -524,6 +570,16 @@ class LocalLanProxyRuntimeCoordinator(
                 ?: reloadResult.exceptionOrNull()?.message
     }
 }
+
+/**
+ * `getHostAddress` is platform-nullable; for an [Inet4Address] that
+ * was resolved from an interface it never is. The fallback stays truthful
+ * rather than guessing — `toString` renders as `[host]/1.2.3.4` — because the
+ * alternative, reporting inactive while a listener is bound, is the direction
+ * that hides a live endpoint from its owner.
+ */
+private fun Inet4Address.literal(): String =
+    hostAddress ?: toString().substringAfterLast('/')
 
 private fun Throwable.hasErrno(errno: Int): Boolean {
     var current: Throwable? = this

@@ -69,6 +69,16 @@ fun Context.sendTunPolicyReconcile() {
     sendBroadcastSelf(Intent(Intents.ACTION_TUN_POLICY_RECONCILE))
 }
 
+/**
+ * Invalidation only: it says the local-proxy runtime state may have changed,
+ * never what it changed to. The value itself is read back from
+ * `StatusProvider`, so a receiver cannot act on a stale payload that was
+ * overtaken between send and delivery.
+ */
+fun Context.sendLocalLanProxyChanged() {
+    sendBroadcastSelf(Intent(Intents.ACTION_LOCAL_LAN_PROXY_CHANGED))
+}
+
 fun Context.sendClashRequestStop() {
     sendBroadcastSelf(Intent(Intents.ACTION_CLASH_REQUEST_STOP))
 }
