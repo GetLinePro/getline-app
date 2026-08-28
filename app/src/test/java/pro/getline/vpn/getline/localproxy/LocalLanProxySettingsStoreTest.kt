@@ -76,11 +76,23 @@ class LocalLanProxySettingsStoreTest {
         val theirs = store().loadOrCreate()!!
 
         assertNotEquals(mine.password, theirs.password)
+    }
 
-        // And the first owner does not get the replacement back either: the
-        // record now belongs to whoever generated it last.
+    @Test
+    fun anotherOwnerReadingSettingsDoesNotEraseTheMismatch() {
+        val mine = store().loadOrCreate()!!
+
+        owner = "owner-b"
+        store().loadOrCreate()
+        store().save(LocalLanProxyUserConfig(4321, "someone", "another-secret"))
+
+        // The departed owner's record is still there and still recognised as
+        // foreign: reconcileOwner() has not run yet, and a plain read must not
+        // stand in for it — that is what would leave their listener up.
+        assertTrue(store().belongsToAnotherOwner())
+
         owner = "owner-a"
-        assertNotEquals(theirs.password, store().loadOrCreate()!!.password)
+        assertEquals(mine, store().loadOrCreate())
     }
 
     @Test
@@ -115,7 +127,7 @@ class LocalLanProxySettingsStoreTest {
     }
 
     @Test
-    fun discardRemovesOnlyAForeignRecord() {
+    fun discardRemovesOnlyForeignRecords() {
         val mine = store().loadOrCreate()!!
 
         // Still the same owner: a failed logout must not destroy these.
@@ -123,9 +135,36 @@ class LocalLanProxySettingsStoreTest {
         assertEquals(mine, store().loadOrCreate())
 
         owner = "owner-b"
+        val theirs = store().loadOrCreate()!!
+
         assertTrue(store().discardForeignRecord())
         assertFalse(store().belongsToAnotherOwner())
+        // The current owner keeps exactly what they had.
+        assertEquals(theirs, store().loadOrCreate())
+
+        owner = "owner-a"
         assertNotEquals(mine.password, store().loadOrCreate()!!.password)
+    }
+
+    @Test
+    fun keysFromAnUnknownFormatAreTreatedAsSomethingToClear() {
+        store().loadOrCreate()
+        prefs().edit { putString("owner", "owner-a") }
+
+        assertTrue(store().belongsToAnotherOwner())
+        assertTrue(store().discardForeignRecord())
+        assertFalse(prefs().contains("owner"))
+    }
+
+    @Test
+    fun aWriteThatDidNotReachDiskIsReportedAsAFailure() {
+        val failing = LocalLanProxySettingsStore(context, { owner }) { FailingCommitPreferences() }
+
+        // Generation reports failure rather than handing back credentials that
+        // exist only in memory — enabling with those would authenticate until
+        // the process died and then stop, with nothing to show the user.
+        assertNull(failing.loadOrCreate())
+        assertFalse(failing.save(LocalLanProxyUserConfig(4321, "someone", "another-secret")))
     }
 
     @Test
@@ -140,5 +179,53 @@ class LocalLanProxySettingsStoreTest {
         // An unreadable store is also an unerasable one, and says so.
         assertFalse(broken.belongsToAnotherOwner())
         assertFalse(broken.discardForeignRecord())
+    }
+}
+
+/**
+ * Commits that fail. `SharedPreferences.commit()` returning false is what a
+ * full or broken store looks like from here, and the wrapper that hides it
+ * (`androidx`'s `edit(commit = true)`) is exactly what this guards against.
+ */
+private class FailingCommitPreferences : SharedPreferences {
+    private val values = mutableMapOf<String, Any?>()
+
+    override fun getAll(): MutableMap<String, *> = values
+
+    override fun getString(key: String?, defValue: String?): String? = values[key] as? String ?: defValue
+
+    override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? = defValues
+
+    override fun getInt(key: String?, defValue: Int): Int = values[key] as? Int ?: defValue
+
+    override fun getLong(key: String?, defValue: Long): Long = values[key] as? Long ?: defValue
+
+    override fun getFloat(key: String?, defValue: Float): Float = values[key] as? Float ?: defValue
+
+    override fun getBoolean(key: String?, defValue: Boolean): Boolean = values[key] as? Boolean ?: defValue
+
+    override fun contains(key: String?): Boolean = values.containsKey(key)
+
+    override fun edit(): SharedPreferences.Editor = FailingEditor()
+
+    override fun registerOnSharedPreferenceChangeListener(
+        listener: SharedPreferences.OnSharedPreferenceChangeListener?,
+    ) = Unit
+
+    override fun unregisterOnSharedPreferenceChangeListener(
+        listener: SharedPreferences.OnSharedPreferenceChangeListener?,
+    ) = Unit
+
+    private class FailingEditor : SharedPreferences.Editor {
+        override fun putString(key: String?, value: String?): SharedPreferences.Editor = this
+        override fun putStringSet(key: String?, values: MutableSet<String>?): SharedPreferences.Editor = this
+        override fun putInt(key: String?, value: Int): SharedPreferences.Editor = this
+        override fun putLong(key: String?, value: Long): SharedPreferences.Editor = this
+        override fun putFloat(key: String?, value: Float): SharedPreferences.Editor = this
+        override fun putBoolean(key: String?, value: Boolean): SharedPreferences.Editor = this
+        override fun remove(key: String?): SharedPreferences.Editor = this
+        override fun clear(): SharedPreferences.Editor = this
+        override fun commit(): Boolean = false
+        override fun apply() = Unit
     }
 }

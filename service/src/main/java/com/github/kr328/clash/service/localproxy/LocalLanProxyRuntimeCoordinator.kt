@@ -73,8 +73,15 @@ class LocalLanProxyRuntimeCoordinator(
     // scope can never interrupt a cleanup half-way.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    @Volatile
-    private var closed = false
+    /**
+     * Owns both halves of the session boundary: what the rest of the system is
+     * told, and whether this session is still open for business. One flag, one
+     * owner — an `enable` arriving during teardown and a projection published
+     * during teardown are the same question asked twice.
+     */
+    private val projection = LocalLanProxySessionProjection { state ->
+        LocalLanProxyRuntimeRegistry.publish(service, state)
+    }
 
     /** Begins reacting to endpoint changes. Call once, before any enable. */
     fun start() {
@@ -82,7 +89,7 @@ class LocalLanProxyRuntimeCoordinator(
         // session, so a fresh coordinator must not inherit whatever the
         // previous one published — normally already Inactive, but not after a
         // session that ended while a listener could not be accounted for.
-        LocalLanProxyRuntimeRegistry.reset(service)
+        projection.open()
 
         scope.launch {
             endpointSource.changes.collect {
@@ -118,32 +125,25 @@ class LocalLanProxyRuntimeCoordinator(
      * exceptionally on shutdown, so this returns in milliseconds.
      *
      * It is not a guarantee. On timeout this logs and returns, and the
-     * transaction may still be running while teardown proceeds — the race it
-     * normally closes reopens. Making that airtight would mean giving teardown
-     * a real completion handshake with the reload port rather than a deadline;
-     * that is deliberately not done here.
+     * transaction may still be running while teardown proceeds. What that can
+     * no longer do is mislead anyone: the projection is already closed, so a
+     * late transaction's state is dropped rather than published. Making the
+     * wait itself airtight would mean giving teardown a real completion
+     * handshake with the reload port rather than a deadline; that is
+     * deliberately not done here.
      */
     suspend fun close() {
-        closed = true
+        // Before the wait, not after: this both fixes the session's last word
+        // and refuses any transaction that has not started yet. A command
+        // already inside enable() is the case the projection exists for — it
+        // may finish, and its Active is dropped rather than published.
+        projection.close()
 
-        try {
-            val job = scope.coroutineContext[Job] ?: return
-            job.cancel()
+        val job = scope.coroutineContext[Job] ?: return
+        job.cancel()
 
-            if (withTimeoutOrNull(CLOSE_TIMEOUT_MS) { job.join() } == null) {
-                Log.w("LocalLanProxy observer did not settle within ${CLOSE_TIMEOUT_MS}ms of close")
-            }
-        } finally {
-            // The other session boundary, and the last write this instance
-            // makes. Reported state is about a running session; the Clash
-            // runtime going away takes the Session override and its listener
-            // with it, including in the fail-stop case where this instance
-            // never confirmed teardown itself.
-            //
-            // After the wait, not before: a transaction still finishing inside
-            // it would otherwise publish Active over the reset and leave the
-            // session's last word saying a listener is bound.
-            LocalLanProxyRuntimeRegistry.reset(service)
+        if (withTimeoutOrNull(CLOSE_TIMEOUT_MS) { job.join() } == null) {
+            Log.w("LocalLanProxy observer did not settle within ${CLOSE_TIMEOUT_MS}ms of close")
         }
     }
 
@@ -175,7 +175,7 @@ class LocalLanProxyRuntimeCoordinator(
     private fun transitionTo(next: RuntimeState) {
         state = next
 
-        LocalLanProxyRuntimeRegistry.publish(service, next.projection())
+        projection.publish(next.asProjection())
     }
 
     /**
@@ -183,7 +183,7 @@ class LocalLanProxyRuntimeCoordinator(
      * a reader gets the address a LAN client dials and nothing it has no use
      * for.
      */
-    private fun RuntimeState.projection(): LocalLanProxyRuntimeState = when (this) {
+    private fun RuntimeState.asProjection(): LocalLanProxyRuntimeState = when (this) {
         RuntimeState.Inactive -> LocalLanProxyRuntimeState.Inactive
         is RuntimeState.Active -> LocalLanProxyRuntimeState.Active(
             address = transaction.endpoint.address.literal(),
@@ -192,6 +192,14 @@ class LocalLanProxyRuntimeCoordinator(
     }
 
     suspend fun enable(config: LocalLanProxyRuntimeConfig): LocalLanProxyRuntimeResult = mutex.withLock {
+        // A binder caller can hold this coordinator across teardown: the
+        // manager resolved it before TunService cleared the handle. Starting a
+        // transaction now would bind a listener into a Clash runtime that is
+        // already stopping.
+        if (projection.isClosed) {
+            return@withLock LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.VpnUnavailable)
+        }
+
         if (state is RuntimeState.Active) {
             return@withLock LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Enabled)
         }
@@ -281,6 +289,10 @@ class LocalLanProxyRuntimeCoordinator(
     }
 
     suspend fun disable(): LocalLanProxyRuntimeResult = mutex.withLock {
+        if (projection.isClosed) {
+            return@withLock LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.VpnUnavailable)
+        }
+
         val transaction = (state as? RuntimeState.Active)?.transaction
             ?: return@withLock LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
 
@@ -362,7 +374,7 @@ class LocalLanProxyRuntimeCoordinator(
      */
     private suspend fun onEndpointChanged() {
         mutex.withLock {
-            if (closed) return@withLock
+            if (projection.isClosed) return@withLock
 
             val transaction = (state as? RuntimeState.Active)?.transaction ?: return@withLock
 

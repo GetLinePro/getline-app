@@ -85,7 +85,15 @@ class LocalLanProxyFacade internal constructor(
             // is GetLine's relies on those staying the same for the life of the
             // session. Saving new ones under a live listener would leave the
             // screen describing an endpoint that no longer accepts them.
-            if (_state.value.status is LocalLanProxyStatus.Active) {
+            //
+            // Asked of the session, not of the published snapshot: before the
+            // first refresh the snapshot still says Loading, and a screen
+            // opened onto an already-active proxy would otherwise be allowed
+            // to overwrite its credentials.
+            val runtimeState = runtime.state()
+            if (runtimeState is LocalLanProxyRuntimeState.Active) {
+                publish(_state.value.config, runtimeState)
+
                 return@withLock LocalLanProxyResult.ActiveNotEditable
             }
 
@@ -94,7 +102,7 @@ class LocalLanProxyFacade internal constructor(
                 return@withLock LocalLanProxyResult.SettingsUnavailable
             }
 
-            publish(config, runtime.state())
+            publish(config, runtimeState)
 
             LocalLanProxyResult.Success
         }
@@ -117,9 +125,10 @@ class LocalLanProxyFacade internal constructor(
      * Confirmed account change (see [LocalLanProxyOwnerIntegration]).
      *
      * Fail closed, in this order: a listener bound under the departed owner is
-     * torn down first, then their record is discarded. Doing it the other way
-     * round would delete the only description of an endpoint that is still
-     * accepting connections.
+     * torn down first, and their record is discarded only once that teardown
+     * is accounted for. Doing it the other way round — or doing it anyway on
+     * an unconfirmed teardown — would delete the only description of an
+     * endpoint that is still accepting connections.
      *
      * Ownership that did not actually change is the common case — a removal
      * that failed, a sign-out that could not clear its binding — and it is
@@ -130,16 +139,21 @@ class LocalLanProxyFacade internal constructor(
         if (!withContext(Dispatchers.IO) { store.belongsToAnotherOwner() }) return
 
         mutex.withLock {
-            val result = runtime.disable()
-            if (result.status != LocalLanProxyRuntimeResult.Status.Disabled) {
-                // Not fatal here: the session either had no listener to close
-                // (no VPN, nothing bound) or could not confirm closing one, and
-                // in the second case it fail-stops itself rather than leaving
-                // it reachable.
-                Log.w("Local proxy owner reconcile could not confirm disable: ${result.status}")
-            }
+            val teardown = runtime.disable().status
 
-            if (!withContext(Dispatchers.IO) { store.discardForeignRecord() }) {
+            // Discard only once the listener is accounted for. "Disabled" is a
+            // confirmed teardown; "VpnUnavailable" means there is no session,
+            // so there is no listener either. A safety stop or a failed apply
+            // has confirmed nothing — the credentials may still authenticate —
+            // and deleting the record there would destroy the only description
+            // of an endpoint that is still up. The record stays, and the next
+            // reconcile checks again.
+            val accountedFor = teardown == LocalLanProxyRuntimeResult.Status.Disabled ||
+                teardown == LocalLanProxyRuntimeResult.Status.VpnUnavailable
+
+            if (!accountedFor) {
+                Log.w("Local proxy owner reconcile kept a previous owner's settings: $teardown")
+            } else if (!withContext(Dispatchers.IO) { store.discardForeignRecord() }) {
                 Log.w("Local proxy settings of a previous owner could not be discarded")
             }
 

@@ -2,7 +2,6 @@ package pro.getline.vpn.getline.localproxy
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.github.kr328.clash.common.log.Log
@@ -25,16 +24,20 @@ interface LocalLanProxySettings {
     fun save(config: LocalLanProxyUserConfig): Boolean
 
     /**
-     * True when a record exists and it was written by a different owner. False
-     * for "no record" and for "the current owner's record" alike: neither is
-     * something to clean up.
+     * True when the store holds settings written by someone other than the
+     * current owner. False for "nothing stored" and for "only the current
+     * owner's settings" alike: neither is something to clean up.
+     *
+     * It stays true until [discardForeignRecord] succeeds, including after the
+     * new owner has read or written settings of their own — that is what keeps
+     * a reconcile that has not happened yet from being silently cancelled.
      */
     fun belongsToAnotherOwner(): Boolean
 
     /**
-     * Best effort removal of a record belonging to a different owner. Returns
-     * false when one is still there afterwards — including when the store
-     * itself is unusable, since an unreadable store is also an unerasable one.
+     * Best effort removal of everything that is not the current owner's.
+     * Returns false when something remained — including when the store itself
+     * is unusable, since an unreadable store is also an unerasable one.
      */
     fun discardForeignRecord(): Boolean
 }
@@ -50,11 +53,10 @@ interface LocalLanProxySettings {
  * Two things are deliberately *not* here. Enabled state: it belongs to the
  * running session and is re-derived from the runtime on every launch, so a
  * killed process can never come back claiming a listener that is not there.
- * And the owner UUID as anything a caller may see: the record is bound to
- * whoever [owner] reports at the time it is read, and settings saved under a
- * different owner are discarded rather than handed over — the store answers
- * ownership questions itself, and no caller compares UUIDs (see plan
- * Decisions).
+ * And the owner UUID as anything a caller may see: records are keyed by
+ * whoever [owner] reports, so one owner's settings are never readable — nor
+ * overwritable — by another. The store answers ownership questions itself, and
+ * no caller compares UUIDs (see plan Decisions).
  */
 class LocalLanProxySettingsStore internal constructor(
     context: Context,
@@ -95,7 +97,7 @@ class LocalLanProxySettingsStore internal constructor(
         val prefs = prefs ?: return null
 
         synchronized(lock) {
-            read(prefs)?.let { return it }
+            read(prefs, ownerKey())?.let { return it }
 
             val generated = LocalLanProxyUserConfig(
                 port = chooseFreePort(),
@@ -119,9 +121,7 @@ class LocalLanProxySettingsStore internal constructor(
         val prefs = prefs ?: return false
 
         synchronized(lock) {
-            val storedOwner = prefs.all[KEY_OWNER] as? String ?: return false
-
-            return storedOwner != ownerKey()
+            return foreignKeys(prefs).isNotEmpty()
         }
     }
 
@@ -129,16 +129,16 @@ class LocalLanProxySettingsStore internal constructor(
         val prefs = prefs ?: return false
 
         synchronized(lock) {
-            // Re-checked under the lock: this must never delete the current
-            // owner's settings because ownership moved back between the two
-            // calls. A logout that did not go through leaves the record alone.
-            val storedOwner = prefs.all[KEY_OWNER] as? String ?: return true
-            if (storedOwner == ownerKey()) return true
+            // Re-read under the lock: ownership that moved back between the
+            // check and here must not lose its own settings.
+            val foreign = foreignKeys(prefs)
+            if (foreign.isEmpty()) return true
 
             return try {
-                prefs.edit(commit = true) { clear() }
+                val editor = prefs.edit()
+                foreign.forEach(editor::remove)
 
-                true
+                editor.commit()
             } catch (e: Exception) {
                 Log.w("Local proxy settings discard failed: ${e.javaClass.simpleName}", e)
 
@@ -147,23 +147,27 @@ class LocalLanProxySettingsStore internal constructor(
         }
     }
 
-    private fun read(prefs: SharedPreferences): LocalLanProxyUserConfig? {
-        // One in-memory snapshot, so the owner check and the values it guards
-        // cannot come from two different states of the file.
+    /**
+     * Every stored key that is not this owner's, including anything left by a
+     * format this build no longer writes. Nothing here is read — only removed —
+     * so an unrecognised key is junk to clear, never a value to trust.
+     */
+    private fun foreignKeys(prefs: SharedPreferences): List<String> {
+        val mine = ownerKey()
+
+        return prefs.all.keys.filter { key ->
+            key.substringBefore(KEY_SEPARATOR, missingDelimiterValue = "") != mine
+        }
+    }
+
+    private fun read(prefs: SharedPreferences, owner: String): LocalLanProxyUserConfig? {
+        // One in-memory snapshot, so the three values cannot come from two
+        // different states of the file.
         val values = prefs.all
 
-        val storedOwner = values[KEY_OWNER] as? String ?: return null
-        if (storedOwner != ownerKey()) {
-            // Someone else's record. Reading it would hand this owner the
-            // previous one's credentials; generating fresh settings overwrites
-            // it in place, which is also what makes a replaced account start
-            // from a new password rather than inherit one.
-            return null
-        }
-
-        val port = values[KEY_PORT] as? Int ?: return null
-        val username = values[KEY_USERNAME] as? String ?: return null
-        val password = values[KEY_PASSWORD] as? String ?: return null
+        val port = values[key(owner, KEY_PORT)] as? Int ?: return null
+        val username = values[key(owner, KEY_USERNAME)] as? String ?: return null
+        val password = values[key(owner, KEY_PASSWORD)] as? String ?: return null
 
         val config = LocalLanProxyUserConfig(port, username, password)
 
@@ -174,15 +178,19 @@ class LocalLanProxySettingsStore internal constructor(
     }
 
     private fun write(prefs: SharedPreferences, config: LocalLanProxyUserConfig): Boolean {
-        return try {
-            prefs.edit(commit = true) {
-                putString(KEY_OWNER, ownerKey())
-                putInt(KEY_PORT, config.port)
-                putString(KEY_USERNAME, config.username)
-                putString(KEY_PASSWORD, config.password)
-            }
+        val owner = ownerKey()
 
-            true
+        return try {
+            // commit(), and its result is the answer: a listener enabled with
+            // credentials that never reached the disk would keep working until
+            // the process dies and then stop authenticating with no
+            // explanation. androidx's edit(commit = true) discards this
+            // boolean, which is why it is not used here.
+            prefs.edit()
+                .putInt(key(owner, KEY_PORT), config.port)
+                .putString(key(owner, KEY_USERNAME), config.username)
+                .putString(key(owner, KEY_PASSWORD), config.password)
+                .commit()
         } catch (e: Exception) {
             // Never log the config: it carries the password.
             Log.w("Local proxy settings write failed: ${e.javaClass.simpleName}", e)
@@ -191,18 +199,33 @@ class LocalLanProxySettingsStore internal constructor(
         }
     }
 
+    private fun key(owner: String, field: String): String = "$owner$KEY_SEPARATOR$field"
+
     /**
      * No managed owner is itself an owner — a link-only install can use the
      * proxy — so it gets a stable sentinel rather than being refused. Signing
-     * in later changes the key, and the record generated while signed out is
-     * left for `reconcileOwner()` instead of being adopted.
+     * in later changes the key, and the record generated while signed out
+     * stays where it is until `reconcileOwner()` clears it.
      */
     private fun ownerKey(): String = owner() ?: OWNER_NONE
 
     private companion object {
         const val PREFS_FILE = "getline_local_proxy"
 
-        const val KEY_OWNER = "owner"
+        /**
+         * Records are keyed per owner rather than stamped with one. A stamped
+         * single record has to be *replaced* the moment a different owner asks
+         * for settings, which quietly erases the very mismatch
+         * `reconcileOwner()` exists to act on — the departed owner's listener
+         * would then never be told to close. Keyed records let a new owner get
+         * their own settings without touching anyone else's, so the mismatch
+         * survives until it is reconciled deliberately.
+         *
+         * Keys are encrypted at rest like values (AES256_SIV), so this does not
+         * expose which accounts have used the app.
+         */
+        const val KEY_SEPARATOR = "/"
+
         const val KEY_PORT = "port"
         const val KEY_USERNAME = "username"
         const val KEY_PASSWORD = "password"

@@ -56,7 +56,7 @@ class LocalLanProxyFacadeTest {
         }
 
         override fun belongsToAnotherOwner(): Boolean =
-            usable && records.isNotEmpty() && !records.containsKey(owner ?: "none")
+            usable && records.keys.any { it != (owner ?: "none") }
 
         override fun discardForeignRecord(): Boolean {
             discardCalls++
@@ -296,6 +296,40 @@ class LocalLanProxyFacadeTest {
     }
 
     @Test
+    fun reconcileOwnerKeepsTheRecordWhenTeardownIsNotAccountedFor() = runBlocking {
+        val facade = facade()
+        facade.enable()
+
+        // A safety stop has confirmed nothing: the listener may still be
+        // authenticating with those very credentials, and the record is the
+        // only description of it left.
+        runtime.disableResult = LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.SafetyStop)
+        settings.owner = "owner-b"
+        facade.reconcileOwner()
+
+        assertEquals(0, settings.discardCalls)
+        assertTrue(settings.recordOwners().contains("owner-a"))
+
+        // The next reconcile, once teardown can be confirmed, finishes the job.
+        runtime.disableResult = LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
+        facade.reconcileOwner()
+
+        assertEquals(setOf("owner-b"), settings.recordOwners())
+    }
+
+    @Test
+    fun reconcileOwnerDiscardsWhenThereIsNoSessionToHoldAListener() = runBlocking {
+        val facade = facade()
+        facade.refresh()
+
+        runtime.disableResult = LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.VpnUnavailable)
+        settings.owner = "owner-b"
+        facade.reconcileOwner()
+
+        assertEquals(setOf("owner-b"), settings.recordOwners())
+    }
+
+    @Test
     fun reconcileOwnerLeavesStillOwnedSettingsAlone() = runBlocking {
         val facade = facade()
         facade.refresh()
@@ -320,6 +354,24 @@ class LocalLanProxyFacadeTest {
 
         assertEquals(LocalLanProxyRuntimeState.Inactive, runtime.runtimeState)
         assertEquals(LocalLanProxyStatus.Disabled, facade.state.value.status)
+    }
+
+    @Test
+    fun settingsCannotBeEditedBeforeTheFirstReadEither() = runBlocking {
+        // A screen opened onto a proxy this facade has not observed yet: the
+        // snapshot still says Loading, the session says Active, and the
+        // session is the one that decides.
+        runtime.runtimeState = LocalLanProxyRuntimeState.Active("10.135.213.166", 4321)
+
+        val facade = facade()
+        val before = settings.loadOrCreate()
+
+        val result = facade.updateConfig(LocalLanProxyUserConfig(4321, "someone", "another-secret"))
+
+        assertEquals(LocalLanProxyResult.ActiveNotEditable, result)
+        assertEquals(before, settings.loadOrCreate())
+        // And the refusal leaves the screen showing the truth it just learned.
+        assertEquals(LocalLanProxyStatus.Active("10.135.213.166", 4321), facade.state.value.status)
     }
 
     @Test
