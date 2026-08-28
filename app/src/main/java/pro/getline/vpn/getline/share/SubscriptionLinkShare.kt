@@ -2,26 +2,19 @@ package pro.getline.vpn.getline.share
 
 import android.app.Activity
 import android.app.Dialog
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.drawable.ColorDrawable
-import android.os.Build
-import android.os.PersistableBundle
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
 import android.widget.ImageView
-import android.widget.Toast
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.content.ContextCompat
-import androidx.core.content.getSystemService
 import androidx.core.view.ViewCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -34,6 +27,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import pro.getline.vpn.getline.auth.SubscriptionUiState
+import pro.getline.vpn.getline.clipboard.SensitiveClipboard
 import pro.getline.vpn.getlineui.R as GetLineUiR
 
 /**
@@ -153,21 +147,12 @@ object SubscriptionLinkShare {
     }
 
     internal fun copyToClipboard(context: Context, url: String) {
-        val clipboard = context.getSystemService<ClipboardManager>() ?: return
-        val clip = ClipData.newPlainText(CLIP_LABEL, url)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            clip.description.extras = PersistableBundle().apply {
-                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-            }
-        }
-        clipboard.setPrimaryClip(clip)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            Toast.makeText(
-                context,
-                context.getString(GetLineUiR.string.get_line_share_subscription_copied),
-                Toast.LENGTH_SHORT,
-            ).show()
-        }
+        SensitiveClipboard.copy(
+            context = context,
+            label = CLIP_LABEL,
+            value = url,
+            confirmation = GetLineUiR.string.get_line_share_subscription_copied,
+        )
     }
 
     private fun showDialog(activity: Activity, url: String, qr: Bitmap?) {
