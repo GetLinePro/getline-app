@@ -1,7 +1,5 @@
 package pro.getline.vpn.getline.localproxy
 
-import com.github.kr328.clash.service.localproxy.LocalLanProxyRuntimeState
-import com.github.kr328.clash.service.remote.LocalLanProxyRuntimeResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

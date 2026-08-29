@@ -11,8 +11,6 @@ import com.github.kr328.clash.common.constants.Intents
 import com.github.kr328.clash.common.constants.Permissions
 import com.github.kr328.clash.remote.Broadcasts
 import com.github.kr328.clash.remote.Remote
-import com.github.kr328.clash.service.localproxy.LocalLanProxyRuntimeState
-import com.github.kr328.clash.service.remote.LocalLanProxyRuntimeResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import pro.getline.vpn.cmfa.localproxy.CmfaLocalLanProxyRuntimeClient
 import pro.getline.vpn.getline.auth.GetLineSessionStore
 import java.util.UUID
 
@@ -268,7 +267,7 @@ class LocalLanProxyFacade internal constructor(
                 store = LocalLanProxySettingsStore(context) {
                     sessionStore.managedBindingSnapshot().managedProfileUuid
                 },
-                runtime = BinderLocalLanProxyRuntimeClient(context),
+                runtime = CmfaLocalLanProxyRuntimeClient(context),
                 vpnRunning = { Remote.broadcasts.clashRunning },
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
             )
