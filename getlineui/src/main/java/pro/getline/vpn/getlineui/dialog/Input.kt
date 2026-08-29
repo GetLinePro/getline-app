@@ -20,8 +20,9 @@ suspend fun Context.requestModelTextInput(
     hint: CharSequence? = null,
     error: CharSequence? = null,
     validator: Validator = ValidatorAcceptAll,
+    inputType: Int? = null,
 ): String {
-    return this.requestModelTextInput(initial, title, null, hint, error, validator)!!
+    return this.requestModelTextInput(initial, title, null, hint, error, validator, inputType)!!
 }
 
 suspend fun Context.requestModelTextInput(
@@ -31,6 +32,12 @@ suspend fun Context.requestModelTextInput(
     hint: CharSequence? = null,
     error: CharSequence? = null,
     validator: Validator = ValidatorAcceptAll,
+    /**
+     * Keyboard for the value being edited, e.g. a number pad for a port or a
+     * visible-password field that offers no suggestions. Null keeps the
+     * platform default.
+     */
+    inputType: Int? = null,
 ): String? {
     return suspendCancellableCoroutine {
         // Unique layout name: must not collide with design's dialog_text_field
@@ -73,6 +80,10 @@ suspend fun Context.requestModelTextInput(
                 binding.textLayout.hint = hint
 
             binding.textField.apply {
+                if (inputType != null) {
+                    this.inputType = inputType
+                }
+
                 binding.textLayout.isErrorEnabled = error != null
 
                 // An empty field is "not filled in yet", not a mistake: keep OK

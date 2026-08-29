@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.net.ConnectException
+import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -72,11 +73,24 @@ class LocalLanProxyRuntimeCoordinator(
     // scope can never interrupt a cleanup half-way.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    @Volatile
-    private var closed = false
+    /**
+     * Owns both halves of the session boundary: what the rest of the system is
+     * told, and whether this session is still open for business. One flag, one
+     * owner — an `enable` arriving during teardown and a projection published
+     * during teardown are the same question asked twice.
+     */
+    private val projection = LocalLanProxySessionProjection { state ->
+        LocalLanProxyRuntimeRegistry.publish(service, state)
+    }
 
     /** Begins reacting to endpoint changes. Call once, before any enable. */
     fun start() {
+        // Session boundary. The :background process outlives a single VPN
+        // session, so a fresh coordinator must not inherit whatever the
+        // previous one published — normally already Inactive, but not after a
+        // session that ended while a listener could not be accounted for.
+        projection.open()
+
         scope.launch {
             endpointSource.changes.collect {
                 try {
@@ -111,13 +125,19 @@ class LocalLanProxyRuntimeCoordinator(
      * exceptionally on shutdown, so this returns in milliseconds.
      *
      * It is not a guarantee. On timeout this logs and returns, and the
-     * transaction may still be running while teardown proceeds — the race it
-     * normally closes reopens. Making that airtight would mean giving teardown
-     * a real completion handshake with the reload port rather than a deadline;
-     * that is deliberately not done here.
+     * transaction may still be running while teardown proceeds. What that can
+     * no longer do is mislead anyone: the projection is already closed, so a
+     * late transaction's state is dropped rather than published. Making the
+     * wait itself airtight would mean giving teardown a real completion
+     * handshake with the reload port rather than a deadline; that is
+     * deliberately not done here.
      */
     suspend fun close() {
-        closed = true
+        // Before the wait, not after: this both fixes the session's last word
+        // and refuses any transaction that has not started yet. A command
+        // already inside enable() is the case the projection exists for — it
+        // may finish, and its Active is dropped rather than published.
+        projection.close()
 
         val job = scope.coroutineContext[Job] ?: return
         job.cancel()
@@ -145,7 +165,41 @@ class LocalLanProxyRuntimeCoordinator(
         requestFailStop()
     }
 
+    /**
+     * The only writer of [state], so the registry cannot drift from the
+     * transaction it is supposed to mirror. Every caller already holds
+     * [mutex]; publishing under it keeps the published order equal to the
+     * transaction order, and the broadcast it triggers is asynchronous, so
+     * nothing waits on a reader while the lock is held.
+     */
+    private fun transitionTo(next: RuntimeState) {
+        state = next
+
+        projection.publish(next.asProjection())
+    }
+
+    /**
+     * What leaves the process. The `Network` and the credentials stay behind:
+     * a reader gets the address a LAN client dials and nothing it has no use
+     * for.
+     */
+    private fun RuntimeState.asProjection(): LocalLanProxyRuntimeState = when (this) {
+        RuntimeState.Inactive -> LocalLanProxyRuntimeState.Inactive
+        is RuntimeState.Active -> LocalLanProxyRuntimeState.Active(
+            address = transaction.endpoint.address.literal(),
+            port = transaction.port,
+        )
+    }
+
     suspend fun enable(config: LocalLanProxyRuntimeConfig): LocalLanProxyRuntimeResult = mutex.withLock {
+        // A binder caller can hold this coordinator across teardown: the
+        // manager resolved it before TunService cleared the handle. Starting a
+        // transaction now would bind a listener into a Clash runtime that is
+        // already stopping.
+        if (projection.isClosed) {
+            return@withLock LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.VpnUnavailable)
+        }
+
         if (state is RuntimeState.Active) {
             return@withLock LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Enabled)
         }
@@ -221,7 +275,7 @@ class LocalLanProxyRuntimeCoordinator(
         }
 
         if (apply.loaded && apply.authOutcome == LocalLanProxyProbeOutcome.Authenticated) {
-            state = RuntimeState.Active(transaction)
+            transitionTo(RuntimeState.Active(transaction))
             LocalLanProxyRuntimeResult(
                 status = LocalLanProxyRuntimeResult.Status.Enabled,
                 endpointAddress = endpoint.address.hostAddress,
@@ -235,6 +289,10 @@ class LocalLanProxyRuntimeCoordinator(
     }
 
     suspend fun disable(): LocalLanProxyRuntimeResult = mutex.withLock {
+        if (projection.isClosed) {
+            return@withLock LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.VpnUnavailable)
+        }
+
         val transaction = (state as? RuntimeState.Active)?.transaction
             ?: return@withLock LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
 
@@ -262,7 +320,7 @@ class LocalLanProxyRuntimeCoordinator(
 
             when (decideTeardown(reloadLoaded, transaction)) {
                 LocalLanProxyTeardownOutcome.ConfirmedGone -> {
-                    state = RuntimeState.Inactive
+                    transitionTo(RuntimeState.Inactive)
                     LocalLanProxyRuntimeResult(LocalLanProxyRuntimeResult.Status.Disabled)
                 }
                 LocalLanProxyTeardownOutcome.FailStop -> {
@@ -316,7 +374,7 @@ class LocalLanProxyRuntimeCoordinator(
      */
     private suspend fun onEndpointChanged() {
         mutex.withLock {
-            if (closed) return@withLock
+            if (projection.isClosed) return@withLock
 
             val transaction = (state as? RuntimeState.Active)?.transaction ?: return@withLock
 
@@ -336,7 +394,7 @@ class LocalLanProxyRuntimeCoordinator(
             if (current != null && current.address == transaction.endpoint.address) {
                 if (current.epoch == transaction.endpoint.epoch) {
                     if (current.network != transaction.endpoint.network) {
-                        state = RuntimeState.Active(transaction.copy(endpoint = current))
+                        transitionTo(RuntimeState.Active(transaction.copy(endpoint = current)))
                         Log.i("LocalLanProxy endpoint kept address, refreshed probe network")
                     }
 
@@ -346,7 +404,7 @@ class LocalLanProxyRuntimeCoordinator(
                 Log.i("LocalLanProxy approved address returned after a loss; disabling")
 
                 val returned = transaction.copy(endpoint = current)
-                state = RuntimeState.Active(returned)
+                transitionTo(RuntimeState.Active(returned))
 
                 val loss = disableActive(returned, reason = "endpoint-loss")
                 Log.i("LocalLanProxy automatic disable result: ${loss.status}")
@@ -382,7 +440,7 @@ class LocalLanProxyRuntimeCoordinator(
 
             when (decideTeardown(cleanupLoaded, transaction)) {
                 LocalLanProxyTeardownOutcome.ConfirmedGone -> {
-                    state = RuntimeState.Inactive
+                    transitionTo(RuntimeState.Inactive)
                     LocalLanProxyRuntimeResult(
                         LocalLanProxyRuntimeResult.Status.ApplyFailed,
                         message = reloadFailedMessage ?: "local proxy did not become reachable",
@@ -524,6 +582,16 @@ class LocalLanProxyRuntimeCoordinator(
                 ?: reloadResult.exceptionOrNull()?.message
     }
 }
+
+/**
+ * `getHostAddress` is platform-nullable; for an [Inet4Address] that
+ * was resolved from an interface it never is. The fallback stays truthful
+ * rather than guessing — `toString` renders as `[host]/1.2.3.4` — because the
+ * alternative, reporting inactive while a listener is bound, is the direction
+ * that hides a live endpoint from its owner.
+ */
+private fun Inet4Address.literal(): String =
+    hostAddress ?: toString().substringAfterLast('/')
 
 private fun Throwable.hasErrno(errno: Int): Boolean {
     var current: Throwable? = this

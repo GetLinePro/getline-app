@@ -24,6 +24,7 @@ object Intents {
     val ACTION_PROFILE_LOADED = "$packageName.intent.action.PROFILE_LOADED"
     val ACTION_OVERRIDE_CHANGED = "$packageName.intent.action.OVERRIDE_CHANGED"
     val ACTION_TUN_POLICY_RECONCILE = "$packageName.intent.action.TUN_POLICY_RECONCILE"
+    val ACTION_LOCAL_LAN_PROXY_CHANGED = "$packageName.intent.action.LOCAL_LAN_PROXY_CHANGED"
 
     const val EXTRA_STOP_REASON = "stop_reason"
     const val EXTRA_UUID = "uuid"

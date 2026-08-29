@@ -1,0 +1,483 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+    <data>
+        <variable
+            name="self"
+            type="pro.getline.vpn.getlineui.GetLineSettingsDesign" />
+        <variable
+            name="statusText"
+            type="String" />
+        <variable
+            name="addressText"
+            type="String" />
+        <variable
+            name="addressVisible"
+            type="boolean" />
+        <variable
+            name="portText"
+            type="String" />
+        <variable
+            name="usernameText"
+            type="String" />
+        <variable
+            name="passwordText"
+            type="String" />
+        <variable
+            name="passwordRevealed"
+            type="boolean" />
+        <!-- Editing is locked while a listener is bound to these credentials. -->
+        <variable
+            name="fieldsEditable"
+            type="boolean" />
+        <variable
+            name="fieldsVisible"
+            type="boolean" />
+        <variable
+            name="actionText"
+            type="String" />
+        <variable
+            name="actionEnabled"
+            type="boolean" />
+        <variable
+            name="hintText"
+            type="String" />
+        <variable
+            name="hintVisible"
+            type="boolean" />
+
+        <import type="android.view.View" />
+    </data>
+
+    <androidx.coordinatorlayout.widget.CoordinatorLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/getline_brand_background"
+        android:paddingStart="@{self.surface.insets.start}"
+        android:paddingEnd="@{self.surface.insets.end}">
+
+        <!-- Solid brand base first so the activity transition never shows Home through. -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_getline_surface" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:overScrollMode="ifContentScrolls"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="@dimen/main_padding_horizontal"
+                android:paddingTop="@{self.surface.insets.top + (int) @dimen/get_line_home_section_gap}"
+                android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_settings_content_bottom}">
+
+                <!--
+                  Header: back at the start, title beside it. The screen has one
+                  section today, so the title carries the name of the screen and
+                  the section below carries its own.
+                -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:id="@+id/settings_back"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:contentDescription="@string/get_line_settings_back"
+                        android:focusable="true"
+                        android:onClick="@{() -> self.onBack()}"
+                        android:padding="12dp"
+                        android:src="@drawable/ic_getline_arrow_back"
+                        app:tint="@color/getline_text_primary" />
+
+                    <TextView
+                        android:id="@+id/settings_title"
+                        style="@style/Widget.GetLine.Text.Title"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:text="@string/get_line_settings_title"
+                        android:textColor="@color/getline_text_primary"
+                        tools:text="Settings" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Widget.GetLine.Text.Subtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_section_gap"
+                    android:text="@string/get_line_settings_proxy_title"
+                    android:textColor="@color/getline_text_primary"
+                    tools:text="Local network proxy" />
+
+                <TextView
+                    style="@style/Widget.GetLine.Text.Secondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/get_line_settings_proxy_explanation"
+                    android:textColor="@color/getline_text_secondary" />
+
+                <!--
+                  Status is its own line above the values: what the user checks
+                  first is whether the thing is running, and the address only
+                  means anything once it is.
+                -->
+                <TextView
+                    android:id="@+id/settings_proxy_status"
+                    style="@style/Widget.GetLine.Text.Primary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_section_gap"
+                    android:text="@{statusText}"
+                    android:textColor="@color/getline_text_primary"
+                    tools:text="Running" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/settings_proxy_fields"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:visibility="@{fieldsVisible ? View.VISIBLE : View.GONE}"
+                    app:cardBackgroundColor="@color/getline_brand_surface"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/getline_hairline"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingVertical="4dp">
+
+                        <!-- ─── Address: copy-only, and only while bound ─── -->
+                        <LinearLayout
+                            android:id="@+id/settings_proxy_address_row"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:baselineAligned="false"
+                            android:gravity="center_vertical"
+                            android:minHeight="56dp"
+                            android:orientation="horizontal"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="4dp"
+                            android:visibility="@{addressVisible ? View.VISIBLE : View.GONE}">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    style="@style/Widget.GetLine.Text.Caption"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:importantForAccessibility="no"
+                                    android:text="@string/get_line_settings_field_address"
+                                    android:textColor="@color/getline_text_secondary" />
+
+                                <TextView
+                                    android:id="@+id/settings_proxy_address"
+                                    style="@style/Widget.GetLine.Text.Primary"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@{addressText}"
+                                    android:textColor="@color/getline_text_primary"
+                                    tools:text="192.168.1.24" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/settings_copy_address"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:clickable="true"
+                                android:contentDescription="@{@string/get_line_settings_copy_field(@string/get_line_settings_field_address)}"
+                                android:focusable="true"
+                                android:onClick="@{() -> self.copyAddress()}"
+                                android:padding="12dp"
+                                android:src="@drawable/ic_getline_copy"
+                                app:tint="@color/getline_text_secondary" />
+                        </LinearLayout>
+
+                        <!-- ─── Port ─── -->
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginStart="16dp"
+                            android:background="@color/getline_hairline_subtle"
+                            android:visibility="@{addressVisible ? View.VISIBLE : View.GONE}" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:baselineAligned="false"
+                            android:gravity="center_vertical"
+                            android:minHeight="56dp"
+                            android:orientation="horizontal"
+                            android:paddingEnd="4dp">
+
+                            <LinearLayout
+                                android:id="@+id/settings_proxy_port_row"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:background="?attr/selectableItemBackground"
+                                android:clickable="@{fieldsEditable}"
+                                android:contentDescription="@{@string/get_line_settings_field_port + `, ` + portText}"
+                                android:focusable="@{fieldsEditable}"
+                                android:minHeight="56dp"
+                                android:onClick="@{() -> self.editPort()}"
+                                android:orientation="vertical"
+                                android:paddingStart="16dp"
+                                android:paddingVertical="8dp">
+
+                                <TextView
+                                    style="@style/Widget.GetLine.Text.Caption"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:importantForAccessibility="no"
+                                    android:text="@string/get_line_settings_field_port"
+                                    android:textColor="@color/getline_text_secondary" />
+
+                                <TextView
+                                    android:id="@+id/settings_proxy_port"
+                                    style="@style/Widget.GetLine.Text.Primary"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:importantForAccessibility="no"
+                                    android:text="@{portText}"
+                                    android:textColor="@{fieldsEditable ? @color/getline_text_primary : @color/getline_text_disabled}"
+                                    tools:text="28451" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/settings_copy_port"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:clickable="true"
+                                android:contentDescription="@{@string/get_line_settings_copy_field(@string/get_line_settings_field_port)}"
+                                android:focusable="true"
+                                android:onClick="@{() -> self.copyPort()}"
+                                android:padding="12dp"
+                                android:src="@drawable/ic_getline_copy"
+                                app:tint="@color/getline_text_secondary" />
+                        </LinearLayout>
+
+                        <!-- ─── Username ─── -->
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginStart="16dp"
+                            android:background="@color/getline_hairline_subtle" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:baselineAligned="false"
+                            android:gravity="center_vertical"
+                            android:minHeight="56dp"
+                            android:orientation="horizontal"
+                            android:paddingEnd="4dp">
+
+                            <LinearLayout
+                                android:id="@+id/settings_proxy_username_row"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:background="?attr/selectableItemBackground"
+                                android:clickable="@{fieldsEditable}"
+                                android:contentDescription="@{@string/get_line_settings_field_username + `, ` + usernameText}"
+                                android:focusable="@{fieldsEditable}"
+                                android:minHeight="56dp"
+                                android:onClick="@{() -> self.editUsername()}"
+                                android:orientation="vertical"
+                                android:paddingStart="16dp"
+                                android:paddingVertical="8dp">
+
+                                <TextView
+                                    style="@style/Widget.GetLine.Text.Caption"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:importantForAccessibility="no"
+                                    android:text="@string/get_line_settings_field_username"
+                                    android:textColor="@color/getline_text_secondary" />
+
+                                <TextView
+                                    android:id="@+id/settings_proxy_username"
+                                    style="@style/Widget.GetLine.Text.Primary"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:ellipsize="end"
+                                    android:importantForAccessibility="no"
+                                    android:maxLines="1"
+                                    android:text="@{usernameText}"
+                                    android:textColor="@{fieldsEditable ? @color/getline_text_primary : @color/getline_text_disabled}"
+                                    tools:text="getline" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/settings_copy_username"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:clickable="true"
+                                android:contentDescription="@{@string/get_line_settings_copy_field(@string/get_line_settings_field_username)}"
+                                android:focusable="true"
+                                android:onClick="@{() -> self.copyUsername()}"
+                                android:padding="12dp"
+                                android:src="@drawable/ic_getline_copy"
+                                app:tint="@color/getline_text_secondary" />
+                        </LinearLayout>
+
+                        <!-- ─── Password: masked until explicitly revealed ─── -->
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginStart="16dp"
+                            android:background="@color/getline_hairline_subtle" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:baselineAligned="false"
+                            android:gravity="center_vertical"
+                            android:minHeight="56dp"
+                            android:orientation="horizontal"
+                            android:paddingEnd="4dp">
+
+                            <LinearLayout
+                                android:id="@+id/settings_proxy_password_row"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:background="?attr/selectableItemBackground"
+                                android:clickable="@{fieldsEditable}"
+                                android:contentDescription="@string/get_line_settings_field_password"
+                                android:focusable="@{fieldsEditable}"
+                                android:minHeight="56dp"
+                                android:onClick="@{() -> self.editPassword()}"
+                                android:orientation="vertical"
+                                android:paddingStart="16dp"
+                                android:paddingVertical="8dp">
+
+                                <TextView
+                                    style="@style/Widget.GetLine.Text.Caption"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:importantForAccessibility="no"
+                                    android:text="@string/get_line_settings_field_password"
+                                    android:textColor="@color/getline_text_secondary" />
+
+                                <!--
+                                  The masked form is not read out: TalkBack
+                                  spelling a row of bullets tells nobody
+                                  anything, and the revealed form is a secret
+                                  spoken aloud. The row announces its label; the
+                                  value is copied, not dictated.
+                                -->
+                                <TextView
+                                    android:id="@+id/settings_proxy_password"
+                                    style="@style/Widget.GetLine.Text.Primary"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:ellipsize="end"
+                                    android:importantForAccessibility="no"
+                                    android:maxLines="1"
+                                    android:text="@{passwordText}"
+                                    android:textColor="@{fieldsEditable ? @color/getline_text_primary : @color/getline_text_disabled}"
+                                    tools:text="••••••••" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/settings_reveal_password"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:clickable="true"
+                                android:contentDescription="@{passwordRevealed ? @string/get_line_settings_hide_password : @string/get_line_settings_show_password}"
+                                android:focusable="true"
+                                android:onClick="@{() -> self.togglePasswordRevealed()}"
+                                android:padding="12dp"
+                                android:src="@{passwordRevealed ? @drawable/ic_getline_visibility_off : @drawable/ic_getline_visibility}"
+                                app:tint="@color/getline_text_secondary"
+                                tools:src="@drawable/ic_getline_visibility" />
+
+                            <ImageView
+                                android:id="@+id/settings_copy_password"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:clickable="true"
+                                android:contentDescription="@{@string/get_line_settings_copy_field(@string/get_line_settings_field_password)}"
+                                android:focusable="true"
+                                android:onClick="@{() -> self.copyPassword()}"
+                                android:padding="12dp"
+                                android:src="@drawable/ic_getline_copy"
+                                app:tint="@color/getline_text_secondary" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!--
+                  One calm line, always visible: this is the whole of the
+                  product's advice about where the proxy is safe to use.
+                -->
+                <TextView
+                    android:id="@+id/settings_proxy_safety"
+                    style="@style/Widget.GetLine.Text.Caption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_section_gap"
+                    android:text="@string/get_line_settings_proxy_safety"
+                    android:textColor="@color/getline_text_secondary" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/settings_proxy_action"
+                    style="@style/Widget.GetLine.Onboarding.PrimaryButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/get_line_home_actions_margin_top"
+                    android:enabled="@{actionEnabled}"
+                    android:minHeight="@dimen/get_line_home_primary_button_min_height"
+                    android:onClick="@{() -> self.onPrimaryAction()}"
+                    android:text="@{actionText}"
+                    tools:text="Turn on" />
+
+                <!--
+                  Why the button is unavailable, under the button. The screen
+                  never starts the VPN itself, so this is a statement, not a
+                  second action.
+                -->
+                <TextView
+                    android:id="@+id/settings_proxy_hint"
+                    style="@style/Widget.GetLine.Text.Caption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_horizontal"
+                    android:text="@{hintText}"
+                    android:textColor="@color/getline_text_secondary"
+                    android:visibility="@{hintVisible ? View.VISIBLE : View.GONE}"
+                    tools:text="Connect VPN first" />
+            </LinearLayout>
+        </ScrollView>
+    </androidx.coordinatorlayout.widget.CoordinatorLayout>
+</layout>

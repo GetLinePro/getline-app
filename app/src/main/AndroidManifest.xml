@@ -126,6 +126,14 @@
             </intent-filter>
         </activity>
         <activity
+            android:name="pro.getline.vpn.GetLineSettingsActivity"
+            android:configChanges="uiMode"
+            android:exported="false"
+            android:label="@string/get_line_settings_title"
+            android:parentActivityName="pro.getline.vpn.GetLineHomeActivity"
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
+        <activity
             android:name="pro.getline.vpn.GetLineHomeActivity"
             android:configChanges="uiMode"
             android:exported="false"

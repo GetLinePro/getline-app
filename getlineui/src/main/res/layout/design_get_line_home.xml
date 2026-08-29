@@ -111,19 +111,54 @@
                 android:paddingBottom="@{self.surface.insets.bottom + (int) @dimen/get_line_shell_content_bottom}">
 
                 <!--
-                  Decorative: the wordmark says which app this is to someone
-                  looking at the screen, and TalkBack already gets that from the
-                  activity label. Announcing it again on every visit to Home
-                  would be noise ahead of the state view.
+                  The wordmark row. The gear is laid out over it rather than
+                  beside it so the wordmark stays centred on the screen and not
+                  in whatever width the icon leaves behind — at large font and
+                  display scales a side-by-side row pushes it visibly off
+                  centre. It is inside the Home destination, so it is present
+                  exactly while the Home tab is.
                 -->
-                <ImageView
-                    android:id="@+id/home_brand"
-                    android:layout_width="wrap_content"
-                    android:layout_height="@dimen/get_line_home_wordmark_height"
-                    android:adjustViewBounds="true"
-                    android:contentDescription="@null"
-                    android:importantForAccessibility="no"
-                    android:src="@drawable/ic_getline_wordmark" />
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <!--
+                      Decorative: the wordmark says which app this is to someone
+                      looking at the screen, and TalkBack already gets that from
+                      the activity label. Announcing it again on every visit to
+                      Home would be noise ahead of the state view.
+                    -->
+                    <ImageView
+                        android:id="@+id/home_brand"
+                        android:layout_width="wrap_content"
+                        android:layout_height="@dimen/get_line_home_wordmark_height"
+                        android:layout_gravity="center"
+                        android:adjustViewBounds="true"
+                        android:contentDescription="@null"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_getline_wordmark" />
+
+                    <!--
+                      Settings lives in the header corner, the one place the
+                      shell already puts a header icon (see the Servers refresh
+                      control). One target, described as Settings and nothing
+                      more: it carries no proxy state, so Home never has to
+                      observe any.
+                    -->
+                    <ImageView
+                        android:id="@+id/home_settings"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_gravity="end|center_vertical"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:contentDescription="@string/get_line_settings_title"
+                        android:focusable="true"
+                        android:onClick="@{() -> self.request(Request.OpenSettings)}"
+                        android:padding="12dp"
+                        android:src="@drawable/ic_getline_settings"
+                        app:tint="@color/getline_text_secondary" />
+                </FrameLayout>
 
                 <pro.getline.vpn.getlineui.view.GetLineStateView
                     android:id="@+id/state_view"

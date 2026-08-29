@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import com.github.kr328.clash.common.Global
+import com.github.kr328.clash.service.localproxy.LocalLanProxyRuntimeRegistry
 
 class StatusProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
@@ -19,6 +20,13 @@ class StatusProvider : ContentProvider() {
                 else
                     null
             }
+            // Read adapter over the coordinator-owned registry, nothing more:
+            // it holds no proxy state of its own and answers with whatever the
+            // running session last published. Deliberately not gated on
+            // serviceRunning — a second condition here could only ever
+            // disagree with the registry, and the coordinator already resets
+            // it at both session boundaries.
+            METHOD_LOCAL_LAN_PROXY_STATE -> LocalLanProxyRuntimeRegistry.state.toBundle()
             else -> super.call(method, arg, extras)
         }
     }
@@ -60,6 +68,7 @@ class StatusProvider : ContentProvider() {
 
     companion object {
         const val METHOD_CURRENT_PROFILE = "currentProfile"
+        const val METHOD_LOCAL_LAN_PROXY_STATE = "localLanProxyState"
 
         private const val CLASH_SERVICE_RUNNING_FILE = "service_running.lock"
 

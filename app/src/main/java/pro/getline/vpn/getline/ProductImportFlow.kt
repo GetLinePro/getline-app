@@ -11,6 +11,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
+import pro.getline.vpn.getline.localproxy.LocalLanProxyOwnerIntegration
 import pro.getline.vpn.getlineui.model.GetLineImportStage
 
 /**
@@ -25,6 +26,7 @@ internal class ProductImportFlow(
     private val backend: GetLineBackend,
     private val sessions: GetLineSessionRepository,
     private val host: Host,
+    private val localProxyOwner: LocalLanProxyOwnerIntegration = LocalLanProxyOwnerIntegration.None,
 ) {
     interface Host {
         val isForeground: Boolean
@@ -214,6 +216,10 @@ internal class ProductImportFlow(
                 clearPending = sessions::clearPendingProfileCleanup,
             )
         }
+        // The binding now names a different managed profile: a replacement is
+        // an ownership change like any other.
+        localProxyOwner.reconcileOwner()
+
         Log.i(
             "import_terminal success " +
                 "verdict=${sessions.consistencyVerdict()}",

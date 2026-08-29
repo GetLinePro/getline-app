@@ -19,6 +19,7 @@ import pro.getline.vpn.getline.ConfigUpdateResult
 import pro.getline.vpn.getline.GetLineBackendResult
 import pro.getline.vpn.getline.GetLineSubscriptionId
 import pro.getline.vpn.getline.LogoutFlow
+import pro.getline.vpn.getline.localproxy.LocalLanProxyFacade
 import pro.getline.vpn.getline.ProductNavigationPolicy
 import pro.getline.vpn.getline.VpnRepairFlow
 import pro.getline.vpn.getline.VpnRepairFlow.RepairOutcome
@@ -91,6 +92,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                 override fun defaultProfileName(): String =
                     getString(GetLineUiR.string.get_line_subscription_profile_name)
             },
+            localProxyOwner = LocalLanProxyFacade.get(this),
         )
     }
     private val subscriptionCardFlow by lazy {
@@ -402,6 +404,10 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
                         // on the way back (Event.ActivityStart).
                         GetLineHomeDesign.Request.OpenAppRouting ->
                             startActivity(AccessControlActivity::class.intent)
+                        // Opening the screen is all Home does with settings: it
+                        // observes no proxy state and reads no status transport.
+                        GetLineHomeDesign.Request.OpenSettings ->
+                            startActivity(GetLineSettingsActivity::class.intent)
                         GetLineHomeDesign.Request.SendDiagnostics ->
                             DiagnosticReportShare.present(
                                 activity = this@GetLineHomeActivity,
@@ -1219,6 +1225,7 @@ class GetLineHomeActivity : GetLineActivity<GetLineHomeDesign>() {
             val outcome = LogoutFlow(
                 backend = backend,
                 sessionRepository = sessionRepository,
+                localProxyOwner = LocalLanProxyFacade.get(this@GetLineHomeActivity),
                 host = object : LogoutFlow.Host {
                     override suspend fun onSessionCleared() {
                         accountPortalVisit.clear()

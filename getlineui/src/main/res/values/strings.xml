@@ -224,4 +224,39 @@
     <string name="get_line_action_open_account">Open GetLine Pro account</string>
     <string name="get_line_vpn_stopped">VPN stopped. Retry the connection.</string>
     <string name="get_line_vpn_start_timeout">VPN did not start. Please try again.</string>
+    <!-- ─── Settings screen and its local network proxy section ─── -->
+    <string name="get_line_settings_title">Settings</string>
+    <string name="get_line_settings_back">Back</string>
+    <string name="get_line_settings_proxy_title">Local network proxy</string>
+    <string name="get_line_settings_proxy_explanation">Lets a browser or another device on this network connect through this phone\'s VPN.</string>
+    <string name="get_line_settings_proxy_safety">Use only on your own Wi-Fi network or phone hotspot.</string>
+    <string name="get_line_settings_status_loading">Checking…</string>
+    <string name="get_line_settings_status_disabled">Off</string>
+    <string name="get_line_settings_status_enabling">Starting…</string>
+    <string name="get_line_settings_status_disabling">Stopping…</string>
+    <string name="get_line_settings_status_active">Running</string>
+    <string name="get_line_settings_field_address">Address</string>
+    <string name="get_line_settings_field_port">Port</string>
+    <string name="get_line_settings_field_username">Username</string>
+    <string name="get_line_settings_field_password">Password</string>
+    <!-- TalkBack for the per-field copy buttons; %1$s is the field name. -->
+    <string name="get_line_settings_copy_field">Copy %1$s</string>
+    <string name="get_line_settings_copied">Copied</string>
+    <string name="get_line_settings_copy_failed">Couldn\'t copy.</string>
+    <string name="get_line_settings_show_password">Show password</string>
+    <string name="get_line_settings_hide_password">Hide password</string>
+    <string name="get_line_settings_enable">Turn on</string>
+    <string name="get_line_settings_disable">Turn off</string>
+    <string name="get_line_settings_connect_vpn_first">Connect VPN first</string>
+    <string name="get_line_settings_locked_while_active">Turn the proxy off to change these settings.</string>
+    <string name="get_line_settings_storage_unavailable">Secure storage is unavailable, so the proxy cannot be turned on.</string>
+    <string name="get_line_settings_error_vpn_unavailable">Connect the VPN first.</string>
+    <string name="get_line_settings_error_no_lan">No Wi-Fi or hotspot address to use.</string>
+    <string name="get_line_settings_error_port_occupied">That port is already in use on this phone.</string>
+    <string name="get_line_settings_error_apply_failed">Couldn\'t turn the proxy on. Nothing was changed.</string>
+    <string name="get_line_settings_error_safety_stop">The VPN was stopped because the proxy could not be shut down safely.</string>
+    <string name="get_line_settings_error_storage">Couldn\'t save. Secure storage is unavailable.</string>
+    <string name="get_line_settings_error_invalid_port">Port must be a number between 1024 and 65535.</string>
+    <string name="get_line_settings_error_invalid_username">Username: 1–128 printable characters, no spaces and no colon.</string>
+    <string name="get_line_settings_error_invalid_password">Password: 1–128 printable characters, no spaces.</string>
 </resources>

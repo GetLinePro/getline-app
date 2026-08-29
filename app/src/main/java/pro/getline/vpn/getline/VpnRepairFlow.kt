@@ -3,6 +3,7 @@ package pro.getline.vpn.getline
 import com.github.kr328.clash.common.log.Log
 import pro.getline.vpn.getline.auth.ManagedBindingSnapshot
 import pro.getline.vpn.getline.auth.GetLineSessionRepository
+import pro.getline.vpn.getline.localproxy.LocalLanProxyOwnerIntegration
 
 /**
  * Owns the idempotent repair ladder for the GetLine-managed VPN profile.
@@ -14,6 +15,7 @@ internal class VpnRepairFlow(
     private val backend: GetLineBackend,
     private val sessionRepository: GetLineSessionRepository,
     private val host: Host,
+    private val localProxyOwner: LocalLanProxyOwnerIntegration = LocalLanProxyOwnerIntegration.None,
 ) {
     interface Host {
         fun hasValidatedInternetConnection(): Boolean
@@ -214,6 +216,9 @@ internal class VpnRepairFlow(
                 if (subscriptionIdToRemember != null) {
                     sessionRepository.rememberSubscription(subscriptionIdToRemember)
                 }
+                // Re-import can bind a different managed profile than the one
+                // the stored settings were written for.
+                localProxyOwner.reconcileOwner()
                 RepairOutcome.Ready
             }
         }
